@@ -54,8 +54,8 @@ with tabs[1]:
 
     # [설정] st.secrets에서 키 가져오기
     # Secrets에 저장된 이름과 반드시 일치해야 합니다 (YOUTUBE_KEY, GEMINI_KEY)
-    MY_YT_KEY = st.secrets.get("YOUTUBE_KEY")
-    MY_GEMINI_KEY = st.secrets.get("GEMINI_KEY")
+    MY_YT_KEY = st.secrets.get("YOUTUBE_API_KEY")
+    MY_GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
 
     col_date1, col_date2 = st.columns(2)
     with col_date1:
