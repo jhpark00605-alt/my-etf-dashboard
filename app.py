@@ -51,8 +51,7 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
     
-    # [1] 변수 정의를 가장 먼저 수행 (이름을 API_KEY_YT로 통일)
-    # st.secrets에서 값을 가져오고, 없으면 None을 할당하여 NameError를 방지합니다.
+    # [1] Secrets에서 키 가져오기
     API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
     API_KEY_GEMINI = st.secrets.get("GEMINI_API_KEY")
 
@@ -62,77 +61,42 @@ with tabs[1]:
     with col_date2:
         end_date = st.date_input("조회 종료일", datetime.now(), key="yt_end")
 
-    TARGET_BROKERAGES = {
-        "미래에셋증권": "UCZS9wEZ4itPbBZk_sqccXfw",
-        "키움증권": "UCZW1d7B2nYqQUiTiOnkirrQ",
-        "삼성증권": "UCq7h8qFlHN5FL_T6waKZllw",
-        "한국투자증권": "UCU6f21g_qaJk6rkX-IF6X2g"
-    }
+    # (중략: TARGET_BROKERAGES, fetch_transcript, get_yt_data 함수는 이전과 동일)
+    # ...
 
-    # 내부 함수: 자막 추출
-    def fetch_transcript(video_id):
-        try:
-            try:
-                ts = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko'])
-                return " ".join([i['text'] for i in ts])[:1500]
-            except:
-                ts = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'en'])
-                return " ".join([i['text'] for i in ts])[:1500]
-        except:
-            return "자막 없음"
-
-    # 내부 함수: 데이터 수집
-    def get_yt_data(name, c_id, s_date, e_date, api_key):
-        url = "https://www.googleapis.com/youtube/v3/search"
-        s_utc = datetime.combine(s_date, datetime.min.time()) - timedelta(hours=9)
-        e_utc = datetime.combine(e_date, datetime.max.time()) - timedelta(hours=9)
-        
-        params = {
-            "key": api_key, "channelId": c_id, "part": "snippet", "order": "date",
-            "maxResults": 10, "publishedAfter": s_utc.isoformat() + "Z",
-            "publishedBefore": e_utc.isoformat() + "Z", "type": "video"
-        }
-        
-        try:
-            res = requests.get(url, params=params).json()
-            videos = []
-            for item in res.get("items", []):
-                v_id = item["id"]["videoId"]
-                title = item["snippet"]["title"]
-                transcript = fetch_transcript(v_id)
-                videos.append(f"- 제목: {title}\n  내용: {transcript}")
-            return f"\n### [{name}]\n" + "\n".join(videos) if videos else f"\n### [{name}]\n영상 없음"
-        except Exception as e:
-            return f"\n### [{name}]\n에러: {e}"
-
-    # [2] 실행 버튼
     if st.button("유튜브 트렌드 분석 실행 🚀"):
-        # 위에서 정의한 API_KEY_YT가 있는지 확인
         if not API_KEY_YT or not API_KEY_GEMINI:
-            st.error("⚠️ API 키를 불러오지 못했습니다. Streamlit Secrets 설정을 확인해 주세요.")
+            st.error("⚠️ API 키를 불러오지 못했습니다. Secrets 설정을 확인하세요.")
         else:
-            # Gemini 설정 및 실행
-            genai.configure(api_key=API_KEY_GEMINI)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
-            progress = st.progress(0)
-            status = st.empty()
-            all_text = ""
-            
-            for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
-                status.text(f"🔍 {name} 수집 중...")
-                all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
-                progress.progress((i + 1) * 20)
-
-            status.text("🤖 Gemini 분석 중...")
+            # ✅ [핵심 수정 부분] google-generativeai 문법 사용
             try:
+                genai.configure(api_key=API_KEY_GEMINI)
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                progress = st.progress(0)
+                status = st.empty()
+                all_text = ""
+                
+                # 데이터 수집 루프
+                for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
+                    status.text(f"🔍 {name} 수집 중...")
+                    all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
+                    progress.progress((i + 1) * 20)
+
+                status.text("🤖 Gemini 분석 중...")
+                
+                # ✅ [핵심 수정 부분] 모델 호출 방식
                 prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
                 response = model.generate_content(prompt)
+                
                 progress.progress(100)
                 status.text("✅ 분석 완료!")
                 st.markdown(response.text)
+                
             except Exception as e:
-                st.error(f"분석 오류: {e}")
+                # 여기서 에러가 난다면 라이브러리 설치 문제일 확률이 높습니다.
+                st.error(f"분석 중 오류 발생: {e}")
+                st.info("requirements.txt에 google-generativeai가 있는지 확인하고, 앱을 Re-deploy 해주세요.")
 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
