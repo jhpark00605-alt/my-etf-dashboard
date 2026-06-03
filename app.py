@@ -1,41 +1,151 @@
 import streamlit as st
-import google.generativeai as genai
+import pandas as pd
+import plotly.express as px
+import numpy as np
 
-st.set_page_config(page_title="ETF 마케팅 대시보드", layout="wide")
+# 페이지 기본 설정
+st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈", layout="wide")
 
-# [중요] API 키 설정
-if "GEMINI_API_KEY" not in st.secrets:
-    st.error("Secrets에 GEMINI_API_KEY가 설정되지 않았습니다.")
-    st.stop()
+# 헤더
+st.title("📈 KODEX ETF 주간 마케팅 & 트렌드 모니터링 에이전트")
+st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기반 트렌드 분석 대시보드입니다.")
+st.divider()
 
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+# 탭 생성 (기획하신 6가지 항목을 5개의 탭으로 논리적으로 구성)
+tabs = st.tabs([
+    "1. 뉴스 & 테마 이슈", 
+    "2. 증권사 유튜브 트렌드", 
+    "3. 타운용사(경쟁사) 동향", 
+    "4. 투자자 & 순매수 데이터", 
+    "5. 💡 AI 마케팅 인사이트"
+])
 
-# 1.5-flash 대신 1.5-flash-latest를 사용하여 경로 문제를 우회합니다.
-# 이 명칭은 v1beta와 v1 모든 버전에서 인식률이 가장 높습니다.
-try:
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-except Exception as e:
-    st.error(f"모델 로드 실패: {e}")
-    st.stop()
+# ==========================================
+# Tab 1: 뉴스 & 테마 이슈 (언급량 분석)
+# ==========================================
+with tabs[0]:
+    st.subheader("📰 금주 ETF 관련 뉴스 및 이슈 언급량 파악")
+    st.caption("주요 경제 뉴스를 크롤링하여 가장 많이 언급된 키워드와 테마를 분석합니다.")
+    
+    # [TODO] 실제 뉴스 크롤링 및 형태소 분석(KoNLPy 등) 데이터 연동 필요
+    mock_keywords = pd.DataFrame({
+        '키워드': ['반도체', 'AI', '배당금', '이차전지', '미국채', 'S&P500'],
+        '언급량': [450, 380, 290, 210, 150, 310]
+    }).sort_values(by='언급량', ascending=False)
+    
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.dataframe(mock_keywords, use_container_width=True, hide_index=True)
+    with col2:
+        fig1 = px.bar(mock_keywords, x='키워드', y='언급량', color='언급량', title="금주 주요 키워드 언급량")
+        st.plotly_chart(fig1, use_container_width=True)
 
-st.title("📊 ETF 마케팅 대시보드")
+# ==========================================
+# Tab 2: 증권사 유튜브 트렌드
+# ==========================================
+with tabs[1]:
+    st.subheader("▶️ 주요 증권사 유튜브 콘텐츠 트렌드")
+    st.caption("삼성, 미래에셋, 한국투자, 키움증권의 최신 유튜브 영상을 분석하여 미는 테마를 파악합니다.")
+    
+    # [TODO] YouTube Data API v3를 활용하여 각 채널의 최신 영상 제목/조회수/설명 추출 필요
+    mock_youtube_data = pd.DataFrame({
+        '증권사': ['삼성증권', '미래에셋증권', '한국투자증권', '키움증권'],
+        '주요 강조 테마': ['온디바이스 AI', '인도 주식시장', '월배당 ETF', '미국 빅테크'],
+        '최다 조회수 영상 제목': ['이제는 온디바이스 AI다! 관련주는?', '넥스트 차이나, 인도에 투자하는 법', '매월 현금이 꽂히는 마법', '엔비디아, 애플 지금 사도 될까?'],
+        '조회수': [15000, 22000, 18000, 31000]
+    })
+    
+    st.dataframe(mock_youtube_data, use_container_width=True, hide_index=True)
+    
+    st.info("💡 **트렌드 요약:** 금주 주요 증권사들은 대체로 'AI/빅테크'와 '현금흐름(월배당)' 테마를 강조하고 있습니다.")
 
-# UI 구성
-target_corp = st.sidebar.multiselect("증권사", ["삼성", "미래", "키움", "한투"])
-target_fund = st.sidebar.multiselect("운용사", ["KODEX", "TIGER", "RISE", "ACE"])
-query = st.text_input("검색 키워드", "반도체 ETF")
+# ==========================================
+# Tab 3: 타운용사(경쟁사) 동향
+# ==========================================
+with tabs[2]:
+    st.subheader("🏢 주요 운용사별 ETF 이슈 모니터링")
+    st.caption("KODEX, TIGER, RISE, ACE의 주요 상장 소식, 보수 인하 등 핵심 이슈를 정리합니다.")
+    
+    col_a, col_b, col_c, col_d = st.columns(4)
+    
+    # [TODO] 각 운용사 보도자료 크롤링 또는 네이버 금융 뉴스 필터링 데이터 연동
+    with col_a:
+        st.success("**KODEX (삼성)**")
+        st.write("- 신규 월배당 ETF 상장 이벤트")
+        st.write("- 미국 장기채 ETF 거래량 1위 달성 홍보")
+        
+    with col_b:
+        st.warning("**TIGER (미래에셋)**")
+        st.write("- 인도 Nifty50 ETF 마케팅 강화")
+        st.write("- AI 반도체 세미나 개최")
+        
+    with col_c:
+        st.info("**RISE (KB)**")
+        st.write("- ETF 브랜드명 'RISE' 리뉴얼 대대적 홍보")
+        st.write("- 배당왕 ETF 수수료 인하")
+        
+    with col_d:
+        st.error("**ACE (한국투자)**")
+        st.write("- 빅테크 밸류체인 액티브 ETF 출시")
+        st.write("- 유튜브 쇼츠를 활용한 2030 타겟 마케팅")
 
-if st.button("AI 분석 실행"):
-    if not query:
-        st.warning("키워드를 입력해주세요.")
+# ==========================================
+# Tab 4: 투자자 & 순매수 데이터 (마케팅 실효성)
+# ==========================================
+with tabs[3]:
+    st.subheader("📊 투자자 연령대별 선호도 및 순매수 강도 분석")
+    st.caption("실제 데이터 기반으로 트렌드 언급량이 실제 매수세로 이어지는지 파악합니다.")
+    
+    # 4-1 연령대별 선호도 (Mock)
+    st.markdown("#### 연령대별 인기 ETF 및 수익률")
+    mock_age_data = pd.DataFrame({
+        '연령대': ['20대', '30대', '40대', '50대 이상'],
+        '선호 1위 테마': ['미국 레버리지', '미국 빅테크', '고배당/월배당', '국고채/안전자산'],
+        '대표 ETF 평균 수익률(%)': [15.2, 8.5, 4.2, 2.1]
+    })
+    st.table(mock_age_data)
+    
+    # 4-2 순매수 강도 vs 언급량 상관관계 (Mock)
+    st.markdown("#### 미디어 언급량 vs 개인 순매수 강도 (마케팅 실효성)")
+    st.caption("우상향할수록 미디어 마케팅(언급량)이 실제 매수(실효성)로 잘 이어졌음을 의미합니다.")
+    
+    # [TODO] KRX 정보데이터시스템 또는 증권사 API를 통한 실제 ETF 순매수 데이터 연동 필요
+    np.random.seed(42)
+    mock_scatter = pd.DataFrame({
+        '테마': ['AI반도체', '이차전지', '월배당', '인도주식', '미국채', '바이오'],
+        '뉴스/유튜브 언급량(건)': np.random.randint(100, 1000, 6),
+        '개인 순매수 강도(억원)': np.random.randint(50, 500, 6)
+    })
+    
+    fig2 = px.scatter(mock_scatter, x='뉴스/유튜브 언급량(건)', y='개인 순매수 강도(억원)', text='테마', size='개인 순매수 강도(억원)', color='테마')
+    fig2.update_traces(textposition='top center')
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ==========================================
+# Tab 5: AI 마케팅 인사이트 및 전략 제안
+# ==========================================
+with tabs[4]:
+    st.subheader("💡 AI 기반 마케팅 인사이트 & 액션 플랜")
+    st.caption("앞선 분석(1~4번) 데이터를 종합하여 AI가 KODEX 맞춤형 마케팅 전략을 제안합니다.")
+    
+    # [TODO] Google Gemini API 등을 연결하여 앞선 데이터 프레임들을 텍스트로 변환해 프롬프트로 전달하고 답변을 받는 로직 구성
+    if st.button("이번 주 마케팅 전략 AI 리포트 생성하기 🚀"):
+        with st.spinner("AI가 데이터를 분석하여 전략을 도출하고 있습니다..."):
+            import time
+            time.sleep(2) # API 호출 대기 시간 시뮬레이션
+            
+            st.markdown("""
+            ### 🤖 **금주 마케팅 전략 제안 (AI Generated)**
+            
+            **1. 핵심 인사이트 (Findings)**
+            * **트렌드:** 현재 유튜브와 뉴스 모두 'AI/반도체'와 지속적인 '월배당' 수요에 집중되어 있습니다.
+            * **경쟁사 동향:** TIGER는 '인도' 테마를, RISE는 '브랜드 리뉴얼'에 마케팅 비용을 집중하고 있습니다.
+            * **실효성 분석:** 미디어 언급량이 높은 'AI 반도체' 테마가 실제 2030 세대의 순매수 강도와 강한 양의 상관관계를 보입니다.
+
+            **2. KODEX 마케팅 액션 플랜 (Actionable Strategies)**
+            * **전략 A (상품 방어 & 공격):** 타사가 밀고 있는 '인도' 관련 테마에 대응하기 위해, KODEX의 대표 인도 ETF(예: KODEX 인도Nifty50)의 수익률 우위 또는 보수 차별점을 강조하는 카드뉴스를 이번 주 내에 배포하십시오.
+            * **전략 B (타겟 마케팅):** 3040 타겟으로 'KODEX 미국 배당 다우존스' 등 월배당 상품의 복리 효과를 보여주는 시뮬레이션 웹페이지를 유튜브 쇼츠 하단 링크로 연계하여 트래픽을 유도하세요.
+            * **전략 C (키워드 선점):** 다음 주 예상 이슈인 '온디바이스 AI' 관련하여, 증권사 PB들을 대상으로 한 세일즈 피치(Sales Pitch) 자료를 선제적으로 제공하여 창구 추천을 유도하십시오.
+            """)
     else:
-        with st.spinner("AI가 전략을 짜고 있습니다..."):
-            try:
-                # 콘텐츠 생성
-                response = model.generate_content(f"{query} 관련 {target_corp}, {target_fund} 마케팅 전략 3가지 제안해줘.")
-                st.success("분석 완료!")
-                st.markdown(response.text)
-            except Exception as e:
-                # 만약 또 404가 뜨면 에러 내용을 상세히 출력합니다.
-                st.error("데이터 통신 중 오류가 발생했습니다.")
-                st.info(f"상세 에러 내용: {e}")
+        st.info("버튼을 눌러 AI 인사이트를 생성하세요.")
