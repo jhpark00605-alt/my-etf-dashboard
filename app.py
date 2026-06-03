@@ -93,75 +93,111 @@ with tabs[2]:
 # Tab 4: 투자자 & 순매수 데이터 (마케팅 실효성)
 # ==========================================
 with tabs[3]:
-    st.subheader("📊 데이터 기반 마케팅 실효성 분석")
+    st.subheader("📊 주차별 순매수 강도 및 마케팅 실효성 분석")
     st.markdown("""
-    업로드하신 순매수 데이터를 바탕으로 **상품별 매수 강도**를 분석합니다.
-    * **공식:** (2주차 순매수 금액 / 1주차 순자산 금액) × 100
+    업로드하신 `ETF 순매수 데이터_260529.xlsx` 파일의 시트(주차)를 비교하여 마케팅 강도를 분석합니다.
+    * **분석 방식:** 전주(베이스) 데이터 대비 금주 데이터의 성장세 및 비중 파악
     """)
 
-    # 1. 파일 업로드 UI
-    uploaded_file = st.file_uploader("순매수 데이터 엑셀 파일(.xlsx)을 업로드해주세요", type=["xlsx"])
+    # 1. 파일 업로드
+    uploaded_file = st.file_uploader("ETF 순매수 데이터 엑셀 파일을 업로드해주세요", type=["xlsx"])
 
     if uploaded_file is not None:
         try:
-            # 엑셀 읽기
-            df = pd.read_excel(uploaded_file)
-            st.success("파일 업로드 성공!")
+            # 엑셀 파일의 모든 시트 이름 가져오기
+            xls = pd.ExcelFile(uploaded_file)
+            sheet_names = xls.sheet_names
             
-            # 데이터 미리보기
-            with st.expander("데이터 미리보기"):
-                st.dataframe(df.head())
+            # '참고사항' 시트는 분석에서 제외
+            weeks = [s for s in sheet_names if s != '참고사항']
+            
+            st.success(f"엑셀 로드 완료! 총 {len(weeks)}개의 주차 데이터가 확인되었습니다.")
 
             st.divider()
-            st.markdown("#### ⚙️ 분석 설정")
-            st.caption("분석에 사용할 컬럼을 매칭해주세요.")
-
-            # 2. 컬럼 매칭 (사용자가 직접 선택하도록 하여 오류 방지)
-            cols = df.columns.tolist()
-            col1, col2, col3 = st.columns(3)
+            st.markdown("#### ⚙️ 분석 주차 및 마케팅 타겟 설정")
             
+            col1, col2, col3 = st.columns(3)
             with col1:
-                prod_col = st.selectbox("상품명(ETF명) 컬럼", cols)
+                prev_week = st.selectbox("1주차 (기준이 될 전주 선택)", weeks, index=0)
             with col2:
-                buy_col = st.selectbox("2주차 순매수 금액 컬럼", cols)
+                curr_week = st.selectbox("2주차 (비교할 금주 선택)", weeks, index=min(1, len(weeks)-1))
             with col3:
-                aum_col = st.selectbox("1주차 순자산 금액 컬럼", cols)
+                # 엑셀에 있는 실제 투자주체 컬럼들 목록
+                investor_opts = ['개인', '은행', '금융투자', '기관', '외국인', '투신', '연기금 등']
+                target_investor = st.selectbox("마케팅 타겟 주체 선택", investor_opts, index=0)
 
-            # 3. 계산 버튼
-            if st.button("매수 강도 분석 실행 📈"):
-                # 계산 로직 (0으로 나누기 방지 처리)
-                df['매수강도(%)'] = (df[buy_col] / df[aum_col].replace(0, np.nan)) * 100
-                
-                # 결과 데이터 정리
-                result_df = df[[prod_col, buy_col, aum_col, '매수강도(%)']].sort_values(by='매수강도(%)', ascending=False)
-                
-                # 4. 결과 시각화
-                st.markdown("#### 🏆 상품별 매수 강도 결과")
-                
-                # 지표 요약
-                top_product = result_df.iloc[0]
-                st.metric(label=f"이번 주 최고 강도 상품: {top_product[prod_col]}", 
-                          value=f"{top_product['매수강도(%)']:.2f}%")
+            # 데이터 불러오기
+            df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
+            df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
 
-                # 차트 출력
-                fig = px.bar(result_df, 
-                             x=prod_col, 
-                             y='매수강도(%)', 
-                             color='매수강도(%)',
-                             text_auto='.2f',
-                             title="상품별 매수 강도 비교 (%)",
-                             color_continuous_scale='Blues',
-                             labels={'매수강도(%)': '강도 (%)', prod_col: '상품명'})
+            # 중요! 데이터 첫 줄에 있는 '전체' 총합 행 및 NaN 종목 제거 (시각화 왜곡 방지)
+            df_prev = df_prev[(df_prev['종목명'] != '전체') & (df_prev['종목명'].notna())]
+            df_curr = df_curr[(df_curr['종목명'] != '전체') & (df_curr['종목명'].notna())]
+
+            # 두 주차 데이터 종목명 기준으로 결합 (inner join)
+            merged_df = pd.merge(
+                df_prev[['종목명', target_investor]], 
+                df_curr[['종목명', target_investor]], 
+                on='종목명', 
+                suffixes=('_전주', '_금주')
+            )
+
+            # 2. 강도 계산 로직 선택
+            st.markdown("#### ⚡ 강도 계산 방식 선택")
+            formula_type = st.radio(
+                "분석에 사용할 공식을 선택하세요:",
+                (
+                    "금주 순매수 금액 / 전주 순매수 금액 (단순 성장 강도)", 
+                    "금주 순매수 금액 자체로 상품 간 백분율 비교 (금주 마케팅 집중도)"
+                )
+            )
+
+            if st.button("순매수 강도 분석 실행 🚀"):
+                if formula_type == "금주 순매수 금액 / 전주 순매수 금액 (단순 성장 강도)":
+                    # 0으로 나누기 및 마이너스 금액 분모 처리 방지 (절대값 혹은 replace 적용)
+                    merged_df['매수강도'] = (merged_df[f'{target_investor}_금주'] / merged_df[f'{target_investor}_전주'].replace(0, np.nan)) * 100
+                    title_text = f"[{target_investor}] 전주 대비 금주 순매수 성장 강도 (%)"
+                else:
+                    # 금주 순매수 총합 중 각 상품이 차지하는 백분율 비중
+                    total_curr = merged_df[f'{target_investor}_금주'].sum()
+                    merged_df['매수강도'] = (merged_df[f'{target_investor}_금주'] / total_curr) * 100
+                    title_text = f"[{target_investor}] 금주 총 순매수 중 상품별 비중 (%)"
+
+                # 결과 정렬 (상위 15개만 정렬해서 차트 가독성 확보)
+                result_df = merged_df.sort_values(by='매수강도', ascending=False).head(15)
+
+                # 3. 결과 시각화
+                st.markdown(f"### 🏆 {curr_week} 주차 마케팅 성적표")
                 
+                fig = px.bar(
+                    result_df, 
+                    x='종목명', 
+                    y='매수강도', 
+                    color='매수강도',
+                    text_auto='.1f',
+                    title=title_text,
+                    color_continuous_scale='Viridis',
+                    labels={'매수강도': '강도 (%)'}
+                )
+                fig.update_layout(xaxis_tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
 
-                # 데이터 테이블 출력
-                st.dataframe(result_df.style.highlight_max(axis=0, subset=['매수강도(%)']), use_container_width=True)
+                # 상세 데이터 테이블 제공
+                st.markdown("##### 📋 상위 종목 상세 데이터")
+                st.dataframe(
+                    result_df[['종목명', f'{target_investor}_전주', f'{target_investor}_금주', '매수강도']].style.format({
+                        f'{target_investor}_전주': '{:,.0f}',
+                        f'{target_investor}_금주': '{:,.0f}',
+                        '매수강도': '{:.2f}%'
+                    }), 
+                    use_container_width=True,
+                    hide_index=True
+                )
 
         except Exception as e:
-            st.error(f"파일을 처리하는 중 오류가 발생했습니다: {e}")
+            st.error(f"파일 분석 중 에러가 발생했습니다. 데이터 형식을 확인해주세요. 에러 내용: {e}")
     else:
-        st.info("데이터 분석을 위해 엑셀 파일을 업로드해주세요.")
+        st.info("💡 오른쪽 사이드바 혹은 파일 업로더에 'ETF 순매수 데이터_260529.xlsx' 파일을 드래그해 올려주세요.")
 
 # ==========================================
 # Tab 5: AI 마케팅 인사이트 및 전략 제안
