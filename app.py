@@ -57,8 +57,10 @@ with tabs[1]:
     st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
     
     # [설정] 미리 입력해두는 구역
-    MY_YT_KEY = "AIzaSy..." # 본인의 실제 키 입력
-    MY_GEMINI_KEY = "AIzaSy..." # 본인의 실제 키 입력
+    # 💡 st.secrets를 통해 안전하게 키를 가져옵니다.
+# 로컬에서는 secrets.toml을, 배포 서버에서는 대시보드의 Secrets를 자동으로 참조합니다.
+YOUTUBE_API_KEY = st.secrets["YOUTUBE_KEY"]
+GEMINI_API_KEY = st.secrets["GEMINI_KEY"]
 
     col_date1, col_date2 = st.columns(2)
     with col_date1:
