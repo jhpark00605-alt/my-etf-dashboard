@@ -134,7 +134,7 @@ with tabs[1]:
                 prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
                 
                 # 분석 실행
-                response = generate_with_retry(model, prompt)
+                response = model.generate_content(prompt)
                 
                 progress.progress(100)
                 status.text("✅ 분석 완료!")
