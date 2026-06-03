@@ -126,9 +126,13 @@ with tabs[3]:
                 investor_opts = ['개인', '은행', '금융투자', '기관', '외국인', '투신', '연기금 등']
                 target_investor = st.selectbox("마케팅 타겟 주체 선택", investor_opts, index=0)
 
-            # 데이터 불러오기
-            df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
-            df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
+           # 데이터를 읽어온 후
+df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
+df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
+
+# 🔥 에러 해결 코드: 선택한 투자 주체 컬럼의 하이픈(-)이나 문자를 숫자 0으로 변환
+df_prev[target_investor] = pd.to_numeric(df_prev[target_investor], errors='coerce').fillna(0)
+df_curr[target_investor] = pd.to_numeric(df_curr[target_investor], errors='coerce').fillna(0)
 
             # 중요! 데이터 첫 줄에 있는 '전체' 총합 행 및 NaN 종목 제거 (시각화 왜곡 방지)
             df_prev = df_prev[(df_prev['종목명'] != '전체') & (df_prev['종목명'].notna())]
