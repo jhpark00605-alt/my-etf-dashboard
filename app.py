@@ -117,44 +117,151 @@ with tabs[1]:
             
             all_data_buffer = ""
             
-            # 단계별 데이터 수집
-            for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
-                status_text.text(f"🔍 {name} 채널 데이터를 수집 중... ({i+1}/4)")
-                all_data_buffer += collect_youtube_data(name, c_id, start_date, end_date, yt_api_key)
-                progress_bar.progress((i + 1) * 20) # 80%까지 수집 진행률 표시
+    유튜브 자막(스크립트) 추출 함수
+# ==========================================
+def fetch_video_transcript(video_id):
+    """
+    영상 ID를 받아 자막을 추출합니다.
+    공식 한국어 자막(ko)이 없으면 자동 생성된 한국어 자막(a.ko)을 우회 수집합니다.
+    """
+    try:
+        try:
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko'])
+            full_text = " ".join([item['text'] for item in transcript_list])
+            return full_text[:2000]
+        except Exception:
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'en']) 
+            full_text = " ".join([item['text'] for item in transcript_list])
+            return full_text[:2000]
+            
+    except Exception as e:
+        return f"자막 데이터 추출 불가 (사유: {str(e)})"
 
-            # Gemini 분석
-            status_text.text("🤖 Gemini가 전략 리포트를 생성하고 있습니다...")
-            try:
-                client = genai.Client(api_key=gemini_api_key)
-                # 모델명은 안정적인 gemini-1.5-flash를 추천합니다.
-                prompt = f"""
-                당신은 자산운용사 ETF 전략실의 데이터 자동화 봇입니다. 
-                아래 수집된 증권사 유튜브 데이터를 바탕으로 마케팅 대시보드를 작성하세요.
-                내용과 무관한 이벤트/드라마 영상은 '기타'로 빼고, 투자 전략 영상 위주로 요약하세요.
+# ==========================================
+# 전수 수집 엔진 (시차 보정 탑재, 키워드 필터 제거)
+# ==========================================
+def fetch_all_youtube_data(channel_name, channel_id, start_date_str, end_date_str):
+    print(f"\n-> {channel_name} 채널 기간 내 전수 스캔 시작 ({start_date_str} ~ {end_date_str})...")
+    url = "https://www.googleapis.com/youtube/v3/search"
+    
+    # [시차 보정] 한국 시각(KST)을 입력받아 유튜브 서버 기준시(UTC)로 9시간 역산 변환
+    start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date_str, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+    
+    start_dt_utc = start_dt - timedelta(hours=9)
+    end_dt_utc = end_dt - timedelta(hours=9)
+    
+    published_after = start_dt_utc.isoformat() + "Z"
+    published_before = end_dt_utc.isoformat() + "Z"
+    
+    params = {
+        "key": YOUTUBE_API_KEY,
+        "channelId": channel_id,
+        "part": "snippet",
+        "order": "date",
+        "maxResults": 15, # 해당 기간 내 최대 15개 영상 전수 조사
+        "publishedAfter": published_after,
+        "publishedBefore": published_before,
+        "type": "video"
+    }
+    
+    try:
+        response = requests.get(url, params=params).json()
+        video_entries = []
+        
+        for item in response.get("items", []):
+            video_id = item["id"]["videoId"]
+            title = item["snippet"]["title"]
+            desc = item["snippet"]["description"]
+            pub_at = item["snippet"]["publishedAt"][:10]
+            
+            print(f"   [수집 완료] {title[:25]}...")
+            transcript = fetch_video_transcript(video_id)
+            
+            video_entry = (
+                f"- [업로드일: {pub_at}] 제목: {title}\n"
+                f"  설명: {desc}\n"
+                f"  내용(자막): {transcript}\n"
+            )
+            video_entries.append(video_entry)
+                
+        # 구조화 데이터 패키징
+        result_payload = f"■ 해당 기간 업로드 확인된 총 영상: {len(video_entries)}건\n\n"
+        result_payload += "[전체 영상 세부 목록]\n" + "\n".join(video_entries) if video_entries else "[전체 영상 세부 목록] 없음\n"
+        
+        print(f"   [완료] 총 {len(video_entries)}건의 영상 데이터 및 자막 버퍼 적재 완료")
+        return result_payload
 
-                [데이터]
-                {all_data_buffer}
+    except Exception as e:
+        return f"데이터 수집 중 치명적 오류 발생: {str(e)}"
 
-                [출력 형식]
-                1. 증권사별 분석 표 (콘텐츠 현황, 핵심 테마, 운용사 대응 방향)
-                2. 이번 주 원포인트 마켓 트렌드 요약
-                """
-                
-                response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
-                
-                progress_bar.progress(100)
-                status_text.text("✅ 분석 완료!")
-                
-                # 결과 출력
-                st.divider()
-                st.markdown(response.text)
-                
-                with st.expander("📝 수집된 원본 텍스트 데이터 확인"):
-                    st.text(all_data_buffer)
+# ==========================================
+# Gemini 모니터링 대시보드 변환 엔진
+# ==========================================
+def generate_filtered_report(raw_data, start_date, end_date):
+    print("\n[시스템] 전수 수집 데이터 취합 완료. Gemini가 이메일용 요약 대시보드를 구축합니다...")
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    
+    prompt = f"""
+    당신은 자산운용사 ETF 전략실의 데이터 자동화 봇입니다. 
+    출근하는 팀원들이 이메일 화면에서 3초 만에 핵심만 파악할 수 있도록, 불필요한 미사여구(서론, 결론, 공지사항)를 완전히 제외하고 아래 [출력 포맷]에 맞춰 데이터만 가공해 주세요.
 
-            except Exception as e:
-                st.error(f"Gemini 분석 중 오류가 발생했습니다: {e}")
+    ⚠️ [주의] 수집된 데이터에는 웹드라마, 브이로그, 단순 예능, 이벤트 안내 등 ETF/투자 전략과 무관한 콘텐츠가 섞여 있을 수 있습니다. 데이터의 [제목], [설명], [자막]을 당신이 직접 판단하여 무관한 콘텐츠는 포맷의 '기타' 수치로 빼고, 오직 '진짜 투자/상품 관련 콘텐츠'만 추출하여 테마와 액션 플랜을 도출하세요.
+
+    [수집된 데이터셋]
+    {raw_data}
+
+    [출력 포맷]
+    ### 📊 주간 증권사 채널 요약 ({start_date} ~ {end_date})
+
+    | 증권사 | 콘텐츠 현황 | 이번 주 핵심 테마 (TOP 1) | 운용사 즉시 대응 방향 (Action Plan) |
+    | :--- | :--- | :--- | :--- |
+    | 미래에셋 | 주식/투자 N건<br>기타(드라마/이벤트) N건 | **[핵심단어]** (예: 미국 배당성장) | - **타깃:** [MTS/PB/상품부 중 택1]<br>- **내용:** [제안할 자사 ETF 및 세일즈 명분 핵심 1줄] |
+    | 키움증권 | 주식/투자 N건<br>기타(드라마/이벤트) N건 | **[핵심단어]** | - **타깃:** [MTS/PB/상품부 중 택1]<br>- **내용:** [제안할 자사 ETF 및 세일즈 명분 핵심 1줄] |
+    | 삼성증권 | 주식/투자 N건<br>기타(드라마/이벤트) N건 | **[핵심단어]** | - **타깃:** [MTS/PB/상품부 중 택1]<br>- **내용:** [제안할 자사 ETF 및 세일즈 명분 핵심 1줄] |
+    | 한국투자 | 주식/투자 N건<br>기타(드라마/이벤트) N건 | **[핵심단어]** | - **타깃:** [MTS/PB/상품부 중 택1]<br>- **내용:** [제안할 자사 ETF 및 세일즈 명분 핵심 1줄] |
+
+    ---
+
+    ### 💡 이번 주 원포인트 마켓 트렌드
+    - **종합 동향:** (예: 이번 주 4대 증권사 모두 반도체 밸류에이션 재평가를 언급하며 테크 중심 마케팅으로 일제히 회귀함. 채권/금리형 소폭 둔화.)
+    - **공략 기회:** (예: 키움이 배당 마케팅에 예산을 태우기 시작했으므로 당사 커버드콜 상품 매칭 제안 적기.)
+    """
+    
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        return response.text
+    except Exception as e:
+        return f"Gemini 리포트 생성 실패: {str(e)}"
+
+# ==========================================
+# 메인 제어문
+# ==========================================
+if __name__ == "__main__":
+    print("==================================================")
+    print("  자동 메일링 연동형 증권사 모니터링 시스템 가동   ")
+    print("==================================================")
+    
+    # 💡 조회 및 분석을 원하시는 기간을 입력하세요 (YYYY-MM-DD)
+    START_DATE = "2026-05-24"
+    END_DATE = "2026-05-31"
+    
+    aggregated_payload = ""
+    
+    for name, channel_id in TARGET_BROKERAGES.items():
+        # 전수 수집 함수 호출
+        channel_result = fetch_all_youtube_data(name, channel_id, START_DATE, END_DATE)
+        aggregated_payload += f"\n### [하우스 채널명: {name}]\n{channel_result}\n"
+        aggregated_payload += "==================================================\n"
+        
+    # Gemini 분석 수행
+    final_clean_report = generate_filtered_report(aggregated_payload, START_DATE, END_DATE)
+    
+    print("==================================================")
+    print(final_clean_report)
 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
