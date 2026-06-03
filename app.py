@@ -5,10 +5,15 @@ import google.generativeai as genai
 st.set_page_config(page_title="ETF 통합 마케팅 대시보드", layout="wide")
 
 # 2. API 설정 (반드시 Streamlit Cloud Secrets에 GEMINI_API_KEY가 등록되어 있어야 합니다)
+st.set_page_config(page_title="ETF 통합 마케팅 대시보드", layout="wide")
+
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # 가장 안정적인 모델 지정
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    # [핵심 수정] models/ 접두사를 명시적으로 추가합니다.
+    # 이것이 가장 많은 404 에러를 해결하는 방법입니다.
+    model = genai.GenerativeModel('models/gemini-1.5-flash')
+    
 except Exception as e:
     st.error(f"API 설정 오류: {e}")
     st.stop()
