@@ -51,16 +51,13 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
     
-    # [1] 변수 정의를 가장 위로 올립니다 (중요!)
-    # 분석 대상 채널 ID (정의가 되어 있어야 아래 루프에서 사용 가능합니다)
+    # 1. 설정 및 초기화
     TARGET_BROKERAGES = {
         "미래에셋증권": "UCZS9wEZ4itPbBZk_sqccXfw",
         "키움증권": "UCZW1d7B2nYqQUiTiOnkirrQ",
         "삼성증권": "UCq7h8qFlHN5FL_T6waKZllw",
         "한국투자증권": "UCU6f21g_qaJk6rkX-IF6X2g"
     }
-
-    # API 키 가져오기
     API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
     API_KEY_GEMINI = st.secrets.get("GEMINI_API_KEY")
 
@@ -70,7 +67,7 @@ with tabs[1]:
     with col_date2:
         end_date = st.date_input("조회 종료일", datetime.now(), key="yt_end")
 
-    # [2] 내부 함수 정의
+    # 2. 내부 함수 정의
     def fetch_transcript(video_id):
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
@@ -91,7 +88,7 @@ with tabs[1]:
         
         params = {
             "key": api_key, "channelId": c_id, "part": "snippet", "order": "date",
-            "maxResults": 10, "publishedAfter": s_utc.isoformat() + "Z",
+            "maxResults": 5, "publishedAfter": s_utc.isoformat() + "Z",
             "publishedBefore": e_utc.isoformat() + "Z", "type": "video"
         }
         
@@ -106,46 +103,23 @@ with tabs[1]:
             return f"\n### [{name}]\n" + "\n".join(videos) if videos else f"\n### [{name}]\n영상 없음"
         except Exception as e:
             return f"\n### [{name}]\n에러: {e}"
-            
-    
-    # [3] 실행 버튼
+
+    # 3. 실행 로직
     if st.button("유튜브 트렌드 분석 실행 🚀"):
         if not API_KEY_YT or not API_KEY_GEMINI:
-            st.error("⚠️ API 키가 설정되지 않았습니다.")
+            st.error("⚠️ API 키를 불러오지 못했습니다. Secrets 설정을 확인하세요.")
         else:
             try:
-                # [핵심] genai.configure 호출
-                genai.configure(api_key=API_KEY_GEMINI)
+                import time
+                import google.generativeai as genai
                 
-                # [핵심] 모델 지정 ('models/' 접두어 없이 사용)
+                genai.configure(api_key=API_KEY_GEMINI)
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 
                 progress = st.progress(0)
                 status = st.empty()
                 all_text = ""
-
-                status.text("🤖 Gemini 분석 중...")
-            try:
-                prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
                 
-                # 429 에러 대응: 1번 재시도 로직
-                try:
-                    response = model.generate_content(prompt)
-                except Exception as e:
-                    if "429" in str(e):
-                        status.text("⏳ 제한 초과, 30초 대기 후 재시도 중...")
-                        time.sleep(30)
-                        response = model.generate_content(prompt)
-                    else:
-                        raise e
-                
-                progress.progress(100)
-                status.text("✅ 분석 완료!")
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"분석 중 오류 발생: {e}")
-                
-                # 수집 루프
                 for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
                     status.text(f"🔍 {name} 수집 중...")
                     all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
@@ -154,8 +128,15 @@ with tabs[1]:
                 status.text("🤖 Gemini 분석 중...")
                 prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
                 
-                # 분석 실행
-                response = model.generate_content(prompt)
+                try:
+                    response = model.generate_content(prompt)
+                except Exception as e:
+                    if "429" in str(e):
+                        status.text("⏳ 요청 제한 초과, 30초 대기 후 재시도...")
+                        time.sleep(30)
+                        response = model.generate_content(prompt)
+                    else:
+                        raise e
                 
                 progress.progress(100)
                 status.text("✅ 분석 완료!")
@@ -163,7 +144,6 @@ with tabs[1]:
                 
             except Exception as e:
                 st.error(f"분석 중 오류 발생: {e}")
-                st.info("여전히 오류가 발생한다면, 오른쪽 하단 'Manage app' > 'Reboot'를 눌러 앱을 완전히 재시작해 주세요.")
                 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
