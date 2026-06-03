@@ -92,53 +92,42 @@ with tabs[2]:
 # ==========================================
 # Tab 4: 투자자 & 순매수 데이터 (마케팅 실효성)
 # ==========================================
+# ==========================================
+# Tab 4: 투자자 & 순매수 데이터 (문법 오류 수정본)
+# ==========================================
 with tabs[3]:
     st.subheader("📊 주차별 순매수 강도 및 마케팅 실효성 분석")
-    st.markdown("""
-    업로드하신 `ETF 순매수 데이터_260529.xlsx` 파일의 시트(주차)를 비교하여 마케팅 강도를 분석합니다.
-    * **분석 방식:** 전주(베이스) 데이터 대비 금주 데이터의 성장세 및 비중 파악
-    """)
-
-    # 1. 파일 업로드
+    
     uploaded_file = st.file_uploader("ETF 순매수 데이터 엑셀 파일을 업로드해주세요", type=["xlsx"])
 
     if uploaded_file is not None:
-        try:
-            # 엑셀 파일의 모든 시트 이름 가져오기
+        try: # 1. 여기서 try가 시작됩니다
+            # 엑셀 파일 로드
             xls = pd.ExcelFile(uploaded_file)
-            sheet_names = xls.sheet_names
+            weeks = [s for s in xls.sheet_names if s != '참고사항']
             
-            # '참고사항' 시트는 분석에서 제외
-            weeks = [s for s in sheet_names if s != '참고사항']
-            
-            st.success(f"엑셀 로드 완료! 총 {len(weeks)}개의 주차 데이터가 확인되었습니다.")
-
             st.divider()
-            st.markdown("#### ⚙️ 분석 주차 및 마케팅 타겟 설정")
-            
             col1, col2, col3 = st.columns(3)
             with col1:
-                prev_week = st.selectbox("1주차 (기준이 될 전주 선택)", weeks, index=0)
+                prev_week = st.selectbox("1주차 (전주)", weeks, index=0)
             with col2:
-                curr_week = st.selectbox("2주차 (비교할 금주 선택)", weeks, index=min(1, len(weeks)-1))
+                curr_week = st.selectbox("2주차 (금주)", weeks, index=min(1, len(weeks)-1))
             with col3:
-                # 엑셀에 있는 실제 투자주체 컬럼들 목록
                 investor_opts = ['개인', '은행', '금융투자', '기관', '외국인', '투신', '연기금 등']
-                target_investor = st.selectbox("마케팅 타겟 주체 선택", investor_opts, index=0)
+                target_investor = st.selectbox("분석 타겟", investor_opts, index=0)
 
-           # 데이터를 읽어온 후
-df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
-df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
+            # 데이터 로드 및 전처리
+            df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
+            df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
 
-# 🔥 에러 해결 코드: 선택한 투자 주체 컬럼의 하이픈(-)이나 문자를 숫자 0으로 변환
-df_prev[target_investor] = pd.to_numeric(df_prev[target_investor], errors='coerce').fillna(0)
-df_curr[target_investor] = pd.to_numeric(df_curr[target_investor], errors='coerce').fillna(0)
-
-            # 중요! 데이터 첫 줄에 있는 '전체' 총합 행 및 NaN 종목 제거 (시각화 왜곡 방지)
+            # '전체' 행 제외 및 숫자 변환 (하이픈 에러 방지)
             df_prev = df_prev[(df_prev['종목명'] != '전체') & (df_prev['종목명'].notna())]
             df_curr = df_curr[(df_curr['종목명'] != '전체') & (df_curr['종목명'].notna())]
+            
+            df_prev[target_investor] = pd.to_numeric(df_prev[target_investor], errors='coerce').fillna(0)
+            df_curr[target_investor] = pd.to_numeric(df_curr[target_investor], errors='coerce').fillna(0)
 
-            # 두 주차 데이터 종목명 기준으로 결합 (inner join)
+            # 데이터 결합
             merged_df = pd.merge(
                 df_prev[['종목명', target_investor]], 
                 df_curr[['종목명', target_investor]], 
@@ -146,62 +135,23 @@ df_curr[target_investor] = pd.to_numeric(df_curr[target_investor], errors='coerc
                 suffixes=('_전주', '_금주')
             )
 
-            # 2. 강도 계산 로직 선택
-            st.markdown("#### ⚡ 강도 계산 방식 선택")
-            formula_type = st.radio(
-                "분석에 사용할 공식을 선택하세요:",
-                (
-                    "금주 순매수 금액 / 전주 순매수 금액 (단순 성장 강도)", 
-                    "금주 순매수 금액 자체로 상품 간 백분율 비교 (금주 마케팅 집중도)"
-                )
-            )
-
-            if st.button("순매수 강도 분석 실행 🚀"):
-                if formula_type == "금주 순매수 금액 / 전주 순매수 금액 (단순 성장 강도)":
-                    # 0으로 나누기 및 마이너스 금액 분모 처리 방지 (절대값 혹은 replace 적용)
-                    merged_df['매수강도'] = (merged_df[f'{target_investor}_금주'] / merged_df[f'{target_investor}_전주'].replace(0, np.nan)) * 100
-                    title_text = f"[{target_investor}] 전주 대비 금주 순매수 성장 강도 (%)"
-                else:
-                    # 금주 순매수 총합 중 각 상품이 차지하는 백분율 비중
-                    total_curr = merged_df[f'{target_investor}_금주'].sum()
-                    merged_df['매수강도'] = (merged_df[f'{target_investor}_금주'] / total_curr) * 100
-                    title_text = f"[{target_investor}] 금주 총 순매수 중 상품별 비중 (%)"
-
-                # 결과 정렬 (상위 15개만 정렬해서 차트 가독성 확보)
+            if st.button("분석 실행 🚀"):
+                # 금주 비중(%)으로 계산
+                total_curr = merged_df[f'{target_investor}_금주'].sum()
+                merged_df['매수강도'] = (merged_df[f'{target_investor}_금주'] / total_curr) * 100
+                
                 result_df = merged_df.sort_values(by='매수강도', ascending=False).head(15)
 
-                # 3. 결과 시각화
                 st.markdown(f"### 🏆 {curr_week} 주차 마케팅 성적표")
-                
-                fig = px.bar(
-                    result_df, 
-                    x='종목명', 
-                    y='매수강도', 
-                    color='매수강도',
-                    text_auto='.1f',
-                    title=title_text,
-                    color_continuous_scale='Viridis',
-                    labels={'매수강도': '강도 (%)'}
-                )
-                fig.update_layout(xaxis_tickangle=-45)
+                fig = px.bar(result_df, x='종목명', y='매수강도', color='매수강도', text_auto='.1f')
                 st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(result_df, use_container_width=True)
 
-                # 상세 데이터 테이블 제공
-                st.markdown("##### 📋 상위 종목 상세 데이터")
-                st.dataframe(
-                    result_df[['종목명', f'{target_investor}_전주', f'{target_investor}_금주', '매수강도']].style.format({
-                        f'{target_investor}_전주': '{:,.0f}',
-                        f'{target_investor}_금주': '{:,.0f}',
-                        '매수강도': '{:.2f}%'
-                    }), 
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-        except Exception as e:
-            st.error(f"파일 분석 중 에러가 발생했습니다. 데이터 형식을 확인해주세요. 에러 내용: {e}")
+        except Exception as e: # 2. try의 짝꿍인 except가 반드시 있어야 합니다!
+            st.error(f"분석 중 오류가 발생했습니다: {e}")
+            
     else:
-        st.info("💡 오른쪽 사이드바 혹은 파일 업로더에 파일을 드래그해 올려주세요.")
+        st.info("💡 엑셀 파일을 업로드하면 분석을 시작합니다.")
 
 # ==========================================
 # Tab 5: AI 마케팅 인사이트 및 전략 제안
