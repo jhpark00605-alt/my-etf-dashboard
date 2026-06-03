@@ -52,22 +52,25 @@ with tabs[1]:
     st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
     st.markdown("4대 증권사 채널의 영상을 전수 조사하여 **Gemini**가 마케팅 전략을 도출합니다.")
 
-    YOUTUBE_API_KEY = st.secrets["YOUTUBE_KEY"]
-GEMINI_API_KEY = st.secrets["GEMINI_KEY"]
-
 # 1. 설정 섹션
-    with st.expander("🔑 API 설정 및 분석 기간 선택", expanded=True):
-        col_api1, col_api2 = st.columns(2)
-        with col_api1:
-            yt_api_key = st.text_input("YouTube API Key", type="password", help="Google Cloud Console에서 발급받은 키")
-        with col_api2:
-            gemini_api_key = st.text_input("Gemini API Key", type="password", help="AI Studio에서 발급받은 키")
-        
-        col_date1, col_date2 = st.columns(2)
-        with col_date1:
-            start_date = st.date_input("조회 시작일", datetime.now() - timedelta(days=7))
-        with col_date2:
-            end_date = st.date_input("조회 종료일", datetime.now())
+    with tabs[1]:
+    st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
+    
+    # [설정] 미리 입력해두는 구역
+    MY_YT_KEY = "AIzaSy..." # 본인의 실제 키 입력
+    MY_GEMINI_KEY = "AIzaSy..." # 본인의 실제 키 입력
+
+    col_date1, col_date2 = st.columns(2)
+    with col_date1:
+        start_date = st.date_input("조회 시작일", datetime.now() - timedelta(days=7))
+    with col_date2:
+        end_date = st.date_input("조회 종료일", datetime.now())
+
+    # ... (나머지 수집 함수 및 분석 로직은 이전과 동일) ...
+
+    if st.button("유튜브 트렌드 분석 실행 🚀"):
+        # 함수 호출 시 미리 입력한 MY_YT_KEY와 MY_GEMINI_KEY를 사용하게 됩니다.
+        # 예: collect_youtube_data(..., api_key=MY_YT_KEY)
 
     # 분석 대상 채널 정보
     TARGET_BROKERAGES = {
