@@ -50,12 +50,11 @@ with tabs[0]:
 # ==========================================
 with tabs[1]:
     st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
-    st.markdown("4대 증권사 채널의 영상을 전수 조사하여 **Gemini**가 마케팅 전략을 도출합니다.")
-
-    # [설정] st.secrets에서 키 가져오기
-    # Secrets에 저장된 이름과 반드시 일치해야 합니다 (YOUTUBE_KEY, GEMINI_KEY)
-    MY_YT_KEY = st.secrets.get("YOUTUBE_API_KEY")
-    MY_GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
+    
+    # [1] 변수 정의를 가장 먼저 수행 (이름을 API_KEY_YT로 통일)
+    # st.secrets에서 값을 가져오고, 없으면 None을 할당하여 NameError를 방지합니다.
+    API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
+    API_KEY_GEMINI = st.secrets.get("GEMINI_API_KEY")
 
     col_date1, col_date2 = st.columns(2)
     with col_date1:
@@ -63,7 +62,6 @@ with tabs[1]:
     with col_date2:
         end_date = st.date_input("조회 종료일", datetime.now(), key="yt_end")
 
-    # 분석 대상 채널 정보
     TARGET_BROKERAGES = {
         "미래에셋증권": "UCZS9wEZ4itPbBZk_sqccXfw",
         "키움증권": "UCZW1d7B2nYqQUiTiOnkirrQ",
@@ -71,61 +69,49 @@ with tabs[1]:
         "한국투자증권": "UCU6f21g_qaJk6rkX-IF6X2g"
     }
 
-    # 1. 유튜브 자막(스크립트) 추출 함수 (주석 기호 # 추가됨)
-    def fetch_video_transcript(video_id):
+    # 내부 함수: 자막 추출
+    def fetch_transcript(video_id):
         try:
             try:
-                # 한국어 자막 시도
-                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko'])
-                return " ".join([item['text'] for item in transcript_list])[:1500]
+                ts = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko'])
+                return " ".join([i['text'] for i in ts])[:1500]
             except:
-                # 한국어 없을 시 영어/한국어 자동생성 시도
-                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'en']) 
-                return " ".join([item['text'] for item in transcript_list])[:1500]
-        except Exception as e:
-            return f"자막 없음 ({str(e)})"
+                ts = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'en'])
+                return " ".join([i['text'] for i in ts])[:1500]
+        except:
+            return "자막 없음"
 
-    # 2. 전수 수집 엔진 (시차 보정 포함)
-    def fetch_all_youtube_data(channel_name, channel_id, s_date, e_date, api_key):
+    # 내부 함수: 데이터 수집
+    def get_yt_data(name, c_id, s_date, e_date, api_key):
         url = "https://www.googleapis.com/youtube/v3/search"
-        
-        # 한국 시각(KST) -> UTC 변환
-        start_dt_utc = datetime.combine(s_date, datetime.min.time()) - timedelta(hours=9)
-        end_dt_utc = datetime.combine(e_date, datetime.max.time()) - timedelta(hours=9)
+        s_utc = datetime.combine(s_date, datetime.min.time()) - timedelta(hours=9)
+        e_utc = datetime.combine(e_date, datetime.max.time()) - timedelta(hours=9)
         
         params = {
-            "key": api_key,
-            "channelId": channel_id,
-            "part": "snippet",
-            "order": "date",
-            "maxResults": 10,
-            "publishedAfter": start_dt_utc.isoformat() + "Z",
-            "publishedBefore": end_dt_utc.isoformat() + "Z",
-            "type": "video"
+            "key": api_key, "channelId": c_id, "part": "snippet", "order": "date",
+            "maxResults": 10, "publishedAfter": s_utc.isoformat() + "Z",
+            "publishedBefore": e_utc.isoformat() + "Z", "type": "video"
         }
         
         try:
             res = requests.get(url, params=params).json()
-            video_entries = []
+            videos = []
             for item in res.get("items", []):
                 v_id = item["id"]["videoId"]
                 title = item["snippet"]["title"]
-                desc = item["snippet"]["description"]
-                pub_at = item["snippet"]["publishedAt"][:10]
-                transcript = fetch_video_transcript(v_id)
-                
-                video_entries.append(f"- [{pub_at}] 제목: {title}\n  내용: {transcript}")
-            
-            return f"\n### [{channel_name}]\n" + "\n".join(video_entries) if video_entries else f"\n### [{channel_name}]\n조회된 영상 없음"
+                transcript = fetch_transcript(v_id)
+                videos.append(f"- 제목: {title}\n  내용: {transcript}")
+            return f"\n### [{name}]\n" + "\n".join(videos) if videos else f"\n### [{name}]\n영상 없음"
         except Exception as e:
-            return f"\n### [{channel_name}]\n수집 오류: {e}"
+            return f"\n### [{name}]\n에러: {e}"
 
-   # [실행 버튼 클릭 시]
+    # [2] 실행 버튼
     if st.button("유튜브 트렌드 분석 실행 🚀"):
+        # 위에서 정의한 API_KEY_YT가 있는지 확인
         if not API_KEY_YT or not API_KEY_GEMINI:
-            st.error("⚠️ API 키를 확인해 주세요.")
+            st.error("⚠️ API 키를 불러오지 못했습니다. Streamlit Secrets 설정을 확인해 주세요.")
         else:
-            # --- Gemini 설정 부분 (이 부분이 변경되었습니다) ---
+            # Gemini 설정 및 실행
             genai.configure(api_key=API_KEY_GEMINI)
             model = genai.GenerativeModel('gemini-1.5-flash')
             
@@ -140,15 +126,13 @@ with tabs[1]:
 
             status.text("🤖 Gemini 분석 중...")
             try:
-                # 분석 실행 (함수 호출 방식 변경)
                 prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
                 response = model.generate_content(prompt)
-                
                 progress.progress(100)
                 status.text("✅ 분석 완료!")
                 st.markdown(response.text)
             except Exception as e:
-                st.error(f"Gemini 분석 오류: {e}")
+                st.error(f"분석 오류: {e}")
 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
