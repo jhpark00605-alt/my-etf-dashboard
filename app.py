@@ -110,24 +110,45 @@ with tabs[1]:
 
     # 3. 실행 로직
     if st.button("유튜브 트렌드 분석 실행 🚀"):
-        if not API_KEY_GEMINI:
-            st.error("⚠️ GEMINI_API_KEY를 확인하세요.")
+        if not API_KEY_YT or not API_KEY_GEMINI:
+            st.error("⚠️ API 키를 불러오지 못했습니다. Secrets 설정을 확인하세요.")
         else:
             try:
                 import google.generativeai as genai
-                
-                # 안정적인 설정 방식
                 genai.configure(api_key=API_KEY_GEMINI)
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 
-                # 분석 실행
-                prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
-                response = model.generate_content(prompt)
+                # 1. 여기서 변수를 먼저 정의하고 초기화합니다.
+                all_text = "" 
                 
-                st.markdown(response.text)
+                progress = st.progress(0)
+                status = st.empty()
+                
+                # 2. 데이터 수집 루프
+                for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
+                    status.text(f"🔍 {name} 수집 중...")
+                    # 루프 내에서 데이터를 누적합니다.
+                    data = get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
+                    all_text += data
+                    progress.progress((i + 1) * 25) # 4개 채널이므로 25%씩 증가
+
+                # 3. 데이터가 수집되었는지 확인 후 분석
+                if not all_text.strip():
+                    st.warning("수집된 데이터가 없습니다. 날짜를 확인해 보세요.")
+                else:
+                    status.text("🤖 Gemini 분석 중...")
+                    prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
+                    
+                    # 4. 분석 실행
+                    response = model.generate_content(prompt)
+                    
+                    progress.progress(100)
+                    status.text("✅ 분석 완료!")
+                    st.markdown("---")
+                    st.markdown(response.text)
                 
             except Exception as e:
-                st.error(f"분석 오류: {e}")
+                st.error(f"분석 중 오류 발생: {e}")
                 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
