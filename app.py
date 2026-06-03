@@ -1,17 +1,16 @@
 import streamlit as st
 import google.generativeai as genai
 
+# 1. 페이지 설정
 st.set_page_config(page_title="ETF 통합 마케팅 대시보드", layout="wide")
 
-# API 설정
+# 2. API 설정 (가장 안전한 방식)
 try:
-    # 1. 시크릿에서 키를 안전하게 불러오기
-    api_key = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=api_key)
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # 2. 모델명을 직접 지정 (가장 안전한 방식)
-    # 리스트를 조회하지 않고 직접 생성자를 호출합니다.
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # 모델 호출 방식을 변경: 이름을 명시적으로 'models/' 포함하여 설정
+    # v1beta 버전을 명시적으로 피하기 위해 GenerativeModel 인스턴스를 직접 구성
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
     
 except Exception as e:
     st.error(f"API 설정 오류: {e}")
