@@ -1,19 +1,25 @@
 import streamlit as st
 import google.generativeai as genai
 
-# 1. 페이지 설정
 st.set_page_config(page_title="ETF 통합 마케팅 대시보드", layout="wide")
 
-# 2. API 설정 (가장 안전한 방식)
+# 1. API 설정 및 모델 자동 할당
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # 모델 호출 방식을 변경: 이름을 명시적으로 'models/' 포함하여 설정
-    # v1beta 버전을 명시적으로 피하기 위해 GenerativeModel 인스턴스를 직접 구성
-    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+    # 모델 목록을 조회하여 첫 번째 가능한 모델을 사용
+    # 이렇게 하면 404 에러(모델 이름을 못 찾음)를 원천 차단합니다.
+    available_models = [m for m in genai.list_models() if 'generateContent' in m.supported_methods]
+    if not available_models:
+        st.error("사용 가능한 모델을 찾을 수 없습니다. API 키 권한을 확인하세요.")
+        st.stop()
     
+    # 리스트의 첫 번째 모델을 사용합니다
+    model = genai.GenerativeModel(available_models[0].name)
+    st.sidebar.info(f"연결된 모델: {available_models[0].name}")
+
 except Exception as e:
-    st.error(f"API 설정 오류: {e}")
+    st.error(f"API 연결 중 치명적 오류: {e}")
     st.stop()
 
 st.title("📊 ETF 시장 인텔리전스 & 마케팅 대시보드")
