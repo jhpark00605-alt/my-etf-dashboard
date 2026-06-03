@@ -51,47 +51,90 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
     
+    # [1] 변수 정의를 가장 위로 올립니다 (중요!)
+    # 분석 대상 채널 ID (정의가 되어 있어야 아래 루프에서 사용 가능합니다)
+    TARGET_BROKERAGES = {
+        "미래에셋증권": "UCZS9wEZ4itPbBZk_sqccXfw",
+        "키움증권": "UCZW1d7B2nYqQUiTiOnkirrQ",
+        "삼성증권": "UCq7h8qFlHN5FL_T6waKZllw",
+        "한국투자증권": "UCU6f21g_qaJk6rkX-IF6X2g"
+    }
+
+    # API 키 가져오기
     API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
     API_KEY_GEMINI = st.secrets.get("GEMINI_API_KEY")
 
-    # ... (중략: 날짜 선택 및 데이터 수집 함수 부분은 동일) ...
+    col_date1, col_date2 = st.columns(2)
+    with col_date1:
+        start_date = st.date_input("조회 시작일", datetime.now() - timedelta(days=7), key="yt_start")
+    with col_date2:
+        end_date = st.date_input("조회 종료일", datetime.now(), key="yt_end")
 
+    # [2] 내부 함수 정의
+    def fetch_transcript(video_id):
+        try:
+            from youtube_transcript_api import YouTubeTranscriptApi
+            try:
+                ts = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko'])
+                return " ".join([i['text'] for i in ts])[:1500]
+            except:
+                ts = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'en'])
+                return " ".join([i['text'] for i in ts])[:1500]
+        except:
+            return "자막 없음"
+
+    def get_yt_data(name, c_id, s_date, e_date, api_key):
+        import requests
+        url = "https://www.googleapis.com/youtube/v3/search"
+        s_utc = datetime.combine(s_date, datetime.min.time()) - timedelta(hours=9)
+        e_utc = datetime.combine(e_date, datetime.max.time()) - timedelta(hours=9)
+        
+        params = {
+            "key": api_key, "channelId": c_id, "part": "snippet", "order": "date",
+            "maxResults": 10, "publishedAfter": s_utc.isoformat() + "Z",
+            "publishedBefore": e_utc.isoformat() + "Z", "type": "video"
+        }
+        
+        try:
+            res = requests.get(url, params=params).json()
+            videos = []
+            for item in res.get("items", []):
+                v_id = item["id"]["videoId"]
+                title = item["snippet"]["title"]
+                transcript = fetch_transcript(v_id)
+                videos.append(f"- 제목: {title}\n  내용: {transcript}")
+            return f"\n### [{name}]\n" + "\n".join(videos) if videos else f"\n### [{name}]\n영상 없음"
+        except Exception as e:
+            return f"\n### [{name}]\n에러: {e}"
+
+    # [3] 실행 버튼
     if st.button("유튜브 트렌드 분석 실행 🚀"):
         if not API_KEY_YT or not API_KEY_GEMINI:
-            st.error("⚠️ API 키를 불러오지 못했습니다.")
+            st.error("⚠️ API 키를 불러오지 못했습니다. Secrets 설정을 확인하세요.")
         else:
             progress = st.progress(0)
             status = st.empty()
             all_text = ""
             
-            # 1. 데이터 수집 루프
+            # 여기서 TARGET_BROKERAGES를 사용합니다.
+            # 위에서 이미 정의했으므로 NameError가 발생하지 않습니다.
             for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
                 status.text(f"🔍 {name} 수집 중...")
                 all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
                 progress.progress((i + 1) * 20)
 
-            # 2. Gemini 분석 (최신 SDK 문법 적용)
             status.text("🤖 Gemini 분석 중...")
             try:
-                # 💡 핵심 수정: configure 대신 Client 객체를 생성합니다.
+                from google import genai
                 client = genai.Client(api_key=API_KEY_GEMINI)
-                
                 prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
-                
-                # 💡 핵심 수정: 호출 방식 변경
-                response = client.models.generate_content(
-                    model='gemini-1.5-flash', 
-                    contents=prompt
-                )
+                response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
                 
                 progress.progress(100)
                 status.text("✅ 분석 완료!")
-                st.divider()
-                st.markdown(response.text) # 최신 SDK는 response.text로 결과 확인 가능
-                
+                st.markdown(response.text)
             except Exception as e:
-                st.error(f"Gemini 분석 중 오류 발생: {e}")
-
+                st.error(f"분석 오류: {e}")
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
 # ==========================================
