@@ -120,47 +120,35 @@ with tabs[1]:
         except Exception as e:
             return f"\n### [{channel_name}]\n수집 오류: {e}"
 
-    # 3. 실행 버튼 클릭 시 로직
+   # [실행 버튼 클릭 시]
     if st.button("유튜브 트렌드 분석 실행 🚀"):
-        if not MY_YT_KEY or not MY_GEMINI_KEY:
-            st.error("⚠️ API 키를 찾을 수 없습니다. Streamlit Secrets 설정을 확인해 주세요.")
+        if not API_KEY_YT or not API_KEY_GEMINI:
+            st.error("⚠️ API 키를 확인해 주세요.")
         else:
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            all_data_buffer = ""
+            # --- Gemini 설정 부분 (이 부분이 변경되었습니다) ---
+            genai.configure(api_key=API_KEY_GEMINI)
+            model = genai.GenerativeModel('gemini-1.5-flash')
             
-            # 4개 증권사 데이터 순차 수집
+            progress = st.progress(0)
+            status = st.empty()
+            all_text = ""
+            
             for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
-                status_text.text(f"🔍 {name} 채널 데이터를 수집 중... ({i+1}/4)")
-                all_data_buffer += fetch_all_youtube_data(name, c_id, start_date, end_date, MY_YT_KEY)
-                progress_bar.progress((i + 1) * 20)
+                status.text(f"🔍 {name} 수집 중...")
+                all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
+                progress.progress((i + 1) * 20)
 
-            # Gemini 분석
-            status_text.text("🤖 Gemini가 전략 리포트를 생성하고 있습니다...")
+            status.text("🤖 Gemini 분석 중...")
             try:
-                client = genai.Client(api_key=MY_GEMINI_KEY)
-                prompt = f"""
-                당신은 자산운용사 마케팅 전문가입니다. 아래 수집된 증권사 유튜브 데이터를 바탕으로 
-                경쟁사들의 최신 마케팅 트렌드 분석 리포트를 작성하세요.
+                # 분석 실행 (함수 호출 방식 변경)
+                prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
+                response = model.generate_content(prompt)
                 
-                [수집 데이터]
-                {all_data_buffer}
-                
-                [포함 내용]
-                1. 증권사별 주요 콘텐츠 테마 요약
-                2. 공통적으로 나타나는 투자 트렌드
-                3. 우리 회사가 참고할만한 차별화 마케팅 포인트
-                """
-                
-                response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
-                
-                progress_bar.progress(100)
-                status_text.text("✅ 분석 완료!")
-                st.divider()
+                progress.progress(100)
+                status.text("✅ 분석 완료!")
                 st.markdown(response.text)
-                
             except Exception as e:
-                st.error(f"Gemini 분석 중 오류 발생: {e}")
+                st.error(f"Gemini 분석 오류: {e}")
 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
