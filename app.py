@@ -1,31 +1,31 @@
 import streamlit as st
 import google.generativeai as genai
 
-st.set_page_config(page_title="ETF 대시보드", layout="wide")
+# 페이지 설정
+st.set_page_config(page_title="ETF 마케팅 대시보드", layout="wide")
 
-# 1. API 설정
+# API 설정
 try:
-    # Secrets에 새로 만든 키를 넣었는지 꼭 확인!
+    # 1. 키 설정 (사용자님의 AQ.로 시작하는 키가 여기 들어갑니다)
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # 404를 피하기 위해 가장 최신 명칭인 'gemini-1.5-flash-latest' 사용
-    model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
+    # 2. 모델 설정 (404 방지를 위해 경로를 포함한 최신 명칭 사용)
+    model = genai.GenerativeModel(model_name='models/gemini-1.5-flash')
     
 except Exception as e:
-    st.error(f"초기 설정 오류: {e}")
+    st.error(f"설정 오류: {e}")
     st.stop()
 
 st.title("📊 ETF 마케팅 대시보드")
 
-# ... (사이드바 생략) ...
-
-if st.button("분석 실행"):
+if st.button("AI 분석 시작"):
     with st.spinner("분석 중..."):
         try:
-            # 2. 아주 짧은 테스트 문장으로 먼저 확인
-            response = model.generate_content("안녕? 너는 누구니?")
-            st.write(response.text)
+            # 테스트용 간단한 질문
+            response = model.generate_content("안녕하세요, 마케팅 전문가로서 인사해주세요.")
+            st.success("연결 성공!")
+            st.markdown(response.text)
         except Exception as e:
-            # 여기서 404가 뜨면 '키' 자체의 권한 문제입니다.
-            st.error(f"분석 오류: {e}")
+            # 여기서 또 404가 뜨면 '앱 재배포'가 유일한 답입니다.
+            st.error(f"오류 발생: {e}")
