@@ -118,11 +118,32 @@ with tabs[1]:
                 genai.configure(api_key=API_KEY_GEMINI)
                 
                 # [핵심] 모델 지정 ('models/' 접두어 없이 사용)
-                model = genai.GenerativeModel('gemini-2.0-flash-lite')
+                model = genai.GenerativeModel('gemini-1.5-flash')
                 
                 progress = st.progress(0)
                 status = st.empty()
                 all_text = ""
+
+                status.text("🤖 Gemini 분석 중...")
+            try:
+                prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
+                
+                # 429 에러 대응: 1번 재시도 로직
+                try:
+                    response = model.generate_content(prompt)
+                except Exception as e:
+                    if "429" in str(e):
+                        status.text("⏳ 제한 초과, 30초 대기 후 재시도 중...")
+                        time.sleep(30)
+                        response = model.generate_content(prompt)
+                    else:
+                        raise e
+                
+                progress.progress(100)
+                status.text("✅ 분석 완료!")
+                st.markdown(response.text)
+            except Exception as e:
+                st.error(f"분석 중 오류 발생: {e}")
                 
                 # 수집 루프
                 for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
