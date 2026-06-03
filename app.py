@@ -117,7 +117,7 @@ with tabs[1]:
                 genai.configure(api_key=API_KEY_GEMINI)
                 
                 # [핵심] 모델 지정 ('models/' 접두어 없이 사용)
-                model = genai.GenerativeModel('gemini-2.0-flash')
+                model = genai.GenerativeModel('gemini-2.0-flash-lite')
                 
                 progress = st.progress(0)
                 status = st.empty()
@@ -133,7 +133,7 @@ with tabs[1]:
                 prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
                 
                 # 분석 실행
-                response = model.generate_content(prompt)
+                response = generate_with_retry(model, prompt)
                 
                 progress.progress(100)
                 status.text("✅ 분석 완료!")
@@ -142,6 +142,29 @@ with tabs[1]:
             except Exception as e:
                 st.error(f"분석 중 오류 발생: {e}")
                 st.info("여전히 오류가 발생한다면, 오른쪽 하단 'Manage app' > 'Reboot'를 눌러 앱을 완전히 재시작해 주세요.")
+
+# 재시도 로직 추가
+import time
+
+def generate_with_retry(model, prompt, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(prompt)
+            return response
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg:
+                # 대기 시간 파싱 (없으면 기본 30초)
+                wait = 30
+                import re
+                match = re.search(r'retry in (\d+)', error_msg)
+                if match:
+                    wait = int(match.group(1)) + 5  # 여유 5초 추가
+                st.warning(f"⏳ API 한도 초과. {wait}초 후 재시도... ({attempt+1}/{max_retries})")
+                time.sleep(wait)
+            else:
+                raise e
+    raise Exception("최대 재시도 횟수 초과")
                 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
