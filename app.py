@@ -72,15 +72,89 @@ with tabs[1]:
         "한국투자증권": "UCU6f21g_qaJk6rkX-IF6X2g"
     }
 
-    # 데이터 수집 및 분석 로직 버튼
+    # 내부 함수: 자막 추출
+    def fetch_transcript_safe(video_id):
+        try:
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'en'])
+            return " ".join([item['text'] for item in transcript_list])[:1500] # 분석을 위해 1500자 제한
+        except:
+            return "자막 데이터 없음"
+
+    # 내부 함수: 유튜브 데이터 수집
+    def collect_youtube_data(name, channel_id, s_date, e_date, api_key):
+        url = "https://www.googleapis.com/youtube/v3/search"
+        p_after = (datetime.combine(s_date, datetime.min.time()) - timedelta(hours=9)).isoformat() + "Z"
+        p_before = (datetime.combine(e_date, datetime.max.time()) - timedelta(hours=9)).isoformat() + "Z"
+        
+        params = {
+            "key": api_key, "channelId": channel_id, "part": "snippet", "order": "date",
+            "maxResults": 10, "publishedAfter": p_after, "publishedBefore": p_before, "type": "video"
+        }
+        
+        try:
+            res = requests.get(url, params=params).json()
+            video_list = []
+            for item in res.get("items", []):
+                v_id = item["id"]["videoId"]
+                title = item["snippet"]["title"]
+                desc = item["snippet"]["description"]
+                pub_date = item["snippet"]["publishedAt"][:10]
+                transcript = fetch_transcript_safe(v_id)
+                
+                video_list.append(f"- [{pub_date}] 제목: {title}\n  설명: {desc}\n  내용: {transcript}")
+            
+            return f"\n### [{name}]\n" + "\n".join(video_list) if video_list else f"\n### [{name}]\n기간 내 영상 없음"
+        except Exception as e:
+            return f"\n### [{name}]\n데이터 수집 오류: {e}"
+
+    # 2. 실행 버튼
     if st.button("유튜브 트렌드 분석 실행 🚀"):
-        if MY_YT_KEY == "여기에_유튜브_키_입력" or MY_GEMINI_KEY == "여기에_제미나이_키_입력":
-            st.error("⚠️ API 키가 설정되지 않았습니다. st.secrets나 변수를 확인해 주세요.")
+        if not yt_api_key or not gemini_api_key:
+            st.error("⚠️ YouTube 및 Gemini API 키를 모두 입력해 주세요.")
         else:
-            with st.spinner("데이터를 분석 중입니다..."):
-                # 여기에 기존에 작성했던 수집/분석 함수 호출 코드를 넣습니다.
-                # (이전 답변의 분석 로직이 이어서 들어감)
-                st.info("분석이 진행 중입니다. 잠시만 기다려 주세요.")
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            all_data_buffer = ""
+            
+            # 단계별 데이터 수집
+            for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
+                status_text.text(f"🔍 {name} 채널 데이터를 수집 중... ({i+1}/4)")
+                all_data_buffer += collect_youtube_data(name, c_id, start_date, end_date, yt_api_key)
+                progress_bar.progress((i + 1) * 20) # 80%까지 수집 진행률 표시
+
+            # Gemini 분석
+            status_text.text("🤖 Gemini가 전략 리포트를 생성하고 있습니다...")
+            try:
+                client = genai.Client(api_key=gemini_api_key)
+                # 모델명은 안정적인 gemini-1.5-flash를 추천합니다.
+                prompt = f"""
+                당신은 자산운용사 ETF 전략실의 데이터 자동화 봇입니다. 
+                아래 수집된 증권사 유튜브 데이터를 바탕으로 마케팅 대시보드를 작성하세요.
+                내용과 무관한 이벤트/드라마 영상은 '기타'로 빼고, 투자 전략 영상 위주로 요약하세요.
+
+                [데이터]
+                {all_data_buffer}
+
+                [출력 형식]
+                1. 증권사별 분석 표 (콘텐츠 현황, 핵심 테마, 운용사 대응 방향)
+                2. 이번 주 원포인트 마켓 트렌드 요약
+                """
+                
+                response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+                
+                progress_bar.progress(100)
+                status_text.text("✅ 분석 완료!")
+                
+                # 결과 출력
+                st.divider()
+                st.markdown(response.text)
+                
+                with st.expander("📝 수집된 원본 텍스트 데이터 확인"):
+                    st.text(all_data_buffer)
+
+            except Exception as e:
+                st.error(f"Gemini 분석 중 오류가 발생했습니다: {e}")
 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
