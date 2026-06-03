@@ -1,9 +1,4 @@
 streamlit
-pandas
-plotly
-numpy
-google-api-python-client  # 유튜브 API 사용 시
-openpyxl
 google-generativeai
 youtube-transcript-api
 requests
