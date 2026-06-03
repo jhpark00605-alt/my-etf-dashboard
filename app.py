@@ -2,6 +2,11 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import numpy as np
+import os
+import requests
+from google import genai
+from datetime import datetime, timedelta
+from youtube_transcript_api import YouTubeTranscriptApi
 
 # 페이지 기본 설정
 st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈", layout="wide")
@@ -44,20 +49,114 @@ with tabs[0]:
 # Tab 2: 증권사 유튜브 트렌드
 # ==========================================
 with tabs[1]:
-    st.subheader("▶️ 주요 증권사 유튜브 콘텐츠 트렌드")
-    st.caption("삼성, 미래에셋, 한국투자, 키움증권의 최신 유튜브 영상을 분석하여 미는 테마를 파악합니다.")
-    
-    # [TODO] YouTube Data API v3를 활용하여 각 채널의 최신 영상 제목/조회수/설명 추출 필요
-    mock_youtube_data = pd.DataFrame({
-        '증권사': ['삼성증권', '미래에셋증권', '한국투자증권', '키움증권'],
-        '주요 강조 테마': ['온디바이스 AI', '인도 주식시장', '월배당 ETF', '미국 빅테크'],
-        '최다 조회수 영상 제목': ['이제는 온디바이스 AI다! 관련주는?', '넥스트 차이나, 인도에 투자하는 법', '매월 현금이 꽂히는 마법', '엔비디아, 애플 지금 사도 될까?'],
-        '조회수': [15000, 22000, 18000, 31000]
-    })
-    
-    st.dataframe(mock_youtube_data, use_container_width=True, hide_index=True)
-    
-    st.info("💡 **트렌드 요약:** 금주 주요 증권사들은 대체로 'AI/빅테크'와 '현금흐름(월배당)' 테마를 강조하고 있습니다.")
+    st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
+    st.markdown("4대 증권사 채널의 영상을 전수 조사하여 **Gemini**가 마케팅 전략을 도출합니다.")
+
+    # 1. 설정 섹션
+    with st.expander("🔑 API 설정 및 분석 기간 선택", expanded=True):
+        col_api1, col_api2 = st.columns(2)
+        with col_api1:
+            yt_api_key = st.text_input("YouTube API Key", type="password", help="Google Cloud Console에서 발급받은 키")
+        with col_api2:
+            gemini_api_key = st.text_input("Gemini API Key", type="password", help="AI Studio에서 발급받은 키")
+        
+        col_date1, col_date2 = st.columns(2)
+        with col_date1:
+            start_date = st.date_input("조회 시작일", datetime.now() - timedelta(days=7))
+        with col_date2:
+            end_date = st.date_input("조회 종료일", datetime.now())
+
+    # 분석 대상 채널 정보
+    TARGET_BROKERAGES = {
+        "미래에셋증권": "UCZS9wEZ4itPbBZk_sqccXfw",
+        "키움증권": "UCZW1d7B2nYqQUiTiOnkirrQ",
+        "삼성증권": "UCq7h8qFlHN5FL_T6waKZllw",
+        "한국투자증권": "UCU6f21g_qaJk6rkX-IF6X2g"
+    }
+
+    # 내부 함수: 자막 추출
+    def fetch_transcript_safe(video_id):
+        try:
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'en'])
+            return " ".join([item['text'] for item in transcript_list])[:1500] # 분석을 위해 1500자 제한
+        except:
+            return "자막 데이터 없음"
+
+    # 내부 함수: 유튜브 데이터 수집
+    def collect_youtube_data(name, channel_id, s_date, e_date, api_key):
+        url = "https://www.googleapis.com/youtube/v3/search"
+        p_after = (datetime.combine(s_date, datetime.min.time()) - timedelta(hours=9)).isoformat() + "Z"
+        p_before = (datetime.combine(e_date, datetime.max.time()) - timedelta(hours=9)).isoformat() + "Z"
+        
+        params = {
+            "key": api_key, "channelId": channel_id, "part": "snippet", "order": "date",
+            "maxResults": 10, "publishedAfter": p_after, "publishedBefore": p_before, "type": "video"
+        }
+        
+        try:
+            res = requests.get(url, params=params).json()
+            video_list = []
+            for item in res.get("items", []):
+                v_id = item["id"]["videoId"]
+                title = item["snippet"]["title"]
+                desc = item["snippet"]["description"]
+                pub_date = item["snippet"]["publishedAt"][:10]
+                transcript = fetch_transcript_safe(v_id)
+                
+                video_list.append(f"- [{pub_date}] 제목: {title}\n  설명: {desc}\n  내용: {transcript}")
+            
+            return f"\n### [{name}]\n" + "\n".join(video_list) if video_list else f"\n### [{name}]\n기간 내 영상 없음"
+        except Exception as e:
+            return f"\n### [{name}]\n데이터 수집 오류: {e}"
+
+    # 2. 실행 버튼
+    if st.button("유튜브 트렌드 분석 실행 🚀"):
+        if not yt_api_key or not gemini_api_key:
+            st.error("⚠️ YouTube 및 Gemini API 키를 모두 입력해 주세요.")
+        else:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            all_data_buffer = ""
+            
+            # 단계별 데이터 수집
+            for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
+                status_text.text(f"🔍 {name} 채널 데이터를 수집 중... ({i+1}/4)")
+                all_data_buffer += collect_youtube_data(name, c_id, start_date, end_date, yt_api_key)
+                progress_bar.progress((i + 1) * 20) # 80%까지 수집 진행률 표시
+
+            # Gemini 분석
+            status_text.text("🤖 Gemini가 전략 리포트를 생성하고 있습니다...")
+            try:
+                client = genai.Client(api_key=gemini_api_key)
+                # 모델명은 안정적인 gemini-1.5-flash를 추천합니다.
+                prompt = f"""
+                당신은 자산운용사 ETF 전략실의 데이터 자동화 봇입니다. 
+                아래 수집된 증권사 유튜브 데이터를 바탕으로 마케팅 대시보드를 작성하세요.
+                내용과 무관한 이벤트/드라마 영상은 '기타'로 빼고, 투자 전략 영상 위주로 요약하세요.
+
+                [데이터]
+                {all_data_buffer}
+
+                [출력 형식]
+                1. 증권사별 분석 표 (콘텐츠 현황, 핵심 테마, 운용사 대응 방향)
+                2. 이번 주 원포인트 마켓 트렌드 요약
+                """
+                
+                response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+                
+                progress_bar.progress(100)
+                status_text.text("✅ 분석 완료!")
+                
+                # 결과 출력
+                st.divider()
+                st.markdown(response.text)
+                
+                with st.expander("📝 수집된 원본 텍스트 데이터 확인"):
+                    st.text(all_data_buffer)
+
+            except Exception as e:
+                st.error(f"Gemini 분석 중 오류가 발생했습니다: {e}")
 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
