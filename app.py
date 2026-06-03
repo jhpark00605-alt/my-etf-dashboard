@@ -110,28 +110,29 @@ with tabs[1]:
     # [3] 실행 버튼
     if st.button("유튜브 트렌드 분석 실행 🚀"):
         if not API_KEY_YT or not API_KEY_GEMINI:
-            st.error("⚠️ API 키를 불러오지 못했습니다.")
+            st.error("⚠️ API 키가 설정되지 않았습니다.")
         else:
-            # ✅ 여기를 주목하세요 (안정적인 호출 방식)
             try:
+                # [핵심] genai.configure 호출
                 genai.configure(api_key=API_KEY_GEMINI)
-                # 모델 이름 명시
+                
+                # [핵심] 모델 지정 ('models/' 접두어 없이 사용)
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 
                 progress = st.progress(0)
                 status = st.empty()
                 all_text = ""
                 
-                # 데이터 수집 (기존 루프 유지)
+                # 수집 루프
                 for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
                     status.text(f"🔍 {name} 수집 중...")
                     all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
                     progress.progress((i + 1) * 20)
 
                 status.text("🤖 Gemini 분석 중...")
-                
-                # 분석 요청
                 prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
+                
+                # 분석 실행
                 response = model.generate_content(prompt)
                 
                 progress.progress(100)
@@ -140,6 +141,7 @@ with tabs[1]:
                 
             except Exception as e:
                 st.error(f"분석 중 오류 발생: {e}")
+                st.info("여전히 오류가 발생한다면, 오른쪽 하단 'Manage app' > 'Reboot'를 눌러 앱을 완전히 재시작해 주세요.")
                 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
