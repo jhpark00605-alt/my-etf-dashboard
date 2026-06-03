@@ -51,7 +51,7 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
     
-    # 1. 설정 및 초기화
+    # 설정
     TARGET_BROKERAGES = {
         "미래에셋증권": "UCZS9wEZ4itPbBZk_sqccXfw",
         "키움증권": "UCZW1d7B2nYqQUiTiOnkirrQ",
@@ -107,19 +107,20 @@ with tabs[1]:
     # 3. 실행 로직
     if st.button("유튜브 트렌드 분석 실행 🚀"):
         if not API_KEY_YT or not API_KEY_GEMINI:
-            st.error("⚠️ API 키를 불러오지 못했습니다. Secrets 설정을 확인하세요.")
+            st.error("⚠️ API 키를 확인해 주세요.")
         else:
             try:
-                import time
-                import google.generativeai as genai
+                # ✅ [핵심] 최신 google-genai 라이브러리 방식
+                from google import genai
                 
-                genai.configure(api_key=API_KEY_GEMINI)
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                # 클라이언트 생성
+                client = genai.Client(api_key=API_KEY_GEMINI)
                 
                 progress = st.progress(0)
                 status = st.empty()
                 all_text = ""
                 
+                # 데이터 수집
                 for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
                     status.text(f"🔍 {name} 수집 중...")
                     all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
@@ -128,15 +129,12 @@ with tabs[1]:
                 status.text("🤖 Gemini 분석 중...")
                 prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
                 
-                try:
-                    response = model.generate_content(prompt)
-                except Exception as e:
-                    if "429" in str(e):
-                        status.text("⏳ 요청 제한 초과, 30초 대기 후 재시도...")
-                        time.sleep(30)
-                        response = model.generate_content(prompt)
-                    else:
-                        raise e
+                # ✅ [핵심] models/ 접두어 없이 호출
+                # 404 에러를 피하기 위해 모델명을 정확히 지정합니다.
+                response = client.models.generate_content(
+                    model='gemini-1.5-flash',
+                    contents=prompt
+                )
                 
                 progress.progress(100)
                 status.text("✅ 분석 완료!")
@@ -144,6 +142,7 @@ with tabs[1]:
                 
             except Exception as e:
                 st.error(f"분석 중 오류 발생: {e}")
+                st.info("여전히 404가 발생하면 모델명을 'gemini-1.5-flash-8b'로 바꿔서 시도해 보세요.")
                 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
