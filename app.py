@@ -51,52 +51,46 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
     
-    # [1] Secrets에서 키 가져오기
     API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
     API_KEY_GEMINI = st.secrets.get("GEMINI_API_KEY")
 
-    col_date1, col_date2 = st.columns(2)
-    with col_date1:
-        start_date = st.date_input("조회 시작일", datetime.now() - timedelta(days=7), key="yt_start")
-    with col_date2:
-        end_date = st.date_input("조회 종료일", datetime.now(), key="yt_end")
-
-    # (중략: TARGET_BROKERAGES, fetch_transcript, get_yt_data 함수는 이전과 동일)
-    # ...
+    # ... (중략: 날짜 선택 및 데이터 수집 함수 부분은 동일) ...
 
     if st.button("유튜브 트렌드 분석 실행 🚀"):
         if not API_KEY_YT or not API_KEY_GEMINI:
-            st.error("⚠️ API 키를 불러오지 못했습니다. Secrets 설정을 확인하세요.")
+            st.error("⚠️ API 키를 불러오지 못했습니다.")
         else:
-            # ✅ [핵심 수정 부분] google-generativeai 문법 사용
-            try:
-                genai.configure(api_key=API_KEY_GEMINI)
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                
-                progress = st.progress(0)
-                status = st.empty()
-                all_text = ""
-                
-                # 데이터 수집 루프
-                for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
-                    status.text(f"🔍 {name} 수집 중...")
-                    all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
-                    progress.progress((i + 1) * 20)
+            progress = st.progress(0)
+            status = st.empty()
+            all_text = ""
+            
+            # 1. 데이터 수집 루프
+            for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
+                status.text(f"🔍 {name} 수집 중...")
+                all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
+                progress.progress((i + 1) * 20)
 
-                status.text("🤖 Gemini 분석 중...")
+            # 2. Gemini 분석 (최신 SDK 문법 적용)
+            status.text("🤖 Gemini 분석 중...")
+            try:
+                # 💡 핵심 수정: configure 대신 Client 객체를 생성합니다.
+                client = genai.Client(api_key=API_KEY_GEMINI)
                 
-                # ✅ [핵심 수정 부분] 모델 호출 방식
                 prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
-                response = model.generate_content(prompt)
+                
+                # 💡 핵심 수정: 호출 방식 변경
+                response = client.models.generate_content(
+                    model='gemini-1.5-flash', 
+                    contents=prompt
+                )
                 
                 progress.progress(100)
                 status.text("✅ 분석 완료!")
-                st.markdown(response.text)
+                st.divider()
+                st.markdown(response.text) # 최신 SDK는 response.text로 결과 확인 가능
                 
             except Exception as e:
-                # 여기서 에러가 난다면 라이브러리 설치 문제일 확률이 높습니다.
-                st.error(f"분석 중 오류 발생: {e}")
-                st.info("requirements.txt에 google-generativeai가 있는지 확인하고, 앱을 Re-deploy 해주세요.")
+                st.error(f"Gemini 분석 중 오류 발생: {e}")
 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
