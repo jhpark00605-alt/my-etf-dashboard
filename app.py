@@ -55,8 +55,8 @@ with tabs[1]:
 
     # [설정] API 키와 기간 선택
     # 실제 배포 시에는 st.secrets를 사용하는 것이 안전합니다.
-    MY_YT_KEY = st.secrets.get("YOUTUBE_KEY", "여기에_유튜브_키_입력")
-    MY_GEMINI_KEY = st.secrets.get("GEMINI_KEY", "여기에_제미나이_키_입력")
+    MY_YT_KEY = st.secrets.get("YOUTUBE_API_KEY", "여기에_유튜브_키_입력")
+    MY_GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "여기에_제미나이_키_입력")
 
     col_date1, col_date2 = st.columns(2)
     with col_date1:
