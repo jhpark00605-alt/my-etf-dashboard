@@ -3,3 +3,4 @@ google-generativeai
 youtube-transcript-api
 requests
 plotly
+openpyxl
