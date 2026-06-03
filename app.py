@@ -4,9 +4,9 @@ import plotly.express as px
 import numpy as np
 import os
 import requests
-from google import genai
 from datetime import datetime, timedelta
 from youtube_transcript_api import YouTubeTranscriptApi
+import google.generativeai as genai  # 라이브러리 교체
 
 # 페이지 기본 설정
 st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈", layout="wide")
@@ -110,31 +110,37 @@ with tabs[1]:
     # [3] 실행 버튼
     if st.button("유튜브 트렌드 분석 실행 🚀"):
         if not API_KEY_YT or not API_KEY_GEMINI:
-            st.error("⚠️ API 키를 불러오지 못했습니다. Secrets 설정을 확인하세요.")
+            st.error("⚠️ API 키를 불러오지 못했습니다.")
         else:
-            progress = st.progress(0)
-            status = st.empty()
-            all_text = ""
-            
-            # 여기서 TARGET_BROKERAGES를 사용합니다.
-            # 위에서 이미 정의했으므로 NameError가 발생하지 않습니다.
-            for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
-                status.text(f"🔍 {name} 수집 중...")
-                all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
-                progress.progress((i + 1) * 20)
-
-            status.text("🤖 Gemini 분석 중...")
+            # ✅ 여기를 주목하세요 (안정적인 호출 방식)
             try:
-                from google import genai
-                client = genai.Client(api_key=API_KEY_GEMINI)
+                genai.configure(api_key=API_KEY_GEMINI)
+                # 모델 이름 명시
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                progress = st.progress(0)
+                status = st.empty()
+                all_text = ""
+                
+                # 데이터 수집 (기존 루프 유지)
+                for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
+                    status.text(f"🔍 {name} 수집 중...")
+                    all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
+                    progress.progress((i + 1) * 20)
+
+                status.text("🤖 Gemini 분석 중...")
+                
+                # 분석 요청
                 prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
-                response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+                response = model.generate_content(prompt)
                 
                 progress.progress(100)
                 status.text("✅ 분석 완료!")
                 st.markdown(response.text)
+                
             except Exception as e:
-                st.error(f"분석 오류: {e}")
+                st.error(f"분석 중 오류 발생: {e}")
+                
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
 # ==========================================
