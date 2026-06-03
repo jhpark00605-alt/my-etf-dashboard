@@ -1,2 +1,6 @@
 streamlit
-google-generativeai==0.8.3
+pandas
+plotly
+numpy
+google-api-python-client  # 유튜브 API 사용 시
+google-generativeai       # Gemini AI 사용 시
