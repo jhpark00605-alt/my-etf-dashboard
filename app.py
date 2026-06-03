@@ -93,33 +93,75 @@ with tabs[2]:
 # Tab 4: 투자자 & 순매수 데이터 (마케팅 실효성)
 # ==========================================
 with tabs[3]:
-    st.subheader("📊 투자자 연령대별 선호도 및 순매수 강도 분석")
-    st.caption("실제 데이터 기반으로 트렌드 언급량이 실제 매수세로 이어지는지 파악합니다.")
-    
-    # 4-1 연령대별 선호도 (Mock)
-    st.markdown("#### 연령대별 인기 ETF 및 수익률")
-    mock_age_data = pd.DataFrame({
-        '연령대': ['20대', '30대', '40대', '50대 이상'],
-        '선호 1위 테마': ['미국 레버리지', '미국 빅테크', '고배당/월배당', '국고채/안전자산'],
-        '대표 ETF 평균 수익률(%)': [15.2, 8.5, 4.2, 2.1]
-    })
-    st.table(mock_age_data)
-    
-    # 4-2 순매수 강도 vs 언급량 상관관계 (Mock)
-    st.markdown("#### 미디어 언급량 vs 개인 순매수 강도 (마케팅 실효성)")
-    st.caption("우상향할수록 미디어 마케팅(언급량)이 실제 매수(실효성)로 잘 이어졌음을 의미합니다.")
-    
-    # [TODO] KRX 정보데이터시스템 또는 증권사 API를 통한 실제 ETF 순매수 데이터 연동 필요
-    np.random.seed(42)
-    mock_scatter = pd.DataFrame({
-        '테마': ['AI반도체', '이차전지', '월배당', '인도주식', '미국채', '바이오'],
-        '뉴스/유튜브 언급량(건)': np.random.randint(100, 1000, 6),
-        '개인 순매수 강도(억원)': np.random.randint(50, 500, 6)
-    })
-    
-    fig2 = px.scatter(mock_scatter, x='뉴스/유튜브 언급량(건)', y='개인 순매수 강도(억원)', text='테마', size='개인 순매수 강도(억원)', color='테마')
-    fig2.update_traces(textposition='top center')
-    st.plotly_chart(fig2, use_container_width=True)
+    st.subheader("📊 데이터 기반 마케팅 실효성 분석")
+    st.markdown("""
+    업로드하신 순매수 데이터를 바탕으로 **상품별 매수 강도**를 분석합니다.
+    * **공식:** (2주차 순매수 금액 / 1주차 순자산 금액) × 100
+    """)
+
+    # 1. 파일 업로드 UI
+    uploaded_file = st.file_uploader("순매수 데이터 엑셀 파일(.xlsx)을 업로드해주세요", type=["xlsx"])
+
+    if uploaded_file is not None:
+        try:
+            # 엑셀 읽기
+            df = pd.read_excel(uploaded_file)
+            st.success("파일 업로드 성공!")
+            
+            # 데이터 미리보기
+            with st.expander("데이터 미리보기"):
+                st.dataframe(df.head())
+
+            st.divider()
+            st.markdown("#### ⚙️ 분석 설정")
+            st.caption("분석에 사용할 컬럼을 매칭해주세요.")
+
+            # 2. 컬럼 매칭 (사용자가 직접 선택하도록 하여 오류 방지)
+            cols = df.columns.tolist()
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                prod_col = st.selectbox("상품명(ETF명) 컬럼", cols)
+            with col2:
+                buy_col = st.selectbox("2주차 순매수 금액 컬럼", cols)
+            with col3:
+                aum_col = st.selectbox("1주차 순자산 금액 컬럼", cols)
+
+            # 3. 계산 버튼
+            if st.button("매수 강도 분석 실행 📈"):
+                # 계산 로직 (0으로 나누기 방지 처리)
+                df['매수강도(%)'] = (df[buy_col] / df[aum_col].replace(0, np.nan)) * 100
+                
+                # 결과 데이터 정리
+                result_df = df[[prod_col, buy_col, aum_col, '매수강도(%)']].sort_values(by='매수강도(%)', ascending=False)
+                
+                # 4. 결과 시각화
+                st.markdown("#### 🏆 상품별 매수 강도 결과")
+                
+                # 지표 요약
+                top_product = result_df.iloc[0]
+                st.metric(label=f"이번 주 최고 강도 상품: {top_product[prod_col]}", 
+                          value=f"{top_product['매수강도(%)']:.2f}%")
+
+                # 차트 출력
+                fig = px.bar(result_df, 
+                             x=prod_col, 
+                             y='매수강도(%)', 
+                             color='매수강도(%)',
+                             text_auto='.2f',
+                             title="상품별 매수 강도 비교 (%)",
+                             color_continuous_scale='Blues',
+                             labels={'매수강도(%)': '강도 (%)', prod_col: '상품명'})
+                
+                st.plotly_chart(fig, use_container_width=True)
+
+                # 데이터 테이블 출력
+                st.dataframe(result_df.style.highlight_max(axis=0, subset=['매수강도(%)']), use_container_width=True)
+
+        except Exception as e:
+            st.error(f"파일을 처리하는 중 오류가 발생했습니다: {e}")
+    else:
+        st.info("데이터 분석을 위해 엑셀 파일을 업로드해주세요.")
 
 # ==========================================
 # Tab 5: AI 마케팅 인사이트 및 전략 제안
