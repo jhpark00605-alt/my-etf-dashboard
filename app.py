@@ -1,48 +1,34 @@
 import streamlit as st
 import google.generativeai as genai
 
-st.set_page_config(page_title="ETF 통합 마케팅 대시보드", layout="wide")
+st.set_page_config(page_title="ETF 마케팅 대시보드", layout="wide")
 
-# 1. API 설정
+# 1. API 설정 (가장 보수적인 모델명 사용)
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # [핵심] 이름을 직접 주지 말고, get_model로 정보를 가져와서 생성합니다.
-    # 이렇게 하면 API 버전과 모델 경로가 자동으로 매칭됩니다.
-    model_info = genai.get_model('models/gemini-1.5-flash')
-    model = genai.GenerativeModel(model_name=model_info.name)
+    # [치트키] 1.5-flash 대신 가장 안정적인 'gemini-pro'를 사용합니다.
+    # 404 에러를 방지하기 위해 별도의 경로 없이 이름만 넣습니다.
+    model = genai.GenerativeModel('gemini-pro')
     
 except Exception as e:
     st.error(f"연결 오류: {e}")
-    st.write("도움말: 만약 404가 계속되면 Google AI Studio에서 새 프로젝트를 생성 후 키를 다시 받아보세요.")
     st.stop()
 
 st.title("📊 ETF 시장 인텔리전스 & 마케팅 대시보드")
 
-# 3. 사이드바 입력
-st.sidebar.header("데이터 수집 대상")
+# 2. UI 구성
 target_corp = st.sidebar.multiselect("증권사 선택", ["삼성증권", "미래에셋증권", "키움증권", "한국투자증권"])
 target_fund = st.sidebar.multiselect("운용사 선택", ["KODEX", "TIGER", "RISE", "ACE"])
 query = st.text_input("검색할 ETF 키워드", "반도체 ETF")
 
-# 4. 탭 구성
-tab1, tab2, tab3 = st.tabs(["시장 뉴스 & 유튜브", "순매수 & 분석", "AI 마케팅 전략"])
-
-with tab3:
-    st.subheader("💡 Gemini AI 마케팅 인사이트")
-    if st.button("인사이트 분석 실행"):
-        prompt = f"""
-        당신은 전문 ETF 마케터입니다.
-        증권사: {target_corp}
-        운용사: {target_fund}
-        분석 키워드: {query}
-        위 데이터를 바탕으로 투자자에게 어필할 마케팅 포인트 3가지를 제안해줘.
-        """
-        with st.spinner("AI가 분석 중입니다..."):
-            try:
-                # 5. 콘텐츠 생성
-                response = model.generate_content(prompt)
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"분석 중 오류 발생: {e}")
-                st.write("오류가 계속되면 API 키를 새로 발급받아 Secrets에 업데이트했는지 확인해주세요.")
+if st.button("분석 실행"):
+    prompt = f"키워드 '{query}'와 관련하여 {target_corp}와 {target_fund}를 위한 마케팅 전략을 제안해줘."
+    with st.spinner("분석 중..."):
+        try:
+            response = model.generate_content(prompt)
+            st.markdown(response.text)
+        except Exception as e:
+            st.error(f"분석 중 오류 발생: {e}")
+            st.write("---")
+            st.write("이래도 안 된다면? 구글 AI Studio에서 API 키를 만들 때, 오른쪽 상단 설정에서 'Global' 또는 'US' 지역이 선택되었는지 확인해보세요.")
