@@ -106,27 +106,7 @@ with tabs[1]:
             return f"\n### [{name}]\n" + "\n".join(videos) if videos else f"\n### [{name}]\n영상 없음"
         except Exception as e:
             return f"\n### [{name}]\n에러: {e}"
-
-import time
-import re
-
-def generate_with_retry(model, prompt, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            response = model.generate_content(prompt)
-            return response
-        except Exception as e:
-            error_msg = str(e)
-            if "429" in error_msg:
-                wait = 30
-                match = re.search(r'retry in (\d+)', error_msg)
-                if match:
-                    wait = int(match.group(1)) + 5
-                st.warning(f"⏳ API 한도 초과. {wait}초 후 재시도... ({attempt+1}/{max_retries})")
-                time.sleep(wait)
-            else:
-                raise e
-    raise Exception("최대 재시도 횟수 초과")
+            
     
     # [3] 실행 버튼
     if st.button("유튜브 트렌드 분석 실행 🚀"):
