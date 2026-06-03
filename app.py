@@ -52,7 +52,10 @@ with tabs[1]:
     st.subheader("🎬 주요 증권사 유튜브 마케팅 모니터링")
     st.markdown("4대 증권사 채널의 영상을 전수 조사하여 **Gemini**가 마케팅 전략을 도출합니다.")
 
-    # 1. 설정 섹션
+    YOUTUBE_API_KEY = st.secrets["YOUTUBE_KEY"]
+GEMINI_API_KEY = st.secrets["GEMINI_KEY"]
+
+# 1. 설정 섹션
     with st.expander("🔑 API 설정 및 분석 기간 선택", expanded=True):
         col_api1, col_api2 = st.columns(2)
         with col_api1:
