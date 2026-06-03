@@ -117,7 +117,7 @@ with tabs[1]:
                 genai.configure(api_key=API_KEY_GEMINI)
                 
                 # [핵심] 모델 지정 ('models/' 접두어 없이 사용)
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                model = genai.GenerativeModel('gemini-2.0-flash')
                 
                 progress = st.progress(0)
                 status = st.empty()
