@@ -3,7 +3,7 @@ pandas
 plotly
 numpy
 google-api-python-client  # 유튜브 API 사용 시
-google-generativeai       # Gemini AI 사용 시
+google-genai      # Gemini AI 사용 시
 openpyxl
 requests
 youtube-transcript-api
