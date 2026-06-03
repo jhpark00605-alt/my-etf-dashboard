@@ -1,58 +1,32 @@
 import streamlit as st
 import google.generativeai as genai
 
-# 1. 페이지 설정
 st.set_page_config(page_title="ETF 통합 마케팅 대시보드", layout="wide")
 
-# 2. API 설정 (반드시 Streamlit Cloud Secrets에 GEMINI_API_KEY가 등록되어 있어야 합니다)
-st.set_page_config(page_title="ETF 통합 마케팅 대시보드", layout="wide")
-
+# API 설정
 try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    api_key = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=api_key)
     
-    # [핵심 수정] models/ 접두사를 명시적으로 추가합니다.
-    # 이것이 가장 많은 404 에러를 해결하는 방법입니다.
-    model = genai.GenerativeModel('models/gemini-1.5-flash')
+    # 1. 사용 가능한 모델 리스트를 강제로 불러옵니다.
+    models = genai.list_models()
     
+    # 2. 'generateContent'가 가능한 모델 중 이름에 'flash'가 들어가는 것을 찾습니다.
+    selected_model = None
+    for m in models:
+        if "generateContent" in m.supported_methods and "flash" in m.name:
+            selected_model = m.name
+            break
+    
+    # 3. 모델이 없으면 리스트의 첫 번째 모델이라도 사용합니다.
+    if not selected_model:
+        selected_model = [m.name for m in models if "generateContent" in m.supported_methods][0]
+    
+    model = genai.GenerativeModel(selected_model)
+    st.sidebar.write(f"사용 중인 모델: {selected_model}") # 디버깅용 확인창
+
 except Exception as e:
-    st.error(f"API 설정 오류: {e}")
+    st.error(f"API 설정 및 모델 연결 오류: {e}")
     st.stop()
 
-st.title("📊 ETF 시장 인텔리전스 & 마케팅 대시보드")
-
-# 3. 사이드바: 데이터 수집 대상 선택
-st.sidebar.header("데이터 수집 대상")
-target_corp = st.sidebar.multiselect("증권사 선택", ["삼성증권", "미래에셋증권", "키움증권", "한국투자증권"])
-target_fund = st.sidebar.multiselect("운용사 선택", ["KODEX", "TIGER", "RISE", "ACE"])
-
-# 4. 탭 구성
-tab1, tab2, tab3 = st.tabs(["시장 뉴스 & 유튜브", "순매수 & 분석", "AI 마케팅 전략"])
-
-with tab1:
-    st.subheader("📰 시장 이슈 및 유튜브 테마")
-    query = st.text_input("검색할 ETF 키워드", "반도체 ETF")
-    if st.button("데이터 수집"):
-        st.write(f"'{query}' 관련 데이터를 수집 중입니다...")
-        st.success("데이터 수집 로직이 연결되었습니다.")
-
-with tab2:
-    st.subheader("📈 순매수 강도 및 연령별 데이터")
-    st.info("향후 데이터 API를 연동하여 시각화할 영역입니다.")
-
-with tab3:
-    st.subheader("💡 Gemini AI 마케팅 인사이트")
-    if st.button("인사이트 분석 실행"):
-        prompt = f"""
-        당신은 전문 ETF 마케터입니다. 
-        사용자가 선택한 증권사: {target_corp}
-        사용자가 선택한 운용사: {target_fund}
-        분석 키워드: {query}
-        
-        이 데이터를 기반으로 마케팅 전략을 제안해줘.
-        """
-        with st.spinner("Gemini가 시장을 분석 중입니다..."):
-            try:
-                response = model.generate_content(prompt)
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"분석 중 오류 발생: {e}")
+# ... (이후 UI 코드 생략, 동일하게 유지)
