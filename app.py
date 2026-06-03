@@ -8,7 +8,7 @@ st.set_page_config(page_title="ETF 통합 마케팅 대시보드", layout="wide"
 
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
 except Exception as e:
     st.error("API 키 설정이 필요합니다. Streamlit Settings > Secrets를 확인하세요.")
     st.stop()
