@@ -116,7 +116,10 @@ with tabs[1]:
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=API_KEY_GEMINI)
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                model = genai.GenerativeModel(
+                    model_name='gemini-1.5-flash',
+                    generation_config={"candidate_count": 1}
+                )
                 
                 # 1. 여기서 변수를 먼저 정의하고 초기화합니다.
                 all_text = "" 
