@@ -282,7 +282,7 @@ with tabs[2]:
         # 2. 각 운용사별 뉴스 RSS 크롤링
         all_brand_news = {}
         for idx, (brand, query) in enumerate(BRANDS.items()):
-            status.text(f"🌐 {brand} 관련 최신 뉴스 수집 중...")
+            status.text(f"🔍 {brand} 뉴스 수집 중...")
             encoded_query = urllib.parse.quote(query)
             rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
             
@@ -299,7 +299,7 @@ with tabs[2]:
             progress.progress(int((idx + 1) * 15))
 
         # 3. 사용 가능한 Gemini 모델 자동 탐색
-        status.text("📡 사용 가능한 AI 모델 조회 중...")
+        status.text("📡 AI 모델 연결 중...")
         try:
             list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
             list_res = requests.get(list_url).json()
@@ -307,18 +307,19 @@ with tabs[2]:
                                 if 'generateContent' in m.get('supportedGenerationMethods', [])]
             
             selected_model = None
-            for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
+            for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-1.5-pro"]:
                 if candidate in available_models:
                     selected_model = candidate
                     break
+            
             if not selected_model and available_models:
                 selected_model = available_models[0]
             
             if not selected_model:
-                st.error("❌ 사용 가능한 Gemini 모델을 찾을 수 없습니다.")
+                st.error("❌ 사용 가능한 AI 모델을 찾을 수 없습니다.")
             else:
                 # 4. 선택된 AI 모델로 데이터 분석
-                status.text(f"🤖 {selected_model.split('/')[-1]} 모델로 요약 중...")
+                status.text("🤖 AI 요약 리포트 생성 중...")
                 gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={GEMINI_KEY}"
                 
                 news_context = ""
@@ -343,12 +344,12 @@ with tabs[2]:
                 
                 if res.status_code == 200:
                     raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
-                    clean_res = raw_res.replace("```json", "").replace("
-```", "").strip()
+                    # [수정된 부분] 따옴표와 괄호를 정확히 닫았습니다.
+                    clean_res = raw_res.replace("```json", "").replace("```", "").strip()
                     summary_data = json.loads(clean_res)
                     
                     progress.progress(100)
-                    status.text("✅ 업데이트 완료!")
+                    status.text("✅ 모든 데이터 업데이트 완료!")
                     
                     # 5. 화면 레이아웃 출력
                     st.markdown("---")
