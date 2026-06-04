@@ -120,48 +120,60 @@ with tabs[1]:
             status = st.empty()
             all_text = "" 
 
-            # [Step A] 유튜브 데이터 수집 (기존 함수 get_yt_data가 정의되어 있다고 가정)
-            # 만약 get_yt_data 함수가 없다면 이 코드 블록 위에 정의되어 있어야 합니다.
+            # [Step 1] 유튜브 데이터 수집
             for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
                 status.text(f"🔍 {name} 영상 수집 중...")
                 all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
                 progress.progress((i + 1) * 20)
 
-            # [Step B] Gemini 분석 (가장 중요한 부분!)
             if not all_text.strip() or len(all_text) < 50:
-                st.warning("수집된 영상 데이터가 부족합니다. 날짜 범위를 넓혀보세요.")
+                st.warning("데이터가 부족합니다. 날짜를 확인하세요.")
             else:
-                status.text("🤖 Gemini AI 트렌드 분석 중...")
-                
-                # 수정 포인트: URL 경로와 모델명을 구글 AI 스튜디오 최신 표준으로 고정
-                # 'v1beta' 경로와 'gemini-1.5-flash' 모델 조합 사용
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
-                
-                headers = {'Content-Type': 'application/json'}
-                payload = {
-                    "contents": [{
-                        "parts": [{"text": f"국내 증권사들의 유튜브 활동 내용이야. 마케팅 트렌드를 요약해줘:\n\n{all_text}"}]
-                    }]
-                }
+                # [Step 2] 내 키로 사용 가능한 모델 자동 찾기 (진단 및 해결)
+                status.text("📡 사용 가능한 AI 모델 조회 중...")
+                list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY_GEMINI}"
                 
                 try:
-                    response = requests.post(url, headers=headers, data=json.dumps(payload))
-                    result = response.json()
+                    list_res = requests.get(list_url).json()
+                    available_models = [m['name'] for m in list_res.get('models', []) 
+                                        if 'generateContent' in m.get('supportedGenerationMethods', [])]
                     
-                    if response.status_code == 200:
-                        # 결과 출력
-                        analysis = result['candidates'][0]['content']['parts'][0]['text']
-                        progress.progress(100)
-                        status.text("✅ 분석이 완료되었습니다!")
-                        st.markdown("---")
-                        st.markdown(analysis)
+                    # 우선순위에 따라 모델 선택
+                    selected_model = None
+                    for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
+                        if candidate in available_models:
+                            selected_model = candidate
+                            break
+                    
+                    if not selected_model and available_models:
+                        selected_model = available_models[0] # 아무거나 첫 번째 모델 선택
+                    
+                    if not selected_model:
+                        st.error("❌ 사용 가능한 Gemini 모델을 찾을 수 없습니다. API 키 설정을 확인하세요.")
+                        st.write("조회된 모델 목록:", available_models)
                     else:
-                        # 에러 발생 시 상세 내용 출력 (디버깅용)
-                        st.error(f"AI 분석 실패 (Error {response.status_code})")
-                        st.json(result) # 어떤 에러인지 화면에 직접 표시
+                        # [Step 3] 선택된 모델로 분석 실행
+                        status.text(f"🤖 {selected_model.split('/')[-1]} 모델로 분석 중...")
+                        gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={API_KEY_GEMINI}"
                         
+                        payload = {
+                            "contents": [{"parts": [{"text": f"국내 증권사 유튜브 마케팅 트렌드 분석 리포트 작성해줘:\n\n{all_text}"}]}]
+                        }
+                        
+                        res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload))
+                        
+                        if res.status_code == 200:
+                            analysis = res.json()['candidates'][0]['content']['parts'][0]['text']
+                            progress.progress(100)
+                            status.text("✅ 분석 완료!")
+                            st.markdown("---")
+                            st.markdown(analysis)
+                        else:
+                            st.error(f"⚠️ 분석 실패 (Error {res.status_code})")
+                            st.json(res.json())
+                            
                 except Exception as e:
-                    st.error(f"통신 중 오류가 발생했습니다: {e}")
+                    st.error(f"오류 발생: {e}")
                 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
