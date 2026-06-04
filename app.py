@@ -111,73 +111,57 @@ with tabs[1]:
     # 3. 실행 로직
     if st.button("유튜브 트렌드 분석 실행 🚀"):
         if not API_KEY_YT or not API_KEY_GEMINI:
-            st.error("⚠️ API 키를 불러오지 못했습니다. Secrets 설정을 확인하세요.")
+            st.error("⚠️ API 키를 확인하세요 (Streamlit Secrets 설정 필요)")
         else:
-            progress = st.progress(0)
-            status = st.empty()
-            all_text = "" 
-            
             import requests
             import json
             
-            # 1. 유튜브 데이터 수집
+            progress = st.progress(0)
+            status = st.empty()
+            all_text = "" 
+
+            # [Step A] 유튜브 데이터 수집 (기존 함수 get_yt_data가 정의되어 있다고 가정)
+            # 만약 get_yt_data 함수가 없다면 이 코드 블록 위에 정의되어 있어야 합니다.
             for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
-                status.text(f"🔍 {name} 수집 중...")
+                status.text(f"🔍 {name} 영상 수집 중...")
                 all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
                 progress.progress((i + 1) * 20)
 
-            if not all_text.strip() or "영상 없음" in all_text and len(all_text) < 100:
-                st.warning("수집된 데이터가 너무 적거나 없습니다. 날짜 범위를 넓혀보세요.")
+            # [Step B] Gemini 분석 (가장 중요한 부분!)
+            if not all_text.strip() or len(all_text) < 50:
+                st.warning("수집된 영상 데이터가 부족합니다. 날짜 범위를 넓혀보세요.")
             else:
-                status.text("🤖 Gemini 분석 중...")
-                prompt = f"다음은 국내 주요 증권사들의 유튜브 채널에서 수집한 최근 영상 제목과 자막 내용이야. 이 데이터를 바탕으로 현재 증권업계의 마케팅 트렌드를 분석해서 리포트 형식으로 요약해줘:\n\n{all_text}"
+                status.text("🤖 Gemini AI 트렌드 분석 중...")
                 
-                # ==========================================
-                # 💡 핵심 수정: v1beta 대신 v1 경로를 사용합니다.
-                # ==========================================
-                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
+                # 수정 포인트: URL 경로와 모델명을 구글 AI 스튜디오 최신 표준으로 고정
+                # 'v1beta' 경로와 'gemini-1.5-flash' 모델 조합 사용
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
                 
                 headers = {'Content-Type': 'application/json'}
                 payload = {
                     "contents": [{
-                        "parts": [{"text": prompt}]
+                        "parts": [{"text": f"국내 증권사들의 유튜브 활동 내용이야. 마케팅 트렌드를 요약해줘:\n\n{all_text}"}]
                     }]
                 }
                 
                 try:
                     response = requests.post(url, headers=headers, data=json.dumps(payload))
+                    result = response.json()
                     
                     if response.status_code == 200:
-                        result = response.json()
-                        # 응답 구조에서 텍스트 추출
-                        if 'candidates' in result and len(result['candidates']) > 0:
-                            generated_text = result['candidates'][0]['content']['parts'][0]['text']
-                            progress.progress(100)
-                            status.text("✅ 분석 완료!")
-                            st.markdown("---")
-                            st.markdown(generated_text)
-                        else:
-                            st.error("분석 결과 생성에 실패했습니다. (응답 구조 이상)")
-                    
-                    elif response.status_code == 404:
-                        # v1도 안될 경우를 대비한 최후의 보루: gemini-1.5-pro 시도
-                        st.info("flash 모델을 찾을 수 없어 pro 모델로 재시도합니다...")
-                        url_pro = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={API_KEY_GEMINI}"
-                        response = requests.post(url_pro, headers=headers, data=json.dumps(payload))
-                        if response.status_code == 200:
-                            result = response.json()
-                            generated_text = result['candidates'][0]['content']['parts'][0]['text']
-                            st.markdown(generated_text)
-                        else:
-                            st.error(f"⚠️ 모델을 찾을 수 없습니다 (404). API 설정이나 모델명을 확인하세요.\n{response.text}")
-                            
-                    elif response.status_code == 429:
-                        st.error("⚠️ 요청이 너무 많습니다 (Quota Exceeded). 잠시 후 다시 시도해 주세요.")
+                        # 결과 출력
+                        analysis = result['candidates'][0]['content']['parts'][0]['text']
+                        progress.progress(100)
+                        status.text("✅ 분석이 완료되었습니다!")
+                        st.markdown("---")
+                        st.markdown(analysis)
                     else:
-                        st.error(f"⚠️ API 에러: {response.status_code}\n{response.text}")
+                        # 에러 발생 시 상세 내용 출력 (디버깅용)
+                        st.error(f"AI 분석 실패 (Error {response.status_code})")
+                        st.json(result) # 어떤 에러인지 화면에 직접 표시
                         
                 except Exception as e:
-                    st.error(f"통신 중 오류 발생: {e}")
+                    st.error(f"통신 중 오류가 발생했습니다: {e}")
                 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
