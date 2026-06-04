@@ -258,30 +258,134 @@ with tabs[1]:
 # ==========================================
 with tabs[2]:
     st.subheader("🏢 주요 운용사별 ETF 이슈 모니터링")
-    st.caption("KODEX, TIGER, RISE, ACE의 주요 상장 소식, 보수 인하 등 핵심 이슈를 정리합니다.")
-    
-    col_a, col_b, col_c, col_d = st.columns(4)
-    
-    # [TODO] 각 운용사 보도자료 크롤링 또는 네이버 금융 뉴스 필터링 데이터 연동
-    with col_a:
-        st.success("**KODEX (삼성)**")
-        st.write("- 신규 월배당 ETF 상장 이벤트")
-        st.write("- 미국 장기채 ETF 거래량 1위 달성 홍보")
+    st.caption("Google News에서 각 운용사별 ETF 최신 뉴스를 가져와 AI가 핵심 이슈를 요약합니다.")
+
+    if st.button("운용사 실시간 이슈 분석 🔍"):
+        import requests
+        from bs4 import BeautifulSoup
+        import json
+        import urllib.parse
+
+        # 1. 운용사별 검색어 설정
+        BRANDS = {
+            "KODEX": "삼성자산운용 KODEX ETF",
+            "TIGER": "미래에셋 TIGER ETF",
+            "RISE": "KB자산운용 RISE ETF",
+            "ACE": "한국투자신탁운용 ACE ETF"
+        }
         
-    with col_b:
-        st.warning("**TIGER (미래에셋)**")
-        st.write("- 인도 Nifty50 ETF 마케팅 강화")
-        st.write("- AI 반도체 세미나 개최")
+        GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
         
-    with col_c:
-        st.info("**RISE (KB)**")
-        st.write("- ETF 브랜드명 'RISE' 리뉴얼 대대적 홍보")
-        st.write("- 배당왕 ETF 수수료 인하")
+        status = st.empty()
+        progress = st.progress(0)
         
-    with col_d:
-        st.error("**ACE (한국투자)**")
-        st.write("- 빅테크 밸류체인 액티브 ETF 출시")
-        st.write("- 유튜브 쇼츠를 활용한 2030 타겟 마케팅")
+        # 2. 각 운용사별 뉴스 RSS 크롤링
+        all_brand_news = {}
+        for idx, (brand, query) in enumerate(BRANDS.items()):
+            status.text(f"🌐 {brand} 관련 최신 뉴스 수집 중...")
+            encoded_query = urllib.parse.quote(query)
+            rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+            
+            try:
+                headers = {"User-Agent": "Mozilla/5.0"}
+                resp = requests.get(rss_url, headers=headers)
+                soup = BeautifulSoup(resp.content, "xml")
+                items = soup.find_all("item")[:10]  # 상위 10개 추출
+                titles = [item.title.text for item in items]
+                all_brand_news[brand] = "\n".join(titles) if titles else "최신 뉴스 없음"
+            except Exception as e:
+                all_brand_news[brand] = f"뉴스 수집 실패 ({e})"
+            
+            progress.progress(int((idx + 1) * 15)) # 진행 바 업데이트
+
+        # 3. 내 API 키로 사용 가능한 Gemini 모델 자동 탐색 (앞서 검증된 성공 로직!)
+        status.text("📡 사용 가능한 AI 모델 조회 중...")
+        try:
+            list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
+            list_res = requests.get(list_url).json()
+            available_models = [m['name'] for m in list_res.get('models', []) 
+                                if 'generateContent' in m.get('supportedGenerationMethods', [])]
+            
+            selected_model = None
+            for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
+                if candidate in available_models:
+                    selected_model = candidate
+                    break
+            if not selected_model and available_models:
+                selected_model = available_models[0]
+            
+            if not selected_model:
+                st.error("❌ 사용 가능한 Gemini 모델을 찾을 수 없습니다.")
+            else:
+                # 4. 선택된 AI 모델로 데이터 분석
+                status.text(f"🤖 {selected_model.split('/')[-1]} 모델로 브랜드별 핵심 이슈 요약 중...")
+                gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={GEMINI_KEY}"
+                
+                # AI에게 넘겨줄 텍스트 구조화
+                news_context = ""
+                for brand, news in all_brand_news.items():
+                    news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
+                    
+                prompt = f"""
+                제공된 운용사별 뉴스 데이터를 기반으로, 각 운용사(KODEX, TIGER, RISE, ACE)의 가장 중요한 최근 핵심 이슈, 신규 상장 소식, 또는 마케팅 포인트를 딱 2개씩만 명확하게 요약해줘.
+                반드시 아래 지정된 JSON 형식으로만 응답해야 해. 앞뒤로 다른 설명이나 텍스트는 절대 붙이지 마.
+
+                [응답 형식 JSON]
+                {{
+                    "KODEX": ["첫 번째 이슈 요약 문장", "두 번째 이슈 요약 문장"],
+                    "TIGER": ["첫 번째 이슈 요약 문장", "두 번째 이슈 요약 문장"],
+                    "RISE": ["첫 번째 이슈 요약 문장", "두 번째 이슈 요약 문장"],
+                    "ACE": ["첫 번째 이슈 요약 문장", "두 번째 이슈 요약 문장"]
+                }}
+
+                데이터:
+                {news_context}
+                """
+                
+                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                res = requests.post(gen_url, json=payload)
+                
+                if res.status_code == 200:
+                    raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
+                    clean_res = raw_res.replace("```json", "").replace("
+```", "").strip()
+                    summary_data = json.loads(clean_res)
+                    
+                    progress.progress(100)
+                    status.text("✅ 운용사별 실시간 이슈 업데이트 완료!")
+                    st.markdown("---")
+                    
+                    # 5. 기존 4단 레이아웃(컬럼 및 색상 박스) 구조에 데이터 바인딩
+                    col_a, col_b, col_c, col_d = st.columns(4)
+                    
+                    with col_a:
+                        st.success("**KODEX (삼성)**")
+                        issues = summary_data.get("KODEX", ["이슈 요약 실패", "데이터를 확인하세요."])
+                        for issue in issues:
+                            st.write(f"- {issue}")
+                            
+                    with col_b:
+                        st.warning("**TIGER (미래에셋)**")
+                        issues = summary_data.get("TIGER", ["이슈 요약 실패", "데이터를 확인하세요."])
+                        for issue in issues:
+                            st.write(f"- {issue}")
+                            
+                    with col_c:
+                        st.info("**RISE (KB)**")
+                        issues = summary_data.get("RISE", ["이슈 요약 실패", "데이터를 확인하세요."])
+                        for issue in issues:
+                            st.write(f"- {issue}")
+                            
+                    with col_d:
+                        st.error("**ACE (한국투자)**")
+                        issues = summary_data.get("ACE", ["이슈 요약 실패", "데이터를 확인하세요."])
+                        for issue in issues:
+                            st.write(f"- {issue}")
+                else:
+                    st.error(f"AI 분석 실패 (Error {res.status_code})")
+                    st.json(res.json())
+        except Exception as e:
+            st.error(f"오류 발생: {e}")
 
 # ==========================================
 # Tab 4: 투자자 & 순매수 데이터 (마케팅 실효성)
