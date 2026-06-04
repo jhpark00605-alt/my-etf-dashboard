@@ -113,45 +113,55 @@ with tabs[1]:
         if not API_KEY_YT or not API_KEY_GEMINI:
             st.error("⚠️ API 키를 불러오지 못했습니다. Secrets 설정을 확인하세요.")
         else:
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=API_KEY_GEMINI)
-                model = genai.GenerativeModel(
-                    model_name='gemini-1.0-pro',
-                    generation_config={"candidate_count": 1}
-                )
-                
-                # 1. 여기서 변수를 먼저 정의하고 초기화합니다.
-                all_text = "" 
-                
-                progress = st.progress(0)
-                status = st.empty()
-                
-                # 2. 데이터 수집 루프
-                for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
-                    status.text(f"🔍 {name} 수집 중...")
-                    # 루프 내에서 데이터를 누적합니다.
-                    data = get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
-                    all_text += data
-                    progress.progress((i + 1) * 25) # 4개 채널이므로 25%씩 증가
+            progress = st.progress(0)
+            status = st.empty()
+            all_text = "" 
+            
+            # 1. 유튜브 데이터 수집 루프
+            import requests # requests 라이브러리 사용
+            import json
+            
+            for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
+                status.text(f"🔍 {name} 수집 중...")
+                all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
+                progress.progress((i + 1) * 20)
 
-                # 3. 데이터가 수집되었는지 확인 후 분석
-                if not all_text.strip():
-                    st.warning("수집된 데이터가 없습니다. 날짜를 확인해 보세요.")
-                else:
-                    status.text("🤖 Gemini 분석 중...")
-                    prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
-                    
-                    # 4. 분석 실행
-                    response = model.generate_content(prompt)
-                    
-                    progress.progress(100)
-                    status.text("✅ 분석 완료!")
-                    st.markdown("---")
-                    st.markdown(response.text)
+            # 2. 데이터 유무 확인
+            if not all_text.strip():
+                st.warning("수집된 데이터가 없습니다. 날짜를 확인해 보세요.")
+            else:
+                status.text("🤖 Gemini 분석 중...")
+                prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
                 
-            except Exception as e:
-                st.error(f"분석 중 오류 발생: {e}")
+                # ==========================================
+                # 💡 핵심: 라이브러리를 쓰지 않고 직접 구글 서버로 요청을 보냅니다.
+                # ==========================================
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
+                headers = {'Content-Type': 'application/json'}
+                data = {
+                    "contents": [{"parts": [{"text": prompt}]}]
+                }
+                
+                try:
+                    response = requests.post(url, headers=headers, data=json.dumps(data))
+                    
+                    if response.status_code == 200:
+                        # 정상 응답 시 텍스트 추출
+                        result = response.json()
+                        generated_text = result['candidates'][0]['content']['parts'][0]['text']
+                        
+                        progress.progress(100)
+                        status.text("✅ 분석 완료!")
+                        st.markdown("---")
+                        st.markdown(generated_text)
+                        
+                    elif response.status_code == 429:
+                        st.error("⚠️ 일일 API 사용량을 초과했거나 요청이 너무 많습니다. (429 Error)")
+                    else:
+                        st.error(f"⚠️ API 에러: {response.status_code}\n{response.text}")
+                        
+                except Exception as e:
+                    st.error(f"통신 중 오류 발생: {e}")
                 
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
