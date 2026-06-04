@@ -117,46 +117,62 @@ with tabs[1]:
             status = st.empty()
             all_text = "" 
             
-            # 1. 유튜브 데이터 수집 루프
-            import requests # requests 라이브러리 사용
+            import requests
             import json
             
+            # 1. 유튜브 데이터 수집
             for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
                 status.text(f"🔍 {name} 수집 중...")
                 all_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
                 progress.progress((i + 1) * 20)
 
-            # 2. 데이터 유무 확인
-            if not all_text.strip():
-                st.warning("수집된 데이터가 없습니다. 날짜를 확인해 보세요.")
+            if not all_text.strip() or "영상 없음" in all_text and len(all_text) < 100:
+                st.warning("수집된 데이터가 너무 적거나 없습니다. 날짜 범위를 넓혀보세요.")
             else:
                 status.text("🤖 Gemini 분석 중...")
-                prompt = f"다음 데이터를 분석하여 증권사 마케팅 트렌드 리포트를 작성해줘:\n\n{all_text}"
+                prompt = f"다음은 국내 주요 증권사들의 유튜브 채널에서 수집한 최근 영상 제목과 자막 내용이야. 이 데이터를 바탕으로 현재 증권업계의 마케팅 트렌드를 분석해서 리포트 형식으로 요약해줘:\n\n{all_text}"
                 
                 # ==========================================
-                # 💡 핵심: 라이브러리를 쓰지 않고 직접 구글 서버로 요청을 보냅니다.
+                # 💡 핵심 수정: v1beta 대신 v1 경로를 사용합니다.
                 # ==========================================
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
+                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
+                
                 headers = {'Content-Type': 'application/json'}
-                data = {
-                    "contents": [{"parts": [{"text": prompt}]}]
+                payload = {
+                    "contents": [{
+                        "parts": [{"text": prompt}]
+                    }]
                 }
                 
                 try:
-                    response = requests.post(url, headers=headers, data=json.dumps(data))
+                    response = requests.post(url, headers=headers, data=json.dumps(payload))
                     
                     if response.status_code == 200:
-                        # 정상 응답 시 텍스트 추출
                         result = response.json()
-                        generated_text = result['candidates'][0]['content']['parts'][0]['text']
-                        
-                        progress.progress(100)
-                        status.text("✅ 분석 완료!")
-                        st.markdown("---")
-                        st.markdown(generated_text)
-                        
+                        # 응답 구조에서 텍스트 추출
+                        if 'candidates' in result and len(result['candidates']) > 0:
+                            generated_text = result['candidates'][0]['content']['parts'][0]['text']
+                            progress.progress(100)
+                            status.text("✅ 분석 완료!")
+                            st.markdown("---")
+                            st.markdown(generated_text)
+                        else:
+                            st.error("분석 결과 생성에 실패했습니다. (응답 구조 이상)")
+                    
+                    elif response.status_code == 404:
+                        # v1도 안될 경우를 대비한 최후의 보루: gemini-1.5-pro 시도
+                        st.info("flash 모델을 찾을 수 없어 pro 모델로 재시도합니다...")
+                        url_pro = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={API_KEY_GEMINI}"
+                        response = requests.post(url_pro, headers=headers, data=json.dumps(payload))
+                        if response.status_code == 200:
+                            result = response.json()
+                            generated_text = result['candidates'][0]['content']['parts'][0]['text']
+                            st.markdown(generated_text)
+                        else:
+                            st.error(f"⚠️ 모델을 찾을 수 없습니다 (404). API 설정이나 모델명을 확인하세요.\n{response.text}")
+                            
                     elif response.status_code == 429:
-                        st.error("⚠️ 일일 API 사용량을 초과했거나 요청이 너무 많습니다. (429 Error)")
+                        st.error("⚠️ 요청이 너무 많습니다 (Quota Exceeded). 잠시 후 다시 시도해 주세요.")
                     else:
                         st.error(f"⚠️ API 에러: {response.status_code}\n{response.text}")
                         
