@@ -254,15 +254,6 @@ with tabs[1]:
                     st.error(f"오류 발생: {e}")
                 
 # ==========================================
-# Tab 3: 타운용사(경쟁사) 동향
-# ==========================================
-SyntaxError: unterminated string literal 오류는 코드를 복사하거나 생성하는 과정에서 따옴표나 괄호가 제대로 닫히지 않아 발생한 문제입니다. 특히 마지막에 제공해 드린 코드의 뒷부분이 잘리면서 발생한 것으로 보입니다.
-
-문제가 된 Tab 3의 해당 라인과 전체 코드를 완벽하게 수정한 버전입니다. 이 코드를 복사해서 with tabs[2]: 블록에 덮어씌워 주세요.
-
-🛠️ Tab 3 전체 교체 코드 (Syntax Error 수정 완료)
-Python
-# ==========================================
 # Tab 3: 주요 운용사별 ETF 이슈 모니터링
 # ==========================================
 with tabs[2]:
@@ -352,8 +343,8 @@ with tabs[2]:
                 
                 if res.status_code == 200:
                     raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
-                    # 에러가 발생했던 부분 수정: 따옴표를 정확히 닫음
-                    clean_res = raw_res.replace("```json", "").replace("```", "").strip()
+                    clean_res = raw_res.replace("```json", "").replace("
+```", "").strip()
                     summary_data = json.loads(clean_res)
                     
                     progress.progress(100)
