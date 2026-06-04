@@ -256,6 +256,15 @@ with tabs[1]:
 # ==========================================
 # Tab 3: 타운용사(경쟁사) 동향
 # ==========================================
+SyntaxError: unterminated string literal 오류는 코드를 복사하거나 생성하는 과정에서 따옴표나 괄호가 제대로 닫히지 않아 발생한 문제입니다. 특히 마지막에 제공해 드린 코드의 뒷부분이 잘리면서 발생한 것으로 보입니다.
+
+문제가 된 Tab 3의 해당 라인과 전체 코드를 완벽하게 수정한 버전입니다. 이 코드를 복사해서 with tabs[2]: 블록에 덮어씌워 주세요.
+
+🛠️ Tab 3 전체 교체 코드 (Syntax Error 수정 완료)
+Python
+# ==========================================
+# Tab 3: 주요 운용사별 ETF 이슈 모니터링
+# ==========================================
 with tabs[2]:
     st.subheader("🏢 주요 운용사별 ETF 이슈 모니터링")
     st.caption("Google News에서 각 운용사별 ETF 최신 뉴스를 가져와 AI가 핵심 이슈를 요약합니다.")
@@ -290,15 +299,15 @@ with tabs[2]:
                 headers = {"User-Agent": "Mozilla/5.0"}
                 resp = requests.get(rss_url, headers=headers)
                 soup = BeautifulSoup(resp.content, "xml")
-                items = soup.find_all("item")[:10]  # 상위 10개 추출
+                items = soup.find_all("item")[:10]
                 titles = [item.title.text for item in items]
                 all_brand_news[brand] = "\n".join(titles) if titles else "최신 뉴스 없음"
             except Exception as e:
                 all_brand_news[brand] = f"뉴스 수집 실패 ({e})"
             
-            progress.progress(int((idx + 1) * 15)) # 진행 바 업데이트
+            progress.progress(int((idx + 1) * 15))
 
-        # 3. 내 API 키로 사용 가능한 Gemini 모델 자동 탐색 (앞서 검증된 성공 로직!)
+        # 3. 사용 가능한 Gemini 모델 자동 탐색
         status.text("📡 사용 가능한 AI 모델 조회 중...")
         try:
             list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
@@ -318,26 +327,22 @@ with tabs[2]:
                 st.error("❌ 사용 가능한 Gemini 모델을 찾을 수 없습니다.")
             else:
                 # 4. 선택된 AI 모델로 데이터 분석
-                status.text(f"🤖 {selected_model.split('/')[-1]} 모델로 브랜드별 핵심 이슈 요약 중...")
+                status.text(f"🤖 {selected_model.split('/')[-1]} 모델로 요약 중...")
                 gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={GEMINI_KEY}"
                 
-                # AI에게 넘겨줄 텍스트 구조화
                 news_context = ""
                 for brand, news in all_brand_news.items():
                     news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
                     
                 prompt = f"""
-                제공된 운용사별 뉴스 데이터를 기반으로, 각 운용사(KODEX, TIGER, RISE, ACE)의 가장 중요한 최근 핵심 이슈, 신규 상장 소식, 또는 마케팅 포인트를 딱 2개씩만 명확하게 요약해줘.
-                반드시 아래 지정된 JSON 형식으로만 응답해야 해. 앞뒤로 다른 설명이나 텍스트는 절대 붙이지 마.
-
-                [응답 형식 JSON]
+                다음 운용사별 뉴스 데이터를 기반으로, 각 브랜드의 최근 핵심 이슈를 2개씩 요약해줘.
+                반드시 아래 JSON 형식으로만 응답해.
                 {{
-                    "KODEX": ["첫 번째 이슈 요약 문장", "두 번째 이슈 요약 문장"],
-                    "TIGER": ["첫 번째 이슈 요약 문장", "두 번째 이슈 요약 문장"],
-                    "RISE": ["첫 번째 이슈 요약 문장", "두 번째 이슈 요약 문장"],
-                    "ACE": ["첫 번째 이슈 요약 문장", "두 번째 이슈 요약 문장"]
+                    "KODEX": ["이슈1", "이슈2"],
+                    "TIGER": ["이슈1", "이슈2"],
+                    "RISE": ["이슈1", "이슈2"],
+                    "ACE": ["이슈1", "이슈2"]
                 }}
-
                 데이터:
                 {news_context}
                 """
@@ -347,43 +352,38 @@ with tabs[2]:
                 
                 if res.status_code == 200:
                     raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
-                    clean_res = raw_res.replace("```json", "").replace("
-```", "").strip()
+                    # 에러가 발생했던 부분 수정: 따옴표를 정확히 닫음
+                    clean_res = raw_res.replace("```json", "").replace("```", "").strip()
                     summary_data = json.loads(clean_res)
                     
                     progress.progress(100)
-                    status.text("✅ 운용사별 실시간 이슈 업데이트 완료!")
-                    st.markdown("---")
+                    status.text("✅ 업데이트 완료!")
                     
-                    # 5. 기존 4단 레이아웃(컬럼 및 색상 박스) 구조에 데이터 바인딩
+                    # 5. 화면 레이아웃 출력
+                    st.markdown("---")
                     col_a, col_b, col_c, col_d = st.columns(4)
                     
                     with col_a:
                         st.success("**KODEX (삼성)**")
-                        issues = summary_data.get("KODEX", ["이슈 요약 실패", "데이터를 확인하세요."])
-                        for issue in issues:
+                        for issue in summary_data.get("KODEX", ["데이터 없음"]):
                             st.write(f"- {issue}")
                             
                     with col_b:
                         st.warning("**TIGER (미래에셋)**")
-                        issues = summary_data.get("TIGER", ["이슈 요약 실패", "데이터를 확인하세요."])
-                        for issue in issues:
+                        for issue in summary_data.get("TIGER", ["데이터 없음"]):
                             st.write(f"- {issue}")
                             
                     with col_c:
                         st.info("**RISE (KB)**")
-                        issues = summary_data.get("RISE", ["이슈 요약 실패", "데이터를 확인하세요."])
-                        for issue in issues:
+                        for issue in summary_data.get("RISE", ["데이터 없음"]):
                             st.write(f"- {issue}")
                             
                     with col_d:
                         st.error("**ACE (한국투자)**")
-                        issues = summary_data.get("ACE", ["이슈 요약 실패", "데이터를 확인하세요."])
-                        for issue in issues:
+                        for issue in summary_data.get("ACE", ["데이터 없음"]):
                             st.write(f"- {issue}")
                 else:
-                    st.error(f"AI 분석 실패 (Error {res.status_code})")
-                    st.json(res.json())
+                    st.error(f"AI 분석 실패: {res.status_code}")
         except Exception as e:
             st.error(f"오류 발생: {e}")
 
