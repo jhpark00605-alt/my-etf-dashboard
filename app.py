@@ -30,20 +30,81 @@ tabs = st.tabs([
 # ==========================================
 with tabs[0]:
     st.subheader("📰 금주 ETF 관련 뉴스 및 이슈 언급량 파악")
-    st.caption("주요 경제 뉴스를 크롤링하여 가장 많이 언급된 키워드와 테마를 분석합니다.")
-    
-    # [TODO] 실제 뉴스 크롤링 및 형태소 분석(KoNLPy 등) 데이터 연동 필요
-    mock_keywords = pd.DataFrame({
-        '키워드': ['반도체', 'AI', '배당금', '이차전지', '미국채', 'S&P500'],
-        '언급량': [450, 380, 290, 210, 150, 310]
-    }).sort_values(by='언급량', ascending=False)
-    
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        st.dataframe(mock_keywords, use_container_width=True, hide_index=True)
-    with col2:
-        fig1 = px.bar(mock_keywords, x='키워드', y='언급량', color='언급량', title="금주 주요 키워드 언급량")
-        st.plotly_chart(fig1, use_container_width=True)
+    st.caption("Google News에서 ETF 관련 최신 뉴스를 가져와 AI가 키워드를 분석합니다.")
+
+    if st.button("실시간 뉴스 분석 실행 🔍"):
+        import requests
+        from bs4 import BeautifulSoup
+        import pandas as pd
+        import json
+
+        # 1. 뉴스 크롤링 (Google News RSS - ETF 검색)
+        status = st.empty()
+        status.text("🌐 최신 뉴스 수집 중...")
+        
+        rss_url = "https://news.google.com/rss/search?q=ETF&hl=ko&gl=KR&ceid=KR:ko"
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            resp = requests.get(rss_url, headers=headers)
+            soup = BeautifulSoup(resp.content, "xml")
+            items = soup.find_all("item")
+            
+            # 뉴스 제목 추출 (최대 30개)
+            titles = [item.title.text for item in items[:30]]
+            all_titles_text = "\n".join(titles)
+            
+            if not titles:
+                st.warning("수집된 뉴스가 없습니다.")
+            else:
+                # 2. Gemini를 이용한 키워드 분석
+                status.text("🤖 AI가 키워드 분석 및 언급량 계산 중...")
+                
+                # [중요] API KEY는 이미 Tab 2에서 가져온 것을 사용
+                GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+                
+                prompt = f"""
+                다음 뉴스 제목들을 분석해서 가장 많이 언급된 핵심 키워드(테마) 6개를 뽑아줘.
+                각 키워드별로 뉴스들 사이에서의 상대적인 중요도(언급량 점수)를 100~500 사이로 계산해줘.
+                반드시 아래 JSON 형식으로만 응답해줘:
+                [
+                    {{"키워드": "반도체", "언급량": 450}},
+                    ...
+                ]
+                뉴스 제목 데이터:
+                {all_titles_text}
+                """
+                
+                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                res = requests.post(url, json=payload)
+                
+                if res.status_code == 200:
+                    # JSON 응답 파싱 (Markdown 제거 처리)
+                    raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
+                    clean_res = raw_res.replace("```json", "").replace("```", "").strip()
+                    keyword_list = json.loads(clean_res)
+                    
+                    # 데이터프레임 생성 및 정렬
+                    df_keywords = pd.DataFrame(keyword_list).sort_values(by='언급량', ascending=False)
+                    
+                    status.text("✅ 분석 완료!")
+                    
+                    # 3. 화면 UI 업데이트
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        st.write("📊 분석된 키워드 순위")
+                        st.dataframe(df_keywords, use_container_width=True, hide_index=True)
+                    with col2:
+                        import plotly.express as px
+                        fig1 = px.bar(df_keywords, x='키워드', y='언급량', color='언급량', 
+                                     title="실시간 뉴스 키워드 언급량",
+                                     color_continuous_scale='Blues')
+                        st.plotly_chart(fig1, use_container_width=True)
+                else:
+                    st.error(f"AI 분석 중 오류가 발생했습니다: {res.status_code}")
+                    
+        except Exception as e:
+            st.error(f"크롤링/분석 중 오류 발생: {e}")
 
 # ==========================================
 # Tab 2: 증권사 유튜브 트렌드
