@@ -117,7 +117,7 @@ with tabs[1]:
                 import google.generativeai as genai
                 genai.configure(api_key=API_KEY_GEMINI)
                 model = genai.GenerativeModel(
-                    model_name='gemini-1.5-flash',
+                    model_name='gemini-1.0-pro',
                     generation_config={"candidate_count": 1}
                 )
                 
