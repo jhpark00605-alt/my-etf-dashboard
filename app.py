@@ -12,7 +12,7 @@ import google.generativeai as genai  # 라이브러리 교체
 st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈", layout="wide")
 
 # 헤더
-st.title("📈 KODEX ETF 주간 마케팅 & 트렌드 모니터링 에이전트")
+st.title("📈 KODEX ETF 주간 마케팅 & 트렌드 모니터링 에이전트: TEAM1")
 st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기반 트렌드 분석 대시보드입니다.")
 st.divider()
 
