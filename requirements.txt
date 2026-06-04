@@ -4,3 +4,5 @@ youtube-transcript-api
 requests
 plotly
 openpyxl
+beautifulsoup4
+lxml
