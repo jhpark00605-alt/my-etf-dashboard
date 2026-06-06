@@ -186,7 +186,7 @@ with tabs[1]:
         except Exception as e:
             return f"\n### [{name}]\n에러: {e}"
 
-    # 3. 실행 로직
+    # # 3. 실행 로직 (새로운 고도화 리포트 및 에러 방지 적용 버전)
     if st.button("유튜브 트렌드 분석 실행 🚀"):
         if not API_KEY_YT or not API_KEY_GEMINI:
             st.error("⚠️ API 키를 확인하세요 (Streamlit Secrets 설정 필요)")
@@ -207,7 +207,7 @@ with tabs[1]:
             if not all_text.strip() or len(all_text) < 50:
                 st.warning("데이터가 부족합니다. 날짜를 확인하세요.")
             else:
-                # [Step 2] 내 키로 사용 가능한 모델 자동 찾기 (진단 및 해결)
+                # [Step 2] 내 키로 사용 가능한 모델 자동 찾기
                 status.text("📡 사용 가능한 AI 모델 조회 중...")
                 list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY_GEMINI}"
                 
@@ -224,18 +224,85 @@ with tabs[1]:
                             break
                     
                     if not selected_model and available_models:
-                        selected_model = available_models[0] # 아무거나 첫 번째 모델 선택
+                        selected_model = available_models[0] 
                     
                     if not selected_model:
                         st.error("❌ 사용 가능한 Gemini 모델을 찾을 수 없습니다. API 키 설정을 확인하세요.")
                         st.write("조회된 모델 목록:", available_models)
                     else:
-                        # [Step 3] 선택된 모델로 분석 실행
-                        status.text(f"🤖 {selected_model.split('/')[-1]} 모델로 분석 중...")
+                        # [Step 3] 선택된 모델로 원하셨던 맞춤형 서식 분석 실행
+                        status.text(f"🤖 {selected_model.split('/')[-1]} 모델로 전략 리포트 생성 중...")
                         gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={API_KEY_GEMINI}"
                         
+                        # 요청하신 서식(롱폼/숏폼 분리, 액션플랜, 인사이트)을 강제 주입한 프롬프트
+                        prompt = f"""
+                        너는 대형 자산운용사의 최고 상품기획자이자 기관영업 마케팅 전략가야.
+                        아래 제공된 국내 주요 4대 증권사(미래에셋, 키움, 삼성, 한국투자)의 유튜브 최신 콘텐츠 데이터를 분석하여, 
+                        우리 운용사가 각 증권사에 제안할 수 있는 '주간 유튜브 트렌드 분석 및 ETF 영업 액션 플랜' 리포트를 작성해줘.
+
+                        반드시 다음 3가지 요구사항과 목차 구조를 완벽히 지켜서 작성해야 해:
+                        1. 각 증권사별로 데이터 내에서 영상 제목을 파악하여 롱폼(일반 영상/라이브)과 숏폼(#shorts)을 최대한 분류하고 각각 핵심 요약을 제공할 것.
+                        2. 각 증권사가 현재 어떤 '자산군이나 테마(예: AI, 반도체, ISA, 우주항공 등)'를 집중 푸시하는지 도출할 것.
+                        3. 우리 운용사 입장에서 해당 증권사의 콘텐츠 방향성에 "우리 ETF 상품이 어떻게 솔루션 파트너로 기여할 수 있는지" 구체적인 공동 마케팅 제안(액션 플랜)과 기대효과를 매칭할 것.
+
+                        ---
+                        [출력 양식]
+                        
+                        # 1. 증권사별 '집중 푸시 자산군/테마' 및 영상 요약 트렌드 분석
+                        
+                        ## 가. 미래에셋증권
+                        - **집중 푸시 자산군/테마**: 
+                        - **금주 주요 롱폼 영상 및 요약**: 
+                        - **금주 주요 숏폼 영상 및 요약**: 
+                        
+                        ## 나. 키움증권
+                        - **집중 푸시 자산군/테마**: 
+                        - **금주 주요 롱폼 영상 및 요약**: 
+                        - **금주 주요 숏폼 영상 및 요약**: 
+                        
+                        ## 다. 삼성증권
+                        - **집중 푸시 자산군/테마**: 
+                        - **금주 주요 롱폼 영상 및 요약**: 
+                        - **금주 주요 숏폼 영상 및 요약**: 
+                        
+                        ## 라. 한국투자증권
+                        - **집중 푸시 자산군/테마**: 
+                        - **금주 주요 롱폼 영상 및 요약**: 
+                        - **금주 주요 숏폼 영상 및 요약**: 
+
+                        # 2. 우리 운용사의 'ETF 마케팅/영업 액션 플랜'
+                        우리는 대형 자산운용사로서, 각 증권사의 집중 테마와 고객 특성을 고려하여 맞춤형 ETF 마케팅/영업 전략을 제안합니다.
+                        
+                        ## 가. 미래에셋증권 (맞춤 솔루션)
+                        - **액션 플랜**: 
+                        - **제안 내용**: 
+                        - **기대 효과**: 
+                        
+                        ## 나. 키움증권 (맞춤 솔루션)
+                        - **액션 플랜**: 
+                        - **제안 내용**: 
+                        - **기대 효과**: 
+                        
+                        ## 다. 삼성증권 (맞춤 솔루션)
+                        - **액션 플랜**: 
+                        - **제안 내용**: 
+                        - **기대 효과**: 
+                        
+                        ## 라. 한국투자증권 (맞춤 솔루션)
+                        - **액션 플랜**: 
+                        - **제안 내용**: 
+                        - **기대 효과**: 
+
+                        # 3. 포괄적 인사이트 및 결론
+                        - (전체 증권업계 유튜브 마케팅 동향 총평 및 자산운용사가 주목해야 할 핵심 시사점 기술)
+                        ---
+
+                        분석할 유튜브 수집 데이터:
+                        {all_text}
+                        """
+                        
                         payload = {
-                            "contents": [{"parts": [{"text": f"국내 증권사 유튜브 마케팅 트렌드 분석 리포트 작성해줘:\n\n{all_text}"}]}]
+                            "contents": [{"parts": [{"text": prompt}]}]
                         }
                         
                         res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload))
@@ -246,6 +313,10 @@ with tabs[1]:
                             status.text("✅ 분석 완료!")
                             st.markdown("---")
                             st.markdown(analysis)
+                        elif res.status_code == 429:
+                            progress.progress(100)
+                            status.text("❌ 사용량 제한 초과")
+                            st.error("🚨 구글 AI 호출량이 일시적으로 초과되었습니다. 약 20초만 기다렸다가 다시 버튼을 클릭해 주세요!")
                         else:
                             st.error(f"⚠️ 분석 실패 (Error {res.status_code})")
                             st.json(res.json())
