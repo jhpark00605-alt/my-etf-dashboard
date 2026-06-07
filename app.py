@@ -558,7 +558,6 @@ with tabs[5]:
         status_news = st.empty()
         status_news.text("🌐 KODEX 마케팅 관련 뉴스 실시간 수집 중...")
         
-        # 'KODEX 마케팅' 관련 키워드로 Google News RSS 검색
         query = "삼성자산운용 KODEX (마케팅 OR 홍보 OR 이벤트 OR 캠페인)"
         encoded_query = urllib.parse.quote(query)
         rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
@@ -567,13 +566,12 @@ with tabs[5]:
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
             resp = requests.get(rss_url, headers=headers)
             soup = BeautifulSoup(resp.content, "xml")
-            items = soup.find_all("item")[:8] # 최신 뉴스 8개 수집
+            items = soup.find_all("item")[:8]
             
             if not items:
                 status_news.text("")
                 st.warning("최근 KODEX 마케팅 관련 뉴스를 찾을 수 없습니다.")
             else:
-                # 💡 [핵심] st.secrets에서 대문자 GEMINI_API_KEY를 정확히 읽어옵니다.
                 try:
                     my_api_key = st.secrets["GEMINI_API_KEY"]
                 except Exception:
@@ -585,7 +583,6 @@ with tabs[5]:
                     pub_date = item.pubDate.text if item.pubDate else "날짜 정보 없음"
                     source = item.source.text if item.source else "언론사 미정"
                     
-                    # 구글 뉴스 RSS의 요약 패킷 추출
                     raw_desc = item.description.text if item.description else ""
                     clean_desc = BeautifulSoup(raw_desc, "html.parser").get_text() if raw_desc else ""
                     
@@ -595,8 +592,8 @@ with tabs[5]:
                     summary_text = "요약을 생성할 수 없습니다."
                     
                     if my_api_key:
-                        # 💡 2026년 기준 가장 안정적인 Gemini 1.5 Flash 공식 주소 구조 적용
-                        final_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={my_api_key}"
+                        # 호환성이 가장 높은 v1 정식 모델 주소로 타겟팅
+                        final_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={my_api_key}"
                         
                         prompt = f"""
                         너는 금융 업계 최고의 AI 마케팅 분석가야. 
@@ -617,13 +614,12 @@ with tabs[5]:
                             if summary_res.status_code == 200:
                                 summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
                             else:
-                                summary_text = f"⚠️ 구글 AI 응답 에러 (Status Code: {summary_res.status_code})\n주소 체계 혹은 API 키의 유효성을 점검해 주세요."
+                                summary_text = f"⚠️ 구글 AI 서버 응답 에러 (코드: {summary_res.status_code})\n새로 발급받은 API 키가 활성화되었는지 확인해 주세요."
                         except Exception:
                             summary_text = "⚡ AI 연동 중 네트워크 타임아웃이 발생했습니다."
                     else:
-                        summary_text = "🔑 Streamlit Secrets에서 'GEMINI_API_KEY'를 읽어오지 못했습니다. 대시보드 설정의 Advanced settings -> Secrets 영역을 확인해 주세요."
+                        summary_text = "🔑 Streamlit Secrets에서 'GEMINI_API_KEY'를 읽어오지 못했습니다."
 
-                    # 3. 화면 출력
                     with st.container():
                         st.markdown(f"### 🔗 [{title}]({link})")
                         st.caption(f"📅 **발행일시:** {pub_date} | 🏢 **언론사:** {source}")
@@ -635,7 +631,7 @@ with tabs[5]:
                 
         except Exception as e:
             status_news.text("")
-            st.error(f"뉴스 수집 중 오류가 발생했습니다: {e}")
+            st.error(f"뉴스 수집 중 오류가 발생했습니다: {e}"
 # ==========================================
 # Tab 7: 운용사 유튜브 신규 영상 및 설명문 크롤링
 # ==========================================
