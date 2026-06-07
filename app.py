@@ -589,39 +589,41 @@ with tabs[5]:
                     summary_text = "요약을 생성할 수 없습니다."
                     
                     if API_KEY_GEMINI:
-                        target_model = "models/gemini-1.5-flash"
-                        summary_url = f"https://generativelanguage.googleapis.com/v1beta/{target_model}:generateContent?key={API_KEY_GEMINI}"
-                        
-                        prompt = f"""
-                        너는 금융 업계 최고의 AI 마케팅 분석가야. 
-                        제공된 뉴스 기사의 단서(제목 및 요약 패킷)를 바탕으로, 해당 뉴스 기사가 담고 있는 핵심 사실과 마케팅적 시사점을 유추하여 '반드시' 딱 3줄의 깔끔한 글머리 기호(- ) 형태의 문장으로 요약해줘.
-                        
-                        요구사항:
-                        1. 격식 있는 존댓말(~ 문체)을 사용해줘.
-                        2. 첫 번째 줄은 기사의 핵심 팩트, 두 번째/세 번째 줄은 이것이 KODEX ETF나 운용업계에 가지는 마케팅적 의미나 영향 위주로 작성해줘.
-                        3. 단서가 부족하더라도 금융 상식을 발휘하여 자연스럽고 전문적인 리포트 문체로 채워줘.
+                        payload = {
+                            "contents": [{"parts": [{"text": f"""
+                            너는 금융 업계 최고의 AI 마케팅 분석가야. 
+                            제공된 뉴스 기사의 단서(제목 및 요약 패킷)를 바탕으로, 해당 뉴스 기사가 담고 있는 핵심 사실과 마케팅적 시사점을 유추하여 '반드시' 딱 3줄의 깔끔한 글머리 기호(- ) 형태의 문장으로 요약해줘.
+                            
+                            요구사항:
+                            1. 격식 있는 존댓말(~ 문체)을 사용해줘.
+                            2. 첫 번째 줄은 기사의 핵심 팩트, 두 번째/세 번째 줄은 이것이 KODEX ETF나 운용업계에 가지는 마케팅적 의미나 영향 위주로 작성해줘.
+                            3. 단서가 부족하더라도 금융 상식을 발휘하여 자연스럽고 전문적인 리포트 문체로 채워줘.
 
-                        분석할 기사 단서:
-                        {context_text}
-                        """
+                            분석할 기사 단서:
+                            {context_text}
+                            """}]}]
+                        }
                         
-                        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-                        try:
-                            summary_res = requests.post(summary_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=7)
-                            if summary_res.status_code == 200:
-                                summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
-                            elif summary_res.status_code == 404:
-                                backup_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={API_KEY_GEMINI}"
-                                backup_res = requests.post(backup_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=7)
-                                if backup_res.status_code == 200:
-                                    summary_text = backup_res.json()['candidates'][0]['content']['parts'][0]['text']
+                        # 💡 [핵심 해결책] 404 에러를 깨부수기 위한 3단계 주소 후보 리스트
+                        url_candidates = [
+                            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}", # 1안: v1beta 플래시
+                            f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}",     # 2안: v1 정식버전 플래시
+                            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={API_KEY_GEMINI}"      # 3안: v1beta 프로 구형
+                        ]
+                        
+                        # 후보 주소들을 순회하면서 성공(200)할 때까지 호출 시도
+                        for url in url_candidates:
+                            try:
+                                summary_res = requests.post(url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=5)
+                                if summary_res.status_code == 200:
+                                    summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
+                                    break # 성공하면 즉시 루프 탈출
                                 else:
-                                    summary_text = f"⚡ AI 주소 매칭 에러가 지속됩니다. (기본/백업 모델 주소 확인 필요)"
-                            else:
-                                summary_text = f"⚡ AI 응답 오류 (Error Code: {summary_res.status_code})"
-                        except Exception as e:
-                            summary_text = f"⚡ AI 연동 중 네트워크 타임아웃이 발생했습니다."
-
+                                    # 실패 시 다음 후보 주소로 넘어감
+                                    summary_text = f"⚡ AI 주소 거부됨 (Status: {summary_res.status_code})"
+                            except Exception:
+                                continue
+                                
                     # 3. 대시보드 화면에 깔끔하게 출력
                     with st.container():
                         st.markdown(f"### 🔗 [{title}]({link})")
