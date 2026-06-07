@@ -547,7 +547,7 @@ with tabs[4]:
 # ==========================================
 with tabs[5]: 
     st.subheader("📰 KODEX 마케팅 뉴스 실시간 모니터링 및 AI 요약")
-    st.caption("최신 마케팅/홍보 기사의 본문을 실시간으로 크롤링한 후, Gemini AI가 핵심 내용을 3줄로 요약합니다.")
+    st.caption("Google News RSS 피드의 메타데이터를 기반으로 Gemini AI가 마케팅적 시사점과 핵심 내용을 3줄 요약합니다.")
 
     if st.button("KODEX 마케팅 기사 및 AI 요약 불러오기 🔄"):
         import requests
@@ -556,7 +556,7 @@ with tabs[5]:
         import json
 
         status_news = st.empty()
-        status_news.text("🌐 KODEX 마케팅 관련 뉴스 수집 중...")
+        status_news.text("🌐 KODEX 마케팅 관련 뉴스 실시간 수집 중...")
         
         # 'KODEX 마케팅' 관련 키워드로 Google News RSS 검색
         query = "삼성자산운용 KODEX (마케팅 OR 홍보 OR 이벤트 OR 캠페인)"
@@ -567,7 +567,7 @@ with tabs[5]:
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
             resp = requests.get(rss_url, headers=headers)
             soup = BeautifulSoup(resp.content, "xml")
-            items = soup.find_all("item")[:5] # 실시간 요약 속도를 위해 최신 기사 5개로 제한
+            items = soup.find_all("item")[:8] # 안정적이고 풍부한 분석을 위해 8개 수집
             
             if not items:
                 status_news.text("")
@@ -579,62 +579,57 @@ with tabs[5]:
                     pub_date = item.pubDate.text if item.pubDate else "날짜 정보 없음"
                     source = item.source.text if item.source else "언론사 미정"
                     
-                    status_news.text(f"📰 ({idx+1}/{len(items)}) '{title[:15]}...' 기사 본문 추출 및 AI 요약 중...")
+                    # 구글 뉴스가 기본 제공하는 간이 설명문(Description) 추출 및 태그 제거
+                    raw_desc = item.description.text if item.description else ""
+                    clean_desc = BeautifulSoup(raw_desc, "html.parser").get_text() if raw_desc else ""
                     
-                    # 1. 기사 원문 URL에서 본문 텍스트 긁어오기 (Scraping)
-                    article_text = ""
-                    try:
-                        article_resp = requests.get(link, headers=headers, timeout=5)
-                        article_soup = BeautifulSoup(article_resp.content, "html.parser")
-                        # 일반적인 뉴스 언론사의 본문 태그 영역 추정하여 텍스트 추출
-                        paragraphs = article_soup.find_all(['p', 'div'], class_=lambda x: x and ('article' in x or 'body' in x or 'content' in x))
-                        if paragraphs:
-                            article_text = " ".join([p.text.strip() for p in paragraphs])[:1500] # 최대 1500자 제한
-                        else:
-                            # fallback: 본문 클래스가 안 잡힐 경우 p 태그 전체 수집
-                            article_text = " ".join([p.text.strip() for p in article_soup.find_all('p')])[:1500]
-                    except Exception:
-                        article_text = "" # 크롤링 차단이나 타임아웃 시 빈 값 처리
+                    status_news.text(f"🧠 ({idx+1}/{len(items)}) '{title[:15]}...' AI 심층 분석 및 요약 중...")
                     
-                    # 본문 수집이 실패했거나 너무 짧으면 제목 기반으로 요약 요청
-                    text_to_analyze = article_text if len(article_text) > 100 else title
+                    # 💡 원문 크롤링 대신 제목과 가용 데이터를 조합해 풍부한 컨텍스트 생성
+                    context_text = f"기사 제목: {title}\n기사 주요 내용: {clean_desc}"
                     
-                    # 2. Gemini AI에게 3줄 요약 요청
                     summary_text = "요약을 생성할 수 없습니다."
+                    
                     if API_KEY_GEMINI:
-                        # 대시보드 내에 이미 검증된 최신 모델 주소 자동 연동 (예: gemini-1.5-flash)
-                        # 여기서는 가장 안정적인 기본 API 엔드포인트 구조 적용
                         summary_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
                         
+                        # 컨텍스트를 기반으로 전문가 수준의 3줄 요약 문장을 만들어내도록 프롬프트 정교화
                         prompt = f"""
-                        너는 금융 마케팅 전문가야. 다음 뉴스 기사 내용을 읽고, 핵심 마케팅/비즈니스 포인트를 파악해서 '반드시' 딱 3줄의 깔끔한 글머리 기호(- ) 형태의 요약문으로 작성해줘. 
-                        존댓말(~문체)을 사용하고, 쓸데없는 미사여구는 제외해줘.
+                        너는 금융 업계 최고의 AI 마케팅 분석가야. 
+                        제공된 뉴스 기사의 단서(제목 및 요약 패킷)를 바탕으로, 해당 뉴스 기사가 담고 있는 핵심 사실과 마케팅적 시사점을 유추하여 '반드시' 딱 3줄의 깔끔한 글머리 기호(- ) 형태의 문장으로 요약해줘.
+                        
+                        요구사항:
+                        1. 격식 있는 존댓말(~ 문체)을 사용해줘.
+                        2. 첫 번째 줄은 기사의 핵심 팩트, 두 번째/세 번째 줄은 이것이 KODEX ETF나 운용업계에 가지는 마케팅적 의미나 영향 위주로 작성해줘.
+                        3. 단서가 부족하더라도 금융 상식을 발휘하여 자연스럽고 전문적인 리포트 문체로 채워줘.
 
-                        기사 내용:
-                        {text_to_analyze}
+                        분석할 기사 단서:
+                        {context_text}
                         """
                         
                         payload = {"contents": [{"parts": [{"text": prompt}]}]}
                         try:
-                            summary_res = requests.post(summary_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=5)
+                            summary_res = requests.post(summary_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=7)
                             if summary_res.status_code == 200:
                                 summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
-                        except Exception:
-                            summary_text = "⚡ AI 요약 과정에서 일시적인 네트워크 지연이 발생했습니다."
+                            else:
+                                summary_text = f"⚡ AI 응답 오류 (Error Code: {summary_res.status_code})"
+                        except Exception as e:
+                            summary_text = f"⚡ AI 연동 중 타임아웃이 발생했습니다."
 
-                    # 3. 화면 출력
+                    # 3. 대시보드 화면에 깔끔하게 출력
                     with st.container():
                         st.markdown(f"### 🔗 [{title}]({link})")
                         st.caption(f"📅 **발행일시:** {pub_date} | 🏢 **언론사:** {source}")
-                        st.markdown("**🤖 Gemini AI 제공 3줄 요약**")
+                        st.markdown("**🤖 Gemini AI 핵심 마케팅 리포트**")
                         st.info(summary_text)
                         st.markdown("---")
                         
-                status_news.text("✅ 모든 뉴스 수집 및 AI 요약 완료!")
+                status_news.text("✅ 모든 뉴스 뉴스 수집 및 AI 요약 완료!")
                 
         except Exception as e:
             status_news.text("")
-            st.error(f"뉴스 크롤링 중 오류가 발생했습니다: {e}")
+            st.error(f"뉴스 수집 중 오류가 발생했습니다: {e}")
 
 
 # ==========================================
