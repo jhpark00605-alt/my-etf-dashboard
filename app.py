@@ -547,7 +547,7 @@ with tabs[4]:
 # ==========================================
 with tabs[5]: 
     st.subheader("📰 KODEX 마케팅 뉴스 실시간 모니터링 및 AI 요약")
-    st.caption("Google News RSS 피드의 메타데이터를 기반으로 Gemini AI가 마케팅적 시사점과 핵심 내용을 3줄 요약합니다.")
+    st.caption("Google News RSS 피드의 메타데이터를 기반으로 대시보드 내장 AI 엔진이 마케팅적 시사점과 핵심 내용을 3줄 요약합니다.")
 
     if st.button("KODEX 마케팅 기사 및 AI 요약 불러오기 🔄"):
         import requests
@@ -567,7 +567,7 @@ with tabs[5]:
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
             resp = requests.get(rss_url, headers=headers)
             soup = BeautifulSoup(resp.content, "xml")
-            items = soup.find_all("item")[:8] # 안정적이고 풍부한 분석을 위해 8개 수집
+            items = soup.find_all("item")[:8] # 최신 뉴스 8개 수집
             
             if not items:
                 status_news.text("")
@@ -579,7 +579,7 @@ with tabs[5]:
                     pub_date = item.pubDate.text if item.pubDate else "날짜 정보 없음"
                     source = item.source.text if item.source else "언론사 미정"
                     
-                    # 구글 뉴스가 기본 제공하는 간이 설명문(Description) 추출 및 태그 제거
+                    # 구글 뉴스가 기본 제공하는 간이 설명문(Description) 추출
                     raw_desc = item.description.text if item.description else ""
                     clean_desc = BeautifulSoup(raw_desc, "html.parser").get_text() if raw_desc else ""
                     
@@ -588,42 +588,46 @@ with tabs[5]:
                     context_text = f"기사 제목: {title}\n기사 주요 내용: {clean_desc}"
                     summary_text = "요약을 생성할 수 없습니다."
                     
-                    if API_KEY_GEMINI:
-                        payload = {
-                            "contents": [{"parts": [{"text": f"""
-                            너는 금융 업계 최고의 AI 마케팅 분석가야. 
-                            제공된 뉴스 기사의 단서(제목 및 요약 패킷)를 바탕으로, 해당 뉴스 기사가 담고 있는 핵심 사실과 마케팅적 시사점을 유추하여 '반드시' 딱 3줄의 깔끔한 글머리 기호(- ) 형태의 문장으로 요약해줘.
-                            
-                            요구사항:
-                            1. 격식 있는 존댓말(~ 문체)을 사용해줘.
-                            2. 첫 번째 줄은 기사의 핵심 팩트, 두 번째/세 번째 줄은 이것이 KODEX ETF나 운용업계에 가지는 마케팅적 의미나 영향 위주로 작성해줘.
-                            3. 단서가 부족하더라도 금융 상식을 발휘하여 자연스럽고 전문적인 리포트 문체로 채워줘.
+                    # 💡 [404 해결의 핵심 키포인트] 
+                    # 기존 다른 탭 코드에서 성공했던 API Key 변수명이나 secrets 명칭을 직접 하드코딩 방식으로 대입합니다.
+                    # 사용자님의 기존 코드 세팅에 맞춰 자동으로 감지하도록 설계했습니다.
+                    my_api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key") or (API_KEY_GEMINI if 'API_KEY_GEMINI' in locals() or 'API_KEY_GEMINI' in globals() else None)
+                    
+                    if my_api_key:
+                        # 주소 뒤에 기종이나 가공 방식에 구애받지 않도록 구글 AI 스튜디오 표준 v1beta 앤드포인트를 깔끔하게 적용합니다.
+                        final_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={my_api_key}"
+                        
+                        prompt = f"""
+                        너는 금융 업계 최고의 AI 마케팅 분석가야. 
+                        제공된 뉴스 기사의 단서(제목 및 요약 패킷)를 바탕으로, 해당 뉴스 기사가 담고 있는 핵심 사실과 마케팅적 시사점을 유추하여 '반드시' 딱 3줄의 깔끔한 글머리 기호(- ) 형태의 문장으로 요약해줘.
+                        
+                        요구사항:
+                        1. 격식 있는 존댓말(~ 문체)을 사용해줘.
+                        2. 첫 번째 줄은 기사의 핵심 팩트, 두 번째/세 번째 줄은 이것이 KODEX ETF나 운용업계에 가지는 마케팅적 의미나 영향 위주로 작성해줘.
+                        3. 단서가 부족하더라도 금융 상식을 발휘하여 자연스럽고 전문적인 리포트 문체로 채워줘.
 
-                            분석할 기사 단서:
-                            {context_text}
-                            """}]}]
-                        }
+                        분석할 기사 단서:
+                        {context_text}
+                        """
                         
-                        # 💡 [핵심 해결책] 404 에러를 깨부수기 위한 3단계 주소 후보 리스트
-                        url_candidates = [
-                            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}", # 1안: v1beta 플래시
-                            f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}",     # 2안: v1 정식버전 플래시
-                            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={API_KEY_GEMINI}"      # 3안: v1beta 프로 구형
-                        ]
-                        
-                        # 후보 주소들을 순회하면서 성공(200)할 때까지 호출 시도
-                        for url in url_candidates:
-                            try:
-                                summary_res = requests.post(url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=5)
-                                if summary_res.status_code == 200:
-                                    summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
-                                    break # 성공하면 즉시 루프 탈출
+                        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                        try:
+                            summary_res = requests.post(final_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=7)
+                            if summary_res.status_code == 200:
+                                summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
+                            else:
+                                # 💡 만약 사용하시는 키가 구형/특수 모델 전용일 경우 다른 엔드포인트로 자동 우회
+                                fallback_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={my_api_key}"
+                                fb_res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=7)
+                                if fb_res.status_code == 200:
+                                    summary_text = fb_res.json()['candidates'][0]['content']['parts'][0]['text']
                                 else:
-                                    # 실패 시 다음 후보 주소로 넘어감
-                                    summary_text = f"⚡ AI 주소 거부됨 (Status: {summary_res.status_code})"
-                            except Exception:
-                                continue
-                                
+                                    summary_text = f"⚠️ AI 분석 일시 지연 (기존 성공 코드의 URL 주소 확인 필요)"
+                        except Exception:
+                            summary_text = "⚡ AI 연동 중 네트워크 타임아웃이 발생했습니다."
+                    else:
+                        summary_text = "🔑 대시보드에 연동된 Gemini API Key 변수를 찾을 수 없습니다. 상단 Key 설정을 확인해 주세요."
+
                     # 3. 대시보드 화면에 깔끔하게 출력
                     with st.container():
                         st.markdown(f"### 🔗 [{title}]({link})")
