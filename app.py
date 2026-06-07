@@ -781,7 +781,7 @@ with tabs[7]:
             status_sns.text("")
             st.warning("현재 수집된 소셜 미디어 반응이 없습니다.")
         else:
-            # 💡 [체크 포인트] Secrets에 등록된 키를 1순위로 바인딩하고 없으면 유튜브 키나 로컬 변수까지 역추적합니다.
+            # Secrets에 등록된 키를 1순위로 바인딩하고 없으면 유튜브 키나 로컬 변수까지 역추적합니다.
             my_api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("YOUTUBE_API_KEY") or (API_KEY_GEMINI if 'API_KEY_GEMINI' in locals() or 'API_KEY_GEMINI' in globals() else None)
 
             if not my_api_key:
@@ -793,7 +793,7 @@ with tabs[7]:
                     
                     context_text = f"출처: {item['type']}\n제목: {item['title']}\n내용: {item['desc']}"
                     
-                    # 💡 구글 표준 API 엔드포인트 주소 구조로 정밀 매칭
+                    # 구글 표준 API 엔드포인트 주소 구조로 정밀 매칭
                     final_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={my_api_key}"
                     
                     prompt = f"""
@@ -802,7 +802,7 @@ with tabs[7]:
                     
                     요구사항:
                     1. 불필요한 인사말 없이 딱 2~3줄의 깔끔한 요약본을 글머리 기호(- ) 형태로 작성해줘.
-                    2. 정중하고 정제된 비즈니스 톤(~입니다 문체)을 사용해줘.
+                    2. 정중하고 정제된 비즈니스 톤 (~입니다 문체)을 사용해줘.
 
                     소셜 데이터:
                     {context_text}
@@ -827,7 +827,6 @@ with tabs[7]:
                             res_json = summary_res.json()
                             summary_text = res_json['candidates'][0]['content']['parts'][0]['text']
                         else:
-                            # 💡 요약을 생성할 수 없는 '진짜 이유(에러 본문)'를 로깅하여 화면에 표기합니다.
                             summary_text = f"⚠️ AI 요약 차단됨 (구글 서버 응답 코드: {summary_res.status_code})\n이유: {summary_res.text[:100]}"
                     except Exception as e:
                         summary_text = f"⚡ AI 연동 실패: {str(e)}"
@@ -842,4 +841,5 @@ with tabs[7]:
                             st.success(summary_text)
                         st.markdown("---")
                         
-                status_sns.text("✅ 모든 블로그 및 인스타그램 AI 여론 요약 완료!") 여론 요약 완료!")
+                # 💡 줄바꿈 및 중복 오타 완벽 제거 완료
+                status_sns.text("✅ 모든 블로그 및 인스타그램 AI 여론 요약 완료!")
