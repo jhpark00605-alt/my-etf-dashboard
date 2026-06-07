@@ -542,3 +542,209 @@ with tabs[4]:
             """)
     else:
         st.info("버튼을 눌러 AI 인사이트를 생성하세요.")
+# ==========================================
+# Tab 4: KODEX 마케팅 관련 기사 크롤링
+# ==========================================
+with tabs[3]: # 탭 인덱스는 기존 구조에 맞게 수정하세요 (예: 4번째 탭이면 3)
+    st.subheader("📰 KODEX 마케팅 뉴스 실시간 모니터링")
+    st.caption("Google News RSS를 통해 KODEX의 마케팅, 홍보, 이벤트 관련 최신 기사를 실시간으로 가져옵니다.")
+
+    if st.button("KODEX 마케팅 기사 불러오기 🔄"):
+        import requests
+        from bs4 import BeautifulSoup
+        import urllib.parse
+        import pandas as pd
+
+        status_news = st.empty()
+        status_news.text("🌐 KODEX 마케팅 관련 뉴스 수집 중...")
+        
+        # 'KODEX 마케팅' 관련 키워드로 Google News RSS 검색
+        query = "삼성자산운용 KODEX (마케팅 OR 홍보 OR 이벤트 OR 캠페인)"
+        encoded_query = urllib.parse.quote(query)
+        rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+        
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            resp = requests.get(rss_url, headers=headers)
+            soup = BeautifulSoup(resp.content, "xml")
+            items = soup.find_all("item")[:15] # 최신 기사 15개
+            
+            news_data = []
+            for item in items:
+                title = item.title.text
+                link = item.link.text
+                pub_date = item.pubDate.text if item.pubDate else "날짜 정보 없음"
+                source = item.source.text if item.source else "언론사 미정"
+                
+                # 구글 뉴스 타이틀 특성상 '제목 - 언론사' 형태 분리
+                clean_title = title.split(" - ")[0]
+                
+                news_data.append({
+                    "날짜": pub_date,
+                    "언론사": source,
+                    "기사 제목": clean_title,
+                    "링크": link
+                })
+                
+            if news_data:
+                df_news = pd.DataFrame(news_data)
+                status_news.text("✅ 뉴스 수집 완료!")
+                
+                # 결과 출력
+                for idx, row in df_news.iterrows():
+                    with st.container():
+                        st.markdown(f"**[{row['언론사']}]** [{row['기사 제목']}]({row['링크']})")
+                        st.caption(f"📅 발행일시: {row['날짜']}")
+                        st.markdown("---")
+            else:
+                status_news.text("")
+                st.warning("최근 💡 KODEX 마케팅 관련 뉴스를 찾을 수 없습니다.")
+                
+        except Exception as e:
+            status_news.text("")
+            st.error(f"뉴스 크롤링 중 오류가 발생했습니다: {e}")
+
+
+# ==========================================
+# Tab 5: 운용사 유튜브 신규 영상 및 설명문 크롤링
+# ==========================================
+with tabs[4]:
+    st.subheader("📺 운용사 유튜브 신규 영상 감지 및 업로드 주기 분석")
+    st.caption("각 운용사 공식 채널의 최신 영상 데이터(업로드일, 설명문)를 실시간 크롤링하여 최근 업로드 주기를 진단합니다.")
+
+    # 기존에 사용하던 YouTube API Key와 채널 ID 딕셔너리 연동
+    # (만약 변수명이 다르면 기존 코드에 맞춰 수정해 주세요)
+    YT_BRANDS = {
+        "KODEX ETF": "UCZ0Z0vO2wVbO2D2RrgjZgZw",       # 삼성자산운용 (예시 ID, 실제 ID로 교체 필요)
+        "스마트타이거": "UC89e-Z_bepMM_D66SOfS0Sg",    # 미래에셋 (예시 ID)
+        "RISE ETF": "UCf2vLbeMWhS9D_m8HbeHqgQ",        # KB자산운용 (예시 ID)
+        "ACE ETF": "UCGfGQU0u-A3D-OQk8XNf4gA"          # 한국투자 (예시 ID)
+    }
+    
+    # ⚠️ 기존에 선언된 TARGET_BROKERAGES가 있다면 그걸 사용하셔도 됩니다.
+    API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
+
+    if st.button("유튜브 채널 업로드 현황 조회 📊"):
+        if not API_KEY_YT:
+            st.error("⚠️ Streamlit Secrets에 YOUTUBE_API_KEY가 설정되어 있지 않습니다.")
+        else:
+            import requests
+            import datetime
+            
+            status_yt = st.empty()
+            progress_yt = st.progress(0)
+            
+            for idx, (brand_name, channel_id) in enumerate(YT_BRANDS.items()):
+                status_yt.text(f"🎥 {brand_name} 채널 최신 영상 및 설명문 분석 중...")
+                
+                # 채널의 최신 영상 리스트 가져오기 API
+                search_url = f"https://www.googleapis.com/youtube/v3/search?key={API_KEY_YT}&channelId={channel_id}&part=snippet,id&order=date&maxResults=5&type=video"
+                
+                try:
+                    res = requests.get(search_url).json()
+                    videos = res.get("items", [])
+                    
+                    st.markdown(f"### 🏢 {brand_name}")
+                    
+                    if not videos:
+                        st.write("최근 업로드된 영상이 없거나 채널 ID를 확인해 주세요.")
+                    else:
+                        dates = []
+                        for v in videos:
+                            v_id = v["id"]["videoId"]
+                            title = v["snippet"]["title"]
+                            desc = v["snippet"]["description"]
+                            pub_time_str = v["snippet"]["publishedAt"]
+                            
+                            # 날짜 파싱
+                            pub_time = datetime.datetime.strptime(pub_time_str, "%Y-%m-%dT%H:%M:%SZ")
+                            dates.append(pub_time)
+                            
+                            # 개별 영상 출력
+                            with st.expander(f"🎬 {title} ({pub_time.strftime('%Y-%m-%d')})"):
+                                st.markdown(f"**🔗 영상 링크:** [YouTube 바로가기](https://www.youtube.com/watch?v={v_id})")
+                                st.markdown(f"**📝 영상 설명문(Description):**")
+                                st.code(desc if desc.strip() else "설명문이 없습니다.", language="text")
+                        
+                        # 업로드 주기 계산 (최신 5개 영상 간의 평균 간격)
+                        if len(dates) >= 2:
+                            intervals = [(dates[i] - dates[i+1]).days for i in range(len(dates)-1)]
+                            avg_interval = sum(intervals) / len(intervals)
+                            st.info(f"⏱️ **최근 업로드 주기:** 평균 **{avg_interval:.1f}일** 간격으로 신규 영상이 업로드되고 있습니다.")
+                        else:
+                            st.info("⏱️ 데이터 부족으로 평균 업로드 주기를 계산할 수 없습니다.")
+                            
+                except Exception as e:
+                    st.error(f"{brand_name} 데이터 조회 실패: {e}")
+                
+                progress_yt.progress(int((idx + 1) * 25))
+            
+            status_yt.text("✅ 모든 채널 조회 완료!")
+
+
+# ==========================================
+# Tab 6: 오프라인 이벤트 SNS 언급량 변화 크롤링
+# ==========================================
+with tabs[5]:
+    st.subheader("📱 오프라인 이벤트 SNS (네이버 블로그) 언급량 모니터링")
+    st.caption("진행 중이거나 진행했던 오프라인 이벤트(예: 세미나, 팝업스토어) 키워드를 입력하면 실시간으로 블로그 언급 글을 크롤링합니다.")
+
+    # 사용자로부터 오프라인 이벤트 키워드 입력받기
+    event_keyword = st.text_input("분석할 오프라인 이벤트 키워드를 입력하세요", placeholder="예: KODEX 세미나, TIGER 팝업스토어")
+    
+    # 네이버 API 키 연동 (오픈 API 가입 후 Secrets 등록 필요)
+    NAVER_CLIENT_ID = st.secrets.get("NAVER_CLIENT_ID")
+    NAVER_CLIENT_SECRET = st.secrets.get("NAVER_CLIENT_SECRET")
+
+    if st.button("SNS 언급량 분석 시작 🚀"):
+        if not event_keyword.strip():
+            st.warning("⚠️ 이벤트 키워드를 입력해 주세요.")
+        elif not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+            st.error("⚠️ 네이버 검색 API 사용을 위해 Streamlit Secrets에 NAVER_CLIENT_ID와 NAVER_CLIENT_SECRET을 등록해야 합니다.")
+        else:
+            import requests
+            import urllib.parse
+            from bs4 import BeautifulSoup
+            
+            status_sns = st.empty()
+            status_sns.text("🔍 네이버 SNS(블로그) 실시간 언급 데이터 수집 중...")
+            
+            encoded_key = urllib.parse.quote(event_keyword)
+            
+            # 1. 네이버 블로그 검색 API (급증 여부 판단을 위해 유사도순/최신순 조합 가능, 여기선 최신순 수집)
+            url = f"https://openapi.naver.com/v1/search/blog.json?query={encoded_key}&display=20&sort=date"
+            headers = {
+                "X-Naver-Client-Id": NAVER_CLIENT_ID,
+                "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
+            }
+            
+            try:
+                res = requests.get(url, headers=headers).json()
+                items = res.get("items", [])
+                
+                if not items:
+                    st.info(f"🙅‍♂️ '{event_keyword}' 키워드에 대한 최근 언급을 찾을 수 없습니다.")
+                else:
+                    st.success(f"📈 '{event_keyword}' 관련 최신 SNS 언급 데이터 총 {len(items)}건 분석 완료")
+                    
+                    # 수집된 글 목록 시각화
+                    for item in items:
+                        title = item["title"].replace("<b>", "").replace("</b>", "")
+                        description = item["description"].replace("<b>", "").replace("</b>", "")
+                        post_date = item["postdate"]
+                        formatted_date = f"{post_date[:4]}-{post_date[4:6]}-{post_date[6:]}"
+                        link = item["link"]
+                        blog_name = item["bloggername"]
+                        
+                        with st.container():
+                            st.markdown(f"**[{blog_name}]** [{title}]({link})")
+                            st.caption(f"📅 작성일: {formatted_date}")
+                            st.write(description)
+                            st.markdown("---")
+                            
+                    # Tip 안내
+                    st.info("💡 **인스타그램 크롤링 안내:** 인스타그램은 현재 공식 Graph API를 통해서만 비즈니스 계정 기준으로 해시태그 검색이 가능하며, 일반 웹 크롤링(BeautifulSoup 등)은 메타의 강력한 차단 정책 시스템에 의해 웹 대시보드 환경에서 실시간 작동이 불가능합니다. 따라서 실시간 모니터링은 네이버 블로그/웹 데이터를 메인으로 활용하시는 것을 추천합니다.")
+            except Exception as e:
+                st.error(f"SNS 데이터 수집 오류: {e}")
+            
+            status_sns.text("")
