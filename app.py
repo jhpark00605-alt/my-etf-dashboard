@@ -635,189 +635,95 @@ with tabs[5]:
 # ==========================================
 # Tab 7: 운용사 유튜브 신규 영상 및 설명문 크롤링
 # ==========================================
-with tabs[6]:  
-    st.subheader("🎬 4대 자산운용사 유튜브 업로드 패턴 및 AI 콘텐츠 요약")
-    st.caption("경쟁 운용사의 업로드 주기 분석 데이터와 최신 영상 자막을 기반으로 AI가 종합 전략 요약 리포트를 생성합니다.")
-    
-    TARGET_BROKERAGES = {
-        "KODEX ETF (삼성자산운용)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",   
-        "TIGER ETF (미래에셋자산운용)": "UC37XvO-X_QW98tSsh2W4p9A", 
-        "RISE ETF (KB자산운용)": "UC3FstZg-AALi8jMofJkS5pA",       
-        "ACE ETF (한국투자신탁운용)": "UCg9S6Zg4e0P9EwHbeM4xXvw"
+with tabs[6]:
+    st.subheader("📺 운용사 유튜브 신규 영상 감지 및 업로드 주기 분석")
+    st.caption("증권사 탭의 성공 로직을 기반으로, 공식 핸들 네임을 추적하여 4대 운용사의 최신 영상 데이터를 실시간 수집합니다.")
+
+    # 💡 [핸들 네임 세팅] 증권사 탭처럼 직관적이고 직결성이 높은 @핸들 구조로 변경
+    YT_BRANDS = {
+        "KODEX ETF (삼성자산운용)": "@KODEX_ETF",   
+        "TIGER ETF (미래에셋자산운용)": "@TIGERETF", 
+        "RISE ETF (KB자산운용)": "@RISE_ETF",       
+        "ACE ETF (한국투자신탁운용)": "@ACE_ETF"  
     }
     
-    API_KEY_GEMINI = st.secrets.get("GEMINI_API_KEY")
-    API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
+    my_yt_key = st.secrets.get("YOUTUBE_API_KEY")
 
-    col_date1, col_date2 = st.columns(2)
-    with col_date1:
-        # 💡 데이터가 안 뽑히는 문제를 방지하기 위해 기본 조회 기간을 14일에서 30일로 늘려 안전성을 확보합니다.
-        start_date = st.date_input("조회 시작일", datetime.now() - timedelta(days=30), key="am_start")
-    with col_date2:
-        end_date = st.date_input("조회 종료일", datetime.now(), key="am_end")
-
-    def fetch_transcript(video_id):
-        try:
-            from youtube_transcript_api import YouTubeTranscriptApi
-            try:
-                ts = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko'])
-                return " ".join([i['text'] for i in ts])[:1000] # 503 에러 방지를 위해 자막 길이를 1000자로 소폭 축소
-            except:
-                ts = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'en'])
-                return " ".join([i['text'] for i in ts])[:1000]
-        except:
-            return "자막 없음"
-
-    if st.button("운용사 패턴 및 요약 분석 실행 🚀", key="btn_am_analysis"):
-        if not API_KEY_YT or not API_KEY_GEMINI:
-            st.error("⚠️ API 키를 확인하세요 (Streamlit Secrets 설정 필요)")
+    if st.button("운용사 유튜브 채널 업로드 현황 조회 📊"):
+        if not my_yt_key:
+            st.error("⚠️ Streamlit Secrets에 YOUTUBE_API_KEY가 등록되어 있는지 확인해 주세요.")
         else:
             import requests
-            import json
-            import pandas as pd
-            import plotly.express as px
+            import datetime
             
-            progress = st.progress(0)
-            status = st.empty()
+            status_yt = st.empty()
+            progress_yt = st.progress(0)
             
-            all_text = ""          
-            chart_data_list = []    
-
-            url = "https://www.googleapis.com/youtube/v3/search"
-            # API 날짜 포맷 안정화 (.strftime 사용)
-            s_utc = (datetime.combine(start_date, datetime.min.time()) - timedelta(hours=9)).strftime('%Y-%m-%dT%H:%M:%SZ')
-            e_utc = (datetime.combine(end_date, datetime.max.time()) - timedelta(hours=9)).strftime('%Y-%m-%dT%H:%M:%SZ')
-
-            # [Step 1] 데이터 수집
-            for idx, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
-                status.text(f"🔍 {name} 데이터 및 영상 자막 수집 중...")
+            for idx, (brand_name, handle) in enumerate(YT_BRANDS.items()):
+                status_yt.text(f"🎥 {brand_name} ({handle}) 최신 영상 데이터 수집 중...")
                 
-                params = {
-                    "key": API_KEY_YT, 
-                    "channelId": c_id, 
-                    "part": "snippet", 
-                    "order": "date",
-                    "maxResults": 5, # 호출 안정성을 위해 개수 최적화
-                    "publishedAfter": s_utc,
-                    "publishedBefore": e_utc, 
-                    "type": "video"
-                }
+                # 💡 [증권사 성공 로직 이식] 핸들 네임(@)을 검색어로 활용하여 
+                # 해당 채널의 최신 동영상을 안전하게 긁어오는 구문입니다.
+                search_url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=5&order=date&q={handle}&type=video&key={my_yt_key}"
                 
                 try:
-                    res = requests.get(url, params=params).json()
-                    videos_summary = []
+                    res_raw = requests.get(search_url, timeout=10)
                     
-                    if "items" in res:
-                        for item in res.get("items", []):
-                            v_id = item["id"]["videoId"]
-                            title = item["snippet"]["title"]
-                            pub_time_str = item["snippet"]["publishedAt"]
-                            
-                            pub_time = pd.to_datetime(pub_time_str).tz_convert('Asia/Seoul')
-                            chart_data_list.append({
-                                "운용사": name,
-                                "제목": title,
-                                "날짜": pub_time.strftime('%Y-%m-%d'),
-                                "요일": pub_time.strftime('%A'), 
-                                "시간대": pub_time.hour          
-                            })
-                            
-                            transcript = fetch_transcript(v_id)
-                            videos_summary.append(f"- 제목: {title}\n  내용: {transcript}")
-                    
-                    if videos_summary:
-                        all_text += f"\n### [{name}]\n" + "\n".join(videos_summary)
-                    else:
-                        all_text += f"\n### [{name}]\n선택 기간 내 업로드된 영상 없음\n"
+                    if res_raw.status_code != 200:
+                        st.error(f"❌ {brand_name} 데이터 통신 실패 (서버 코드: {res_raw.status_code})")
+                        continue
                         
-                except Exception as e:
-                    all_text += f"\n### [{name}]\n데이터 수집 중 에러 발생: {e}\n"
-                
-                progress.progress(int((idx + 1) * (50 / len(TARGET_BROKERAGES))))
-
-            # [Step 2] 시각화 차트 출력
-            st.markdown("### 📊 1. 운용사별 유튜브 업로드 패턴 분석 (주기 파악)")
-            if chart_data_list:
-                df = pd.DataFrame(chart_data_list)
-                weekday_map = {'Monday': '월요일', 'Tuesday': '화요일', 'Wednesday': '수요일', 
-                               'Thursday': '목요일', 'Friday': '금요일', 'Saturday': '토요일', 'Sunday': '일요일'}
-                df['요일'] = df['요일'].map(weekday_map)
-                
-                df_day = df.groupby(['운용사', '요일']).size().reset_index(name='업로드수')
-                fig_day = px.bar(df_day, x='요일', y='업로드수', color='운용사', barmode='group',
-                                 title='📅 요일별 유튜브 업로드 분포',
-                                 category_orders={'요일': ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일']})
-                st.plotly_chart(fig_day, use_container_width=True)
-                
-                df_hour = df.groupby(['운용사', '시간대']).size().reset_index(name='업로드수')
-                fig_hour = px.line(df_hour, x='시간대', y='업로드수', color='운용사', markers=True,
-                                   title='⏰ 시간대별 업로드 집중도 (KST)')
-                st.plotly_chart(fig_hour, use_container_width=True)
-            else:
-                st.warning("⚠️ 선택하신 조회 기간 내에 수집된 영상이 없습니다. 시작일을 더 과거로 설정해 보세요.")
-
-            # [Step 3] AI 모델 동적 스캔 및 503 에러 방어선 구축 💡
-            if not chart_data_list or len(all_text.strip()) < 50:
-                st.info("ℹ️ 수집된 영상 데이터가 없으므로 AI 요약 리포트를 생략합니다.")
-            else:
-                status.text("📡 사용 가능한 AI 모델 조회 중...")
-                list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY_GEMINI}"
-                
-                selected_model = "models/gemini-1.5-flash" # 기본 백업 모드 세팅
-                try:
-                    list_res = requests.get(list_url, timeout=5).json()
-                    available_models = [m['name'] for m in list_res.get('models', []) 
-                                        if 'generateContent' in m.get('supportedGenerationMethods', [])]
-                    for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-pro"]:
-                        if candidate in available_models:
-                            selected_model = candidate
-                            break
-                except:
-                    pass # 에러 발생 시 기본 백업 모델명 유지
-                
-                progress.progress(80)
-                status.text("🤖 AI 엔진 기반 최신 영상 콘텐츠 분석 중...")
-                
-                # 1차 시도 주소 (동적 스캔 모델 주소)
-                gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={API_KEY_GEMINI}"
-                
-                prompt = f"""
-                너는 국내 대형 자산운용사의 ETF 마케팅 전략 총괄 책임자야.
-                아래 제공된 국내 4대 ETF 자산운용사의 유튜브 최신 콘텐츠와 자막 데이터를 정밀 분석하여 요약 리포트를 작성해줘.
-
-                구조:
-                1. 각 운용사별로 최신 영상들의 내용을 파악하여 '핵심 홍보 테마'와 '최신 영상 요약'을 제공할 것.
-                2. 경쟁사 대응을 위한 우리 운용사의 마케팅 시사점을 정리할 것.
-
-                분석할 데이터:
-                {all_text}
-                """
-                
-                payload = {"contents": [{"parts": [{"text": prompt}]}]}
-                
-                # 💡 [503 에러 원천 차단 방어선]
-                try:
-                    res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
+                    res = res_raw.json()
+                    videos = res.get("items", [])
                     
-                    # 만약 구글 서버 일시적 오류(503) 혹은 에러가 나면 2차 안정 엔드포인트로 우회 호출 실행
-                    if res.status_code != 200:
-                        status.text("🔄 구글 서버 우회 경로(Fallback)로 재시도 중...")
-                        fallback_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY_GEMINI}"
-                        res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
+                    st.markdown(f"### 🏢 {brand_name}")
                     
-                    if res.status_code == 200:
-                        analysis = res.json()['candidates'][0]['content']['parts'][0]['text']
-                        progress.progress(100)
-                        status.text("✅ 주기 분석 및 AI 영상 콘텐츠 요약 완료!")
-                        st.markdown("---")
-                        st.markdown(analysis)
+                    if not videos:
+                        st.warning("💡 최신 공개 영상을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.")
                     else:
-                        progress.progress(100)
-                        status.text("❌ AI 요약 일시적 불가")
-                        st.error(f"🚨 구글 AI 서버가 일시적으로 무겁습니다. (Error {res.status_code}) 하지만 상단의 '업로드 주기 차트'는 정상적으로 생성되었으니 참고해 주세요!")
-                except Exception as ai_err:
-                    progress.progress(100)
-                    st.error(f"⚠️ AI 연동 실패: {ai_err}")
+                        dates = []
+                        for v in videos:
+                            v_id = v.get("id", {}).get("videoId")
+                            if not v_id: continue
+                            
+                            snippet = v.get("snippet", {})
+                            title = snippet.get("title", "제목 없음")
+                            desc = snippet.get("description", "설명 없음")
+                            pub_time_str = snippet.get("publishedAt")
+                            
+                            # 날짜 형식 파싱
+                            pub_time = datetime.datetime.strptime(pub_time_str, "%Y-%m-%dT%H:%M:%SZ")
+                            dates.append(pub_time)
+                            
+                            # 아코디언 메뉴 구성
+                            with st.expander(f"🎬 {title} ({pub_time.strftime('%Y-%m-%d')})"):
+                                st.markdown(f"**🔗 영상 링크:** [YouTube 영상 바로가기](https://www.youtube.com/watch?v={v_id})")
+                                st.markdown(f"**📝 영상 설명문(Description):**")
+                                st.code(desc if desc.strip() else "등록된 설명문이 없습니다.", language="text")
+                        
+                        # ⏱️ 업로드 주기 패턴 계산
+                        if len(dates) >= 2:
+                            intervals = [abs((dates[i-1] - dates[i]).days) for i in range(1, len(dates))]
+                            avg_interval = sum(intervals) / len(intervals)
+                            
+                            if avg_interval <= 3:
+                                status_txt = "🔥 콘텐츠 생산 속도 매우 빠름 (마케팅 집중기)"
+                            elif avg_interval <= 7:
+                                status_txt = "✅ 정기적인 템포 유지 중 (주 1회 수준)"
+                            else:
+                                status_txt = "⏳ 최근 업로드 텀이 길어짐"
+                                
+                            st.info(f"⏱️ **최근 생산 패턴:** 평균 **{avg_interval:.1f}일** 간격으로 업로드 중 ({status_txt})")
+                        else:
+                            st.info("⏱️ 주기 분석을 위한 데이터가 부족합니다.")
+                            
+                except Exception as e:
+                    st.error(f"{brand_name} 시스템 연동 에러 발생: {e}")
+                
+                progress_yt.progress(int((idx + 1) * 25))
+                st.markdown("---")
+            
+            status_yt.text("✅ 모든 자산운용사 유튜브 실시간 데이터 연동 완료!")
 # ==========================================
 # Tab 8: 오프라인 이벤트 SNS 언급량 변화 크롤링
 # ==========================================
