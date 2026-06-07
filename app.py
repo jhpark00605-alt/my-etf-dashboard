@@ -545,15 +545,15 @@ with tabs[4]:
 # ==========================================
 # Tab 6: KODEX 마케팅 관련 기사 크롤링
 # ==========================================
-with tabs[5]: # 탭 인덱스는 기존 구조에 맞게 수정하세요 (예: 4번째 탭이면 3)
-    st.subheader("📰 KODEX 마케팅 뉴스 실시간 모니터링")
-    st.caption("Google News RSS를 통해 KODEX의 마케팅, 홍보, 이벤트 관련 최신 기사를 실시간으로 가져옵니다.")
+with tabs[5]: 
+    st.subheader("📰 KODEX 마케팅 뉴스 실시간 모니터링 및 AI 요약")
+    st.caption("최신 마케팅/홍보 기사의 본문을 실시간으로 크롤링한 후, Gemini AI가 핵심 내용을 3줄로 요약합니다.")
 
-    if st.button("KODEX 마케팅 기사 불러오기 🔄"):
+    if st.button("KODEX 마케팅 기사 및 AI 요약 불러오기 🔄"):
         import requests
         from bs4 import BeautifulSoup
         import urllib.parse
-        import pandas as pd
+        import json
 
         status_news = st.empty()
         status_news.text("🌐 KODEX 마케팅 관련 뉴스 수집 중...")
@@ -564,41 +564,73 @@ with tabs[5]: # 탭 인덱스는 기존 구조에 맞게 수정하세요 (예: 4
         rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
         
         try:
-            headers = {"User-Agent": "Mozilla/5.0"}
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
             resp = requests.get(rss_url, headers=headers)
             soup = BeautifulSoup(resp.content, "xml")
-            items = soup.find_all("item")[:15] # 최신 기사 15개
+            items = soup.find_all("item")[:5] # 실시간 요약 속도를 위해 최신 기사 5개로 제한
             
-            news_data = []
-            for item in items:
-                title = item.title.text
-                link = item.link.text
-                pub_date = item.pubDate.text if item.pubDate else "날짜 정보 없음"
-                source = item.source.text if item.source else "언론사 미정"
-                
-                # 구글 뉴스 타이틀 특성상 '제목 - 언론사' 형태 분리
-                clean_title = title.split(" - ")[0]
-                
-                news_data.append({
-                    "날짜": pub_date,
-                    "언론사": source,
-                    "기사 제목": clean_title,
-                    "링크": link
-                })
-                
-            if news_data:
-                df_news = pd.DataFrame(news_data)
-                status_news.text("✅ 뉴스 수집 완료!")
-                
-                # 결과 출력
-                for idx, row in df_news.iterrows():
-                    with st.container():
-                        st.markdown(f"**[{row['언론사']}]** [{row['기사 제목']}]({row['링크']})")
-                        st.caption(f"📅 발행일시: {row['날짜']}")
-                        st.markdown("---")
-            else:
+            if not items:
                 status_news.text("")
-                st.warning("최근 💡 KODEX 마케팅 관련 뉴스를 찾을 수 없습니다.")
+                st.warning("최근 KODEX 마케팅 관련 뉴스를 찾을 수 없습니다.")
+            else:
+                for idx, item in enumerate(items):
+                    title = item.title.text.split(" - ")[0]
+                    link = item.link.text
+                    pub_date = item.pubDate.text if item.pubDate else "날짜 정보 없음"
+                    source = item.source.text if item.source else "언론사 미정"
+                    
+                    status_news.text(f"📰 ({idx+1}/{len(items)}) '{title[:15]}...' 기사 본문 추출 및 AI 요약 중...")
+                    
+                    # 1. 기사 원문 URL에서 본문 텍스트 긁어오기 (Scraping)
+                    article_text = ""
+                    try:
+                        article_resp = requests.get(link, headers=headers, timeout=5)
+                        article_soup = BeautifulSoup(article_resp.content, "html.parser")
+                        # 일반적인 뉴스 언론사의 본문 태그 영역 추정하여 텍스트 추출
+                        paragraphs = article_soup.find_all(['p', 'div'], class_=lambda x: x and ('article' in x or 'body' in x or 'content' in x))
+                        if paragraphs:
+                            article_text = " ".join([p.text.strip() for p in paragraphs])[:1500] # 최대 1500자 제한
+                        else:
+                            # fallback: 본문 클래스가 안 잡힐 경우 p 태그 전체 수집
+                            article_text = " ".join([p.text.strip() for p in article_soup.find_all('p')])[:1500]
+                    except Exception:
+                        article_text = "" # 크롤링 차단이나 타임아웃 시 빈 값 처리
+                    
+                    # 본문 수집이 실패했거나 너무 짧으면 제목 기반으로 요약 요청
+                    text_to_analyze = article_text if len(article_text) > 100 else title
+                    
+                    # 2. Gemini AI에게 3줄 요약 요청
+                    summary_text = "요약을 생성할 수 없습니다."
+                    if API_KEY_GEMINI:
+                        # 대시보드 내에 이미 검증된 최신 모델 주소 자동 연동 (예: gemini-1.5-flash)
+                        # 여기서는 가장 안정적인 기본 API 엔드포인트 구조 적용
+                        summary_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
+                        
+                        prompt = f"""
+                        너는 금융 마케팅 전문가야. 다음 뉴스 기사 내용을 읽고, 핵심 마케팅/비즈니스 포인트를 파악해서 '반드시' 딱 3줄의 깔끔한 글머리 기호(- ) 형태의 요약문으로 작성해줘. 
+                        존댓말(~문체)을 사용하고, 쓸데없는 미사여구는 제외해줘.
+
+                        기사 내용:
+                        {text_to_analyze}
+                        """
+                        
+                        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                        try:
+                            summary_res = requests.post(summary_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=5)
+                            if summary_res.status_code == 200:
+                                summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
+                        except Exception:
+                            summary_text = "⚡ AI 요약 과정에서 일시적인 네트워크 지연이 발생했습니다."
+
+                    # 3. 화면 출력
+                    with st.container():
+                        st.markdown(f"### 🔗 [{title}]({link})")
+                        st.caption(f"📅 **발행일시:** {pub_date} | 🏢 **언론사:** {source}")
+                        st.markdown("**🤖 Gemini AI 제공 3줄 요약**")
+                        st.info(summary_text)
+                        st.markdown("---")
+                        
+                status_news.text("✅ 모든 뉴스 수집 및 AI 요약 완료!")
                 
         except Exception as e:
             status_news.text("")
