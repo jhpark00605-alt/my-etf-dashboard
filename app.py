@@ -637,9 +637,9 @@ with tabs[5]:
 # ==========================================
 with tabs[6]:
     st.subheader("📺 운용사 유튜브 신규 영상 감지 및 업로드 주기 분석")
-    st.caption("국내 주요 4대 자산운용사 브랜드 채널의 최신 영상 데이터(업로드일, 설명문)를 실시간으로 가져와 최근 업로드 패턴을 진단합니다.")
+    st.caption("각 운용사 채널의 실시간 업로드 저장소를 다이렉트로 스캔하여 누락 없이 최신 영상과 설명문을 수집합니다.")
 
-    # 💡 실제 활성화되어 있는 공식 채널 ID
+    # 💡 4대 운용사 공식 채널 고유 ID
     YT_BRANDS = {
         "KODEX ETF (삼성자산운용)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",   
         "TIGER ETF (미래에셋자산운용)": "UC37XvO-X_QW98tSsh2W4p9A", 
@@ -659,83 +659,78 @@ with tabs[6]:
             status_yt = st.empty()
             progress_yt = st.progress(0)
             
-            # 브라우저처럼 보이도록 헤더를 보강하여 API 거부 현상 방지
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json"
-            }
-            
             for idx, (brand_name, channel_id) in enumerate(YT_BRANDS.items()):
-                status_yt.text(f"🎥 {brand_name} 채널 최신 데이터 추출 스캔 중...")
-                
-                # 💡 [우회 포인트] 구글 서버의 무조건적인 차단을 막기 위해 헤더 세션을 입히고 
-                # type=video 옵션이 꼬일 때를 대비해 파라미터 구조를 최적화했습니다.
-                search_url = f"https://www.googleapis.com/youtube/v3/search?key={my_yt_key}&channelId={channel_id}&part=snippet&order=date&maxResults=5"
+                status_yt.text(f"🎥 {brand_name} 채널 실시간 업로드 내역 다이렉트 조회 중...")
                 
                 try:
-                    res_raw = requests.get(search_url, headers=headers, timeout=10)
+                    # 💡 유튜브 고유 규칙: 채널 ID의 'UC' 부분을 'UU'로 바꾸면 해당 채널의 '모든 업로드 영상 플레이리스트 ID'가 됩니다.
+                    # 이 방식을 쓰면 불필요한 API 호출 횟수(할당량)도 크게 아끼고 누락도 0%가 됩니다.
+                    upload_playlist_id = "UU" + channel_id[2:]
                     
-                    # 💡 먹통이 된 진짜 이유를 화면에 로깅하여 추적하기 위한 에러 체크 장치
+                    # playlistItems API를 사용하여 해당 저장소의 최신 영상 5개를 직접 긁어옴
+                    playlist_url = f"https://www.googleapis.com/youtube/v3/playlistItems?key={my_yt_key}&playlistId={upload_playlist_id}&part=snippet&maxResults=5"
+                    
+                    res_raw = requests.get(playlist_url, timeout=10)
+                    
                     if res_raw.status_code != 200:
-                        st.error(f"❌ {brand_name} 구글 API 통신 실패 (에러 코드: {res_raw.status_code})")
-                        # 403이 뜨면 할당량(Quota) 초과 혹은 키 유출 차단 상태를 의미합니다.
-                        if res_raw.status_code == 403:
-                            st.warning("👉 YouTube API 일일 사용량 초과 혹은 제한된 키일 수 있습니다. 구글 콘솔을 확인해 주세요.")
+                        st.error(f"❌ {brand_name} 데이터 통신 실패 (코드: {res_raw.status_code})")
                         continue
                         
                     res = res_raw.json()
-                    videos = res.get("items", [])
+                    items = res.get("items", [])
                     
                     st.markdown(f"### 🏢 {brand_name}")
                     
-                    # 채널 메타 구조가 일반 검색 패킷으로 올 때를 대비한 2중 필터링
-                    valid_videos = [v for v in videos if "videoId" in v.get("id", {}) or "videoId" in v.get("snippet", {})]
-                    
-                    if not valid_videos:
-                        st.warning("💡 해당 채널에 최근 업로드된 공개 영상 리스트를 불러올 수 없습니다.")
+                    if not items:
+                        st.warning("💡 현재 채널에 전체 공개된 영상 리스트가 존재하지 않습니다.")
                     else:
                         dates = []
-                        for v in valid_videos:
-                            # 구조가 유동적일 수 있으므로 안전하게 딕셔너리 Get 처리
-                            v_id = v.get("id", {}).get("videoId") or v.get("snippet", {}).get("videoId", "")
+                        for item in items:
+                            snippet = item.get("snippet", {})
+                            title = snippet.get("title", "제목 없음")
+                            desc = snippet.get("description", "설명 없음")
+                            pub_time_str = snippet.get("publishedAt")
+                            
+                            # 플레이리스트 내 저장된 비디오 ID 추출
+                            v_id = snippet.get("resourceId", {}).get("videoId", "")
                             if not v_id: continue
                             
-                            title = v["snippet"]["title"]
-                            desc = v["snippet"]["description"]
-                            pub_time_str = v["snippet"]["publishedAt"]
-                            
-                            # 날짜 파싱
+                            # 날짜 형식 정밀 파싱
                             pub_time = datetime.datetime.strptime(pub_time_str, "%Y-%m-%dT%H:%M:%SZ")
                             dates.append(pub_time)
                             
+                            # 아코디언 메뉴(Expander) 형태로 대시보드 출력
                             with st.expander(f"🎬 {title} ({pub_time.strftime('%Y-%m-%d')})"):
                                 st.markdown(f"**🔗 영상 링크:** [YouTube 영상 바로가기](https://www.youtube.com/watch?v={v_id})")
                                 st.markdown(f"**📝 영상 설명문(Description):**")
                                 st.code(desc if desc.strip() else "등록된 설명문이 없습니다.", language="text")
                         
-                        # 업로드 주기 분석 계산
+                        # ⏱️ 최근 5개 영상 기반 업로드 주기 판별 수식
                         if len(dates) >= 2:
                             intervals = [(dates[i-1] - dates[i]).days for i in range(1, len(dates))]
+                            # 간격이 마이너스로 떨어지는 현상 방지 (정렬 보정)
+                            intervals = [abs(num) for num in intervals]
                             avg_interval = sum(intervals) / len(intervals)
                             
                             if avg_interval <= 3:
-                                status_txt = "🔥 콘텐츠 생산성 매우 높음 (주 2회 이상)"
+                                status_txt = "🔥 콘텐츠 생산 속도 매우 빠름 (마케팅 집중기)"
                             elif avg_interval <= 7:
-                                status_txt = "✅ 정기적인 업로드 유지 중 (주 1회 수준)"
+                                status_txt = "✅ 정기적인 템포 유지 중 (주 1회 수준)"
                             else:
-                                status_txt = "⏳ 최근 업로드 공백기 발생"
+                                status_txt = "⏳ 최근 업로드 텀이 길어짐"
                                 
-                            st.info(f"⏱️ **최근 생산 패턴:** 평균 **{avg_interval:.1f}일** 간격 분기 ({status_txt})")
+                            st.info(f"⏱️ **최근 생산 패턴:** 평균 **{avg_interval:.1f}일** 간격으로 업로드 중 ({status_txt})")
                         else:
-                            st.info("⏱️ 분석에 필요한 최신 데이터가 부족합니다.")
+                            st.info("⏱️ 주기 분석을 위한 영상 데이터가 충분하지 않습니다.")
                             
                 except Exception as e:
-                    st.error(f"{brand_name} 시스템 연동 에러 발생: {e}")
+                    st.error(f"{brand_name} 시스템 데이터 처리 중 오류: {e}")
                 
+                # 프로그레스 바 전진
                 progress_yt.progress(int((idx + 1) * 25))
                 st.markdown("---")
             
-            status_yt.text("✅ 모든 운용사 채널 조회 프로세스 완료!")
+            status_yt.text("✅ 4대 운용사 유튜브 실시간 데이터 동기화 완료!")
 
 # ==========================================
 # Tab 8: 오프라인 이벤트 SNS 언급량 변화 크롤링
