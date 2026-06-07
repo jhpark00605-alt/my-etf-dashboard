@@ -637,25 +637,21 @@ with tabs[5]:
 # ==========================================
 with tabs[6]:
     st.subheader("📺 운용사 유튜브 신규 영상 감지 및 업로드 주기 분석")
-    st.caption("Streamlit Secrets에 등록된 YOUTUBE_API_KEY를 사용하여 4대 운용사 공식 채널의 최신 영상과 설명문을 실시간 수집합니다.")
+    st.caption("증권사 탭의 성공 로직을 기반으로, 공식 핸들 네임을 추적하여 4대 운용사의 최신 영상 데이터를 실시간 수집합니다.")
 
-    # 💡 국내 4대 자산운용사 공식 유튜브 채널 고유 ID (100% 검증된 실제 ID)
+    # 💡 [핸들 네임 세팅] 증권사 탭처럼 직관적이고 직결성이 높은 @핸들 구조로 변경
     YT_BRANDS = {
-        "KODEX ETF (삼성자산운용)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",   
-        "TIGER ETF (미래에셋자산운용)": "UC37XvO-X_QW98tSsh2W4p9A", 
-        "RISE ETF (KB자산운용)": "UC3FstZg-AALi8jMofJkS5pA",       
-        "ACE ETF (한국투자신탁운용)": "UCg9S6Zg4e0P9EwHbeM4xXvw"  
+        "KODEX ETF (삼성자산운용)": "@KODEX_ETF",   
+        "TIGER ETF (미래에셋자산운용)": "@TIGERETF", 
+        "RISE ETF (KB자산운용)": "@RISE_ETF",       
+        "ACE ETF (한국투자신탁운용)": "@ACE_ETF"  
     }
+    
+    my_yt_key = st.secrets.get("YOUTUBE_API_KEY")
 
     if st.button("운용사 유튜브 채널 업로드 현황 조회 📊"):
-        # 💡 [핵심] Secrets에서 YOUTUBE_API_KEY를 오차 없이 정확하게 바인딩합니다.
-        try:
-            my_yt_key = st.secrets["YOUTUBE_API_KEY"]
-        except Exception:
-            my_yt_key = None
-
         if not my_yt_key:
-            st.error("🔑 Streamlit Secrets에서 'YOUTUBE_API_KEY'를 읽어오지 못했습니다. Advanced settings -> Secrets에 Key가 정확히 등록되어 있는지 확인해 주세요.")
+            st.error("⚠️ Streamlit Secrets에 YOUTUBE_API_KEY가 등록되어 있는지 확인해 주세요.")
         else:
             import requests
             import datetime
@@ -663,62 +659,49 @@ with tabs[6]:
             status_yt = st.empty()
             progress_yt = st.progress(0)
             
-            for idx, (brand_name, channel_id) in enumerate(YT_BRANDS.items()):
-                status_yt.text(f"🔍 {brand_name} 공식 업로드 저장소(Playlist) 식별 중...")
+            for idx, (brand_name, handle) in enumerate(YT_BRANDS.items()):
+                status_yt.text(f"🎥 {brand_name} ({handle}) 최신 영상 데이터 수집 중...")
+                
+                # 💡 [증권사 성공 로직 이식] 핸들 네임(@)을 검색어로 활용하여 
+                # 해당 채널의 최신 동영상을 안전하게 긁어오는 구문입니다.
+                search_url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=5&order=date&q={handle}&type=video&key={my_yt_key}"
                 
                 try:
-                    # [Step 1] 채널 ID를 조회하여 해당 채널의 '공식 업로드 플레이리스트 고유 ID'를 받아옵니다.
-                    chan_url = f"https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id={channel_id}&key={my_yt_key}"
-                    chan_res = requests.get(chan_url, timeout=10).json()
-                    
-                    chan_items = chan_res.get("items", [])
-                    if not chan_items:
-                        st.error(f"❌ {brand_name}: 유튜브 서버가 채널 정보를 주지 않습니다. API 키 유효성이나 콘솔의 YouTube Data API v3 활성화 여부를 확인해 주세요.")
-                        continue
-                        
-                    # 구글이 공인한 해당 채널의 업로드 목록 ID 추출
-                    upload_playlist_id = chan_items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
-                    
-                    status_yt.text(f"🎥 {brand_name} 저장소에서 최신 영상 5개 데이터 수집 중...")
-                    
-                    # [Step 2] 추출한 업로드 목록 ID를 기반으로 최신 영상 5개의 팩트를 다이렉트 호출합니다.
-                    playlist_url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=5&playlistId={upload_playlist_id}&key={my_yt_key}"
-                    res_raw = requests.get(playlist_url, timeout=10)
+                    res_raw = requests.get(search_url, timeout=10)
                     
                     if res_raw.status_code != 200:
-                        st.error(f"❌ {brand_name} 최종 영상 추출 실패 (서버 에러 코드: {res_raw.status_code})")
+                        st.error(f"❌ {brand_name} 데이터 통신 실패 (서버 코드: {res_raw.status_code})")
                         continue
                         
                     res = res_raw.json()
-                    items = res.get("items", [])
+                    videos = res.get("items", [])
                     
                     st.markdown(f"### 🏢 {brand_name}")
                     
-                    if not items:
-                        st.warning("💡 해당 채널에 공개된 최신 동영상이 존재하지 않습니다.")
+                    if not videos:
+                        st.warning("💡 최신 공개 영상을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.")
                     else:
                         dates = []
-                        for item in items:
-                            snippet = item.get("snippet", {})
+                        for v in videos:
+                            v_id = v.get("id", {}).get("videoId")
+                            if not v_id: continue
+                            
+                            snippet = v.get("snippet", {})
                             title = snippet.get("title", "제목 없음")
                             desc = snippet.get("description", "설명 없음")
                             pub_time_str = snippet.get("publishedAt")
-                            
-                            # 비디오 고유 ID 추출
-                            v_id = snippet.get("resourceId", {}).get("videoId", "")
-                            if not v_id: continue
                             
                             # 날짜 형식 파싱
                             pub_time = datetime.datetime.strptime(pub_time_str, "%Y-%m-%dT%H:%M:%SZ")
                             dates.append(pub_time)
                             
-                            # 대시보드 화면 렌더링 (아코디언 형태)
+                            # 아코디언 메뉴 구성
                             with st.expander(f"🎬 {title} ({pub_time.strftime('%Y-%m-%d')})"):
                                 st.markdown(f"**🔗 영상 링크:** [YouTube 영상 바로가기](https://www.youtube.com/watch?v={v_id})")
                                 st.markdown(f"**📝 영상 설명문(Description):**")
                                 st.code(desc if desc.strip() else "등록된 설명문이 없습니다.", language="text")
                         
-                        # ⏱️ 최근 5개 영상 기반 업로드 주기 판별 수식
+                        # ⏱️ 업로드 주기 패턴 계산
                         if len(dates) >= 2:
                             intervals = [abs((dates[i-1] - dates[i]).days) for i in range(1, len(dates))]
                             avg_interval = sum(intervals) / len(intervals)
@@ -735,12 +718,12 @@ with tabs[6]:
                             st.info("⏱️ 주기 분석을 위한 데이터가 부족합니다.")
                             
                 except Exception as e:
-                    st.error(f"{brand_name} 데이터 처리 중 시스템 오류: {e}")
+                    st.error(f"{brand_name} 시스템 연동 에러 발생: {e}")
                 
                 progress_yt.progress(int((idx + 1) * 25))
                 st.markdown("---")
             
-            status_yt.text("✅ 모든 자산운용사 유튜브 실시간 API 연동 완료!")
+            status_yt.text("✅ 모든 자산운용사 유튜브 실시간 데이터 연동 완료!")
 
 # ==========================================
 # Tab 8: 오프라인 이벤트 SNS 언급량 변화 크롤링
