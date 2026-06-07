@@ -740,7 +740,7 @@ with tabs[7]:
 
         status_sns = st.empty()
         
-        # 💡 [우회 수집 경로 구축]
+        # [우회 수집 경로 구축]
         query_blog = "삼성자산운용 KODEX ETF 리뷰"
         blog_url = f"https://search.naver.com/search.naver?where=rss&query={urllib.parse.quote(query_blog)}"
         
@@ -781,7 +781,7 @@ with tabs[7]:
             status_sns.text("")
             st.warning("현재 수집된 소셜 미디어 반응이 없습니다.")
         else:
-            # Secrets에 등록된 키를 1순위로 바인딩하고 없으면 유튜브 키나 로컬 변수까지 역추적합니다.
+            # Secrets에 등록된 키 바인딩
             my_api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("YOUTUBE_API_KEY") or (API_KEY_GEMINI if 'API_KEY_GEMINI' in locals() or 'API_KEY_GEMINI' in globals() else None)
 
             if not my_api_key:
@@ -793,8 +793,8 @@ with tabs[7]:
                     
                     context_text = f"출처: {item['type']}\n제목: {item['title']}\n내용: {item['desc']}"
                     
-                    # 구글 표준 API 엔드포인트 주소 구조로 정밀 매칭
-                    final_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={my_api_key}"
+                    # 💡 [404 해결 포인트] v1beta 대신 호환성이 가장 뛰어난 정식 v1 주소와 정밀 모델 코드로 매칭 주소를 대치합니다.
+                    final_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={my_api_key}"
                     
                     prompt = f"""
                     너는 온라인 여론과 소셜 미디어 트렌드를 분석하는 금융 마케팅 애널리스트야.
@@ -808,7 +808,6 @@ with tabs[7]:
                     {context_text}
                     """
                     
-                    # 특수문자로 인해 JSON 포맷이 깨지는 것을 막기 위해 명확한 구조 정의
                     payload = {
                         "contents": [{
                             "parts": [{"text": prompt}]
@@ -841,5 +840,4 @@ with tabs[7]:
                             st.success(summary_text)
                         st.markdown("---")
                         
-                # 💡 줄바꿈 및 중복 오타 완벽 제거 완료
                 status_sns.text("✅ 모든 블로그 및 인스타그램 AI 여론 요약 완료!")
