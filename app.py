@@ -545,19 +545,6 @@ with tabs[4]:
 # ==========================================
 # Tab 6: KODEX 마케팅 관련 기사 크롤링
 # ==========================================
-이번에 발생한 404 에러(Not Found)는 Gemini API의 주소(URL) 체계나 모델 이름이 매칭되지 않아서 구글 서버가 *"요청한 주소를 찾을 수 없다"*고 응답한 것입니다.
-
-구글 Gemini API는 v1beta 버전을 사용할 때 모델명 앞에 models/ 경로가 정확히 붙어있어야 하거나, 현재 사용 중인 API 키의 권한에 따라 엔드포인트 구조가 정확해야 합니다.
-
-이 경로 문제를 가장 안전하고 확실하게 해결하기 위해, 코드 내부에서 구글 URL을 하드코딩하는 대신 기존에 이미 정상 작동을 확인했던 [Step 2]의 자동 모델 탐색 변수(gen_url) 및 모델명 구조를 그대로 이어받도록 코드를 전면 수정했습니다. 이렇게 하면 404 에러가 원천적으로 차단됩니다.
-
-기존 with tabs[3]: 블록 전체를 아래의 '404 에러 완벽 해결 버전' 코드로 교체해 주세요.
-
-🛠️ Tab 4: 404 에러 방지 및 안정화 적용 교체 코드
-Python
-# ==========================================
-# Tab 4: KODEX 마케팅 관련 기사 크롤링 및 AI 요약 (404 에러 완벽 해결 버전)
-# ==========================================
 with tabs[5]: 
     st.subheader("📰 KODEX 마케팅 뉴스 실시간 모니터링 및 AI 요약")
     st.caption("Google News RSS 피드의 메타데이터를 기반으로 Gemini AI가 마케팅적 시사점과 핵심 내용을 3줄 요약합니다.")
@@ -602,7 +589,6 @@ with tabs[5]:
                     summary_text = "요약을 생성할 수 없습니다."
                     
                     if API_KEY_GEMINI:
-                        # 💡 [404 해결 핵심] 모델 경로 형식을 공식 표준인 models/gemini-1.5-flash 로 정확하게 지정
                         target_model = "models/gemini-1.5-flash"
                         summary_url = f"https://generativelanguage.googleapis.com/v1beta/{target_model}:generateContent?key={API_KEY_GEMINI}"
                         
@@ -625,7 +611,6 @@ with tabs[5]:
                             if summary_res.status_code == 200:
                                 summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
                             elif summary_res.status_code == 404:
-                                # 💡 혹시나 계정별로 구버전 주소를 원할 경우를 대비한 Fallback 로직 추가
                                 backup_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={API_KEY_GEMINI}"
                                 backup_res = requests.post(backup_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=7)
                                 if backup_res.status_code == 200:
@@ -650,7 +635,6 @@ with tabs[5]:
         except Exception as e:
             status_news.text("")
             st.error(f"뉴스 수집 중 오류가 발생했습니다: {e}")
-
 
 # ==========================================
 # Tab 7: 운용사 유튜브 신규 영상 및 설명문 크롤링
