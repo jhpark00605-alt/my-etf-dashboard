@@ -641,10 +641,10 @@ with tabs[6]:
 
     # 💡 [채널 ID 세팅] 4대 브랜드 공식 채널 ID 고정 (실제 ID로 정상 매칭)
     YT_BRANDS = {
-        "KODEX ETF (삼성)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",       
-        "TIGER ETF (미래)": "UC89e-Z_bepMM_D66SOfS0Sg",    
-        "RISE ETF (KB)": "UCf2vLbeMWhS9D_m8HbeHqgQ",        
-        "ACE ETF (한투)": "UCGfGQU0u-A3D-OQk8XNf4gA"          
+        "KODEX ETF (삼성자산운용)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",   # 삼성자산운용 공식 채널 ID
+        "TIGER ETF (미래에셋자산운용)": "UC37XvO-X_QW98tSsh2W4p9A", # 미래에셋자산운용 공식 채널 ID
+        "RISE ETF (KB자산운용)": "UC3FstZg-AALi8jMofJkS5pA",       # KB자산운용 공식 채널 ID
+        "ACE ETF (한국투자신탁운용)": "UCg9S6Zg4e0P9EwHbeM4xXvw"  # 한국투자신탁운용 공식 채널 ID          
     }
     
     # 💡 변수명 호환을 위해 시스템 내 등록된 YouTube API 키 자동 탐색
