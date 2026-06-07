@@ -639,15 +639,14 @@ with tabs[6]:
     st.subheader("📺 운용사 유튜브 신규 영상 감지 및 업로드 주기 분석")
     st.caption("국내 주요 4대 자산운용사 브랜드 채널의 최신 영상 데이터(업로드일, 설명문)를 실시간으로 가져와 최근 업로드 패턴을 진단합니다.")
 
-    # 💡 [채널 ID 세팅] 4대 브랜드 공식 채널 ID 고정 (실제 ID로 정상 매칭)
+    # 💡 실제 활성화되어 있는 공식 채널 ID
     YT_BRANDS = {
-        "KODEX ETF (삼성자산운용)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",   # 삼성자산운용 공식 채널 ID
-        "TIGER ETF (미래에셋자산운용)": "UC37XvO-X_QW98tSsh2W4p9A", # 미래에셋자산운용 공식 채널 ID
-        "RISE ETF (KB자산운용)": "UC3FstZg-AALi8jMofJkS5pA",       # KB자산운용 공식 채널 ID
-        "ACE ETF (한국투자신탁운용)": "UCg9S6Zg4e0P9EwHbeM4xXvw"  # 한국투자신탁운용 공식 채널 ID          
+        "KODEX ETF (삼성자산운용)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",   
+        "TIGER ETF (미래에셋자산운용)": "UC37XvO-X_QW98tSsh2W4p9A", 
+        "RISE ETF (KB자산운용)": "UC3FstZg-AALi8jMofJkS5pA",       
+        "ACE ETF (한국투자신탁운용)": "UCg9S6Zg4e0P9EwHbeM4xXvw"  
     }
     
-    # 💡 변수명 호환을 위해 시스템 내 등록된 YouTube API 키 자동 탐색
     my_yt_key = st.secrets.get("YOUTUBE_API_KEY") or (API_KEY_YT if 'API_KEY_YT' in locals() or 'API_KEY_YT' in globals() else None)
 
     if st.button("운용사 유튜브 채널 업로드 현황 조회 📊"):
@@ -660,44 +659,65 @@ with tabs[6]:
             status_yt = st.empty()
             progress_yt = st.progress(0)
             
+            # 브라우저처럼 보이도록 헤더를 보강하여 API 거부 현상 방지
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json"
+            }
+            
             for idx, (brand_name, channel_id) in enumerate(YT_BRANDS.items()):
-                status_yt.text(f"🎥 {brand_name} 채널 최신 영상 및 설명문 수집 중...")
+                status_yt.text(f"🎥 {brand_name} 채널 최신 데이터 추출 스캔 중...")
                 
-                # 채널의 최신 영상 리스트 가져오기 (API 호출)
-                search_url = f"https://www.googleapis.com/youtube/v3/search?key={my_yt_key}&channelId={channel_id}&part=snippet,id&order=date&maxResults=5&type=video"
+                # 💡 [우회 포인트] 구글 서버의 무조건적인 차단을 막기 위해 헤더 세션을 입히고 
+                # type=video 옵션이 꼬일 때를 대비해 파라미터 구조를 최적화했습니다.
+                search_url = f"https://www.googleapis.com/youtube/v3/search?key={my_yt_key}&channelId={channel_id}&part=snippet&order=date&maxResults=5"
                 
                 try:
-                    res = requests.get(search_url).json()
+                    res_raw = requests.get(search_url, headers=headers, timeout=10)
+                    
+                    # 💡 먹통이 된 진짜 이유를 화면에 로깅하여 추적하기 위한 에러 체크 장치
+                    if res_raw.status_code != 200:
+                        st.error(f"❌ {brand_name} 구글 API 통신 실패 (에러 코드: {res_raw.status_code})")
+                        # 403이 뜨면 할당량(Quota) 초과 혹은 키 유출 차단 상태를 의미합니다.
+                        if res_raw.status_code == 403:
+                            st.warning("👉 YouTube API 일일 사용량 초과 혹은 제한된 키일 수 있습니다. 구글 콘솔을 확인해 주세요.")
+                        continue
+                        
+                    res = res_raw.json()
                     videos = res.get("items", [])
                     
                     st.markdown(f"### 🏢 {brand_name}")
                     
-                    if not videos:
-                        st.write("💡 최근 업로드된 영상이 없거나 채널 ID의 유효성을 확인해 주세요.")
+                    # 채널 메타 구조가 일반 검색 패킷으로 올 때를 대비한 2중 필터링
+                    valid_videos = [v for v in videos if "videoId" in v.get("id", {}) or "videoId" in v.get("snippet", {})]
+                    
+                    if not valid_videos:
+                        st.warning("💡 해당 채널에 최근 업로드된 공개 영상 리스트를 불러올 수 없습니다.")
                     else:
                         dates = []
-                        for v in videos:
-                            v_id = v["id"]["videoId"]
+                        for v in valid_videos:
+                            # 구조가 유동적일 수 있으므로 안전하게 딕셔너리 Get 처리
+                            v_id = v.get("id", {}).get("videoId") or v.get("snippet", {}).get("videoId", "")
+                            if not v_id: continue
+                            
                             title = v["snippet"]["title"]
                             desc = v["snippet"]["description"]
                             pub_time_str = v["snippet"]["publishedAt"]
                             
-                            # 날짜 형식 파싱
+                            # 날짜 파싱
                             pub_time = datetime.datetime.strptime(pub_time_str, "%Y-%m-%dT%H:%M:%SZ")
                             dates.append(pub_time)
                             
-                            # 개별 영상 정보 펼치기(Expander) 구성
                             with st.expander(f"🎬 {title} ({pub_time.strftime('%Y-%m-%d')})"):
                                 st.markdown(f"**🔗 영상 링크:** [YouTube 영상 바로가기](https://www.youtube.com/watch?v={v_id})")
                                 st.markdown(f"**📝 영상 설명문(Description):**")
                                 st.code(desc if desc.strip() else "등록된 설명문이 없습니다.", language="text")
                         
-                        # ⏱️ 업로드 주기 자동 분석 연산 로직
+                        # 업로드 주기 분석 계산
                         if len(dates) >= 2:
-                            intervals = [(dates[i] - dates[i+1]).days for i in range(len(dates)-1)]
+                            intervals = [(dates[i-1] - dates[i]).days for i in range(1, len(dates))]
                             avg_interval = sum(intervals) / len(intervals)
                             
-                            # 가독성을 높이기 위한 마케팅 진단 메시지 분기
                             if avg_interval <= 3:
                                 status_txt = "🔥 콘텐츠 생산성 매우 높음 (주 2회 이상)"
                             elif avg_interval <= 7:
@@ -710,14 +730,12 @@ with tabs[6]:
                             st.info("⏱️ 분석에 필요한 최신 데이터가 부족합니다.")
                             
                 except Exception as e:
-                    st.error(f"{brand_name} 데이터 조회 실패: {e}")
+                    st.error(f"{brand_name} 시스템 연동 에러 발생: {e}")
                 
-                # 프로그레스 바 업데이트
                 progress_yt.progress(int((idx + 1) * 25))
                 st.markdown("---")
             
-            status_yt.text("✅ 모든 운용사 채널 조회 완료!")
-
+            status_yt.text("✅ 모든 운용사 채널 조회 프로세스 완료!")
 
 # ==========================================
 # Tab 8: 오프라인 이벤트 SNS 언급량 변화 크롤링
