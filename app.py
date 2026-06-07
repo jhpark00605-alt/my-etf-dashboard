@@ -728,66 +728,94 @@ with tabs[6]:
 # ==========================================
 # Tab 8: 오프라인 이벤트 SNS 언급량 변화 크롤링
 # ==========================================
-with tabs[7]:
-    st.subheader("📱 오프라인 이벤트 SNS (네이버 블로그) 언급량 모니터링")
-    st.caption("진행 중이거나 진행했던 오프라인 이벤트(예: 세미나, 팝업스토어) 키워드를 입력하면 실시간으로 블로그 언급 글을 크롤링합니다.")
+with tabs[5]: # 사용자님의 대시보드 탭 순서에 맞게 인덱스 넘버(예: tabs[5] 또는 tabs[4])를 조율해 주세요.
+    st.subheader("📱 KODEX SNS 마케팅 동향 및 AI 요약 분석")
+    st.caption("네이버 실시간 블로그 검색 피드를 기반으로, 대시보드 내장 AI 엔진이 인플루언서 및 투자자들의 핵심 여론과 마케팅 반응을 요약합니다.")
 
-    # 사용자로부터 오프라인 이벤트 키워드 입력받기
-    event_keyword = st.text_input("분석할 오프라인 이벤트 키워드를 입력하세요", placeholder="예: KODEX 세미나, TIGER 팝업스토어")
-    
-    # 네이버 API 키 연동 (오픈 API 가입 후 Secrets 등록 필요)
-    NAVER_CLIENT_ID = st.secrets.get("NAVER_CLIENT_ID")
-    NAVER_CLIENT_SECRET = st.secrets.get("NAVER_CLIENT_SECRET")
+    if st.button("SNS 마케팅 동향 및 AI 요약 불러오기 🔄"):
+        import requests
+        from bs4 import BeautifulSoup
+        import urllib.parse
+        import json
 
-    if st.button("SNS 언급량 분석 시작 🚀"):
-        if not event_keyword.strip():
-            st.warning("⚠️ 이벤트 키워드를 입력해 주세요.")
-        elif not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
-            st.error("⚠️ 네이버 검색 API 사용을 위해 Streamlit Secrets에 NAVER_CLIENT_ID와 NAVER_CLIENT_SECRET을 등록해야 합니다.")
-        else:
-            import requests
-            import urllib.parse
-            from bs4 import BeautifulSoup
+        status_sns = st.empty()
+        status_sns.text("🌐 KODEX 관련 최신 블로그 동향 수집 중...")
+        
+        # 'KODEX' 관련 마케팅/리뷰 키워드로 네이버 블로그 RSS 검색 (API Key 없이 안정적으로 작동하는 정석 주소)
+        query = "삼성자산운용 KODEX ETF 리뷰"
+        encoded_query = urllib.parse.quote(query)
+        blog_rss_url = f"https://search.naver.com/search.naver?where=rss&query={encoded_query}"
+        
+        try:
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+            resp = requests.get(blog_rss_url, headers=headers)
+            soup = BeautifulSoup(resp.content, "xml")
+            items = soup.find_all("item")[:5] # 최신 블로그 포스팅 5개 추출
             
-            status_sns = st.empty()
-            status_sns.text("🔍 네이버 SNS(블로그) 실시간 언급 데이터 수집 중...")
-            
-            encoded_key = urllib.parse.quote(event_keyword)
-            
-            # 1. 네이버 블로그 검색 API (급증 여부 판단을 위해 유사도순/최신순 조합 가능, 여기선 최신순 수집)
-            url = f"https://openapi.naver.com/v1/search/blog.json?query={encoded_key}&display=20&sort=date"
-            headers = {
-                "X-Naver-Client-Id": NAVER_CLIENT_ID,
-                "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
-            }
-            
-            try:
-                res = requests.get(url, headers=headers).json()
-                items = res.get("items", [])
-                
-                if not items:
-                    st.info(f"🙅‍♂️ '{event_keyword}' 키워드에 대한 최근 언급을 찾을 수 없습니다.")
-                else:
-                    st.success(f"📈 '{event_keyword}' 관련 최신 SNS 언급 데이터 총 {len(items)}건 분석 완료")
+            if not items:
+                status_sns.text("")
+                st.warning("최근 KODEX 관련 블로그 포스팅을 찾을 수 없습니다.")
+            else:
+                # 💡 Secrets에서 Gemini API Key 바인딩
+                try:
+                    my_api_key = st.secrets["GEMINI_API_KEY"]
+                except Exception:
+                    my_api_key = None
+
+                for idx, item in enumerate(items):
+                    title = item.title.text if item.title else "제목 없음"
+                    link = item.link.text if item.link else "#"
+                    pub_date = item.pubDate.text if item.pubDate else "날짜 정보 없음"
+                    author = item.author.text if item.author else "네이버 블로그 작성자"
                     
-                    # 수집된 글 목록 시각화
-                    for item in items:
-                        title = item["title"].replace("<b>", "").replace("</b>", "")
-                        description = item["description"].replace("<b>", "").replace("</b>", "")
-                        post_date = item["postdate"]
-                        formatted_date = f"{post_date[:4]}-{post_date[4:6]}-{post_date[6:]}"
-                        link = item["link"]
-                        blog_name = item["bloggername"]
+                    # 블로그 포스팅 본문 스니펫 추출 및 정제
+                    raw_desc = item.description.text if item.description else ""
+                    clean_desc = BeautifulSoup(raw_desc, "html.parser").get_text() if raw_desc else ""
+                    
+                    status_sns.text(f"🧠 ({idx+1}/{len(items)}) '{title[:15]}...' 블로그 여론 AI 요약 분석 중...")
+                    
+                    context_text = f"블로그 제목: {title}\n작성자: {author}\n포스팅 요약 패킷: {clean_desc}"
+                    summary_text = "요약을 생성할 수 없습니다."
+                    
+                    # 💡 [핵심] 링크 유출 대신 Gemini API를 타격하여 텍스트 분석 및 요약본 생성
+                    if my_api_key:
+                        final_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={my_api_key}"
                         
-                        with st.container():
-                            st.markdown(f"**[{blog_name}]** [{title}]({link})")
-                            st.caption(f"📅 작성일: {formatted_date}")
-                            st.write(description)
-                            st.markdown("---")
-                            
-                    # Tip 안내
-                    st.info("💡 **인스타그램 크롤링 안내:** 인스타그램은 현재 공식 Graph API를 통해서만 비즈니스 계정 기준으로 해시태그 검색이 가능하며, 일반 웹 크롤링(BeautifulSoup 등)은 메타의 강력한 차단 정책 시스템에 의해 웹 대시보드 환경에서 실시간 작동이 불가능합니다. 따라서 실시간 모니터링은 네이버 블로그/웹 데이터를 메인으로 활용하시는 것을 추천합니다.")
-            except Exception as e:
-                st.error(f"SNS 데이터 수집 오류: {e}")
-            
+                        prompt = f"""
+                        너는 온라인 여론과 소셜 미디어 트렌드를 정밀 분석하는 최고 수준의 금융 마케팅 애널리스트야.
+                        제공된 네이버 블로그 포스팅의 정보(제목 및 본문 일부)를 바탕으로, 해당 글쓴이(투자자 혹은 인플루언서)가 KODEX ETF나 삼성자산운용에 대해 어떤 마케팅적 반응이나 의견을 보이고 있는지 분석해줘.
+                        
+                        요구사항:
+                        1. 불필요한 서론 없이 딱 2~3줄의 깔끔한 요약본을 글머리 기호(- ) 형태로 작성해줘.
+                        2. 글쓴이의 주된 뉘앙스(긍정적 추천, 단순 정보 전달, 아쉬운 점 등)를 명확히 짚어줘.
+                        3. 정중하고 정제된 비즈니스 톤(~입니다 문체)을 사용해줘.
+
+                        분석할 블로그 단서:
+                        {context_text}
+                        """
+                        
+                        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                        try:
+                            summary_res = requests.post(final_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=7)
+                            if summary_res.status_code == 200:
+                                summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
+                            else:
+                                summary_text = f"⚠️ AI 요약 생성 실패 (서버 에러 코드: {summary_res.status_code})"
+                        except Exception:
+                            summary_text = "⚡ AI 서버 연동 중 네트워크 타임아웃이 발생했습니다."
+                    else:
+                        summary_text = "🔑 Secrets에 'GEMINI_API_KEY'가 올바르게 설정되어 있는지 확인해 주세요."
+
+                    # 🖥️ 대시보드 UI 화면 출력
+                    with st.container():
+                        st.markdown(f"### 📝 [{title}]({link})")
+                        st.caption(f"📅 **작성일시:** {pub_date} | ✍️ **작성자:** {author}")
+                        st.markdown("**🤖 Gemini AI 블로그 여론 요약 보고서**")
+                        st.success(summary_text) # 뉴스 탭과 구분하기 위해 연두색(Success) 박스로 세련되게 연출
+                        st.markdown("---")
+                        
+                status_sns.text("✅ 모든 SNS 동향 파싱 및 AI 여론 요약 완료!")
+                
+        except Exception as e:
             status_sns.text("")
+            st.error(f"SNS 동향 데이터를 수집하는 중 오류가 발생했습니다: {e}")
