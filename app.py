@@ -637,107 +637,100 @@ with tabs[5]:
 # ==========================================
 with tabs[6]:
     st.subheader("📺 운용사 유튜브 신규 영상 감지 및 업로드 주기 분석")
-    st.caption("구글 공식 인증 channel 및 playlistItems API 표준 프로세스를 통해 4대 운용사의 최신 영상과 설명문을 실시간 수집합니다.")
+    st.caption("유튜브 공식 RSS 피드 시스템을 직접 크롤링하여, API Key나 제한 없이 4대 운용사의 최신 영상 데이터를 실시간 수집합니다.")
 
-    # 💡 국내 4대 운용사 공식 채널 고유 ID
+    # 💡 국내 4대 운용사 공식 채널 고유 ID (RSS 피드 직결용)
     YT_BRANDS = {
         "KODEX ETF (삼성자산운용)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",   
         "TIGER ETF (미래에셋자산운용)": "UC37XvO-X_QW98tSsh2W4p9A", 
         "RISE ETF (KB자산운용)": "UC3FstZg-AALi8jMofJkS5pA",       
         "ACE ETF (한국투자신탁운용)": "UCg9S6Zg4e0P9EwHbeM4xXvw"  
     }
-    
-    # Secrets에 설정된 키를 명확하게 1순위로 바인딩
-    my_yt_key = st.secrets.get("YOUTUBE_API_KEY") or (API_KEY_YT if 'API_KEY_YT' in locals() or 'API_KEY_YT' in globals() else None)
 
+    # 💡 이 코드는 API Key가 전혀 필요 없으므로 버튼 하나로 즉시 구동됩니다!
     if st.button("운용사 유튜브 채널 업로드 현황 조회 📊"):
-        if not my_yt_key:
-            st.error("⚠️ Streamlit Secrets 영역이나 대시보드 상단에 YOUTUBE_API_KEY가 올바르게 등록되어 있는지 확인해 주세요.")
-        else:
-            import requests
-            import datetime
+        import requests
+        from bs4 import BeautifulSoup
+        import datetime
+        
+        status_yt = st.empty()
+        progress_yt = st.progress(0)
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
+        for idx, (brand_name, channel_id) in enumerate(YT_BRANDS.items()):
+            status_yt.text(f"🌐 {brand_name} 유튜브 RSS 피드 우회 접속 중...")
             
-            status_yt = st.empty()
-            progress_yt = st.progress(0)
+            # 💡 [핵심 포인트] 유튜브가 제공하는 공식 채널별 RSS 주소 타격 (API Key 인증 불필요)
+            rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
             
-            for idx, (brand_name, channel_id) in enumerate(YT_BRANDS.items()):
-                status_yt.text(f"🔍 {brand_name}의 고유 업로드 저장소 식별 중...")
+            try:
+                res = requests.get(rss_url, headers=headers, timeout=10)
                 
-                try:
-                    # 💡 [Step 1] 404 에러의 원인이었던 수동 주소 생성을 버리고, 
-                    # 구글 API를 통해 해당 채널의 '공식 업로드 플레이리스트 ID'를 실시간 조회요청합니다.
-                    chan_url = f"https://www.googleapis.com/youtube/v3/channels?key={my_yt_key}&id={channel_id}&part=contentDetails"
-                    chan_res = requests.get(chan_url, timeout=10).json()
+                if res.status_code != 200:
+                    st.error(f"❌ {brand_name} 피드 연결 실패 (코드: {res.status_code})")
+                    continue
                     
-                    # 채널 정보 파싱 검증
-                    chan_items = chan_res.get("items", [])
-                    if not chan_items:
-                        st.error(f"❌ {brand_name}: 유튜브 서버가 채널 정보를 반환하지 않습니다. (API Key 혹은 ID 확인 필요)")
-                        continue
+                soup = BeautifulSoup(res.content, "xml")
+                entries = soup.find_all("entry")[:5] # 최신 영상 5개 추출
+                
+                st.markdown(f"### 🏢 {brand_name}")
+                
+                if not entries:
+                    st.warning("💡 해당 채널에서 실시간 영상 피드를 추출할 수 없습니다.")
+                else:
+                    dates = []
+                    for entry in entries:
+                        title = entry.title.text if entry.title else "제목 없음"
+                        v_id = entry.find("yt:videoId").text if entry.find("yt:videoId") else ""
+                        pub_time_str = entry.published.text if entry.published else ""
                         
-                    # 구글이 공인한 진짜 업로드 플레이리스트 고유 ID 추출
-                    upload_playlist_id = chan_items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
-                    
-                    status_yt.text(f"🎥 {brand_name} 저장소에서 최신 영상 5개 매칭 및 수집 중...")
-                    
-                    # [Step 2] 추출된 진짜 ID를 기반으로 최신 영상 5개 다이렉트 호출 (404 절대 안 남)
-                    playlist_url = f"https://www.googleapis.com/youtube/v3/playlistItems?key={my_yt_key}&playlistId={upload_playlist_id}&part=snippet&maxResults=5"
-                    res_raw = requests.get(playlist_url, timeout=10)
-                    
-                    if res_raw.status_code != 200:
-                        st.error(f"❌ {brand_name} 최종 영상 추출 실패 (서버 코드: {res_raw.status_code})")
-                        continue
+                        # RSS 피드는 대략적인 설명문(미디어 스니펫)을 포함함
+                        desc = entry.find("media:description").text if entry.find("media:description") else "등록된 설명문이 없거나 가져올 수 없습니다."
                         
-                    res = res_raw.json()
-                    items = res.get("items", [])
-                    
-                    st.markdown(f"### 🏢 {brand_name}")
-                    
-                    if not items:
-                        st.warning("💡 해당 채널에 등록된 공개 영상 콘텐츠가 없습니다.")
-                    else:
-                        dates = []
-                        for item in items:
-                            snippet = item.get("snippet", {})
-                            title = snippet.get("title", "제목 없음")
-                            desc = snippet.get("description", "설명 없음")
-                            pub_time_str = snippet.get("publishedAt")
-                            
-                            v_id = snippet.get("resourceId", {}).get("videoId", "")
-                            if not v_id: continue
-                            
-                            pub_time = datetime.datetime.strptime(pub_time_str, "%Y-%m-%dT%H:%M:%SZ")
-                            dates.append(pub_time)
-                            
-                            # 깔끔한 UI를 위한 아코디언 컴포넌트 구성
-                            with st.expander(f"🎬 {title} ({pub_time.strftime('%Y-%m-%d')})"):
-                                st.markdown(f"**🔗 영상 링크:** [YouTube 영상 바로가기](https://www.youtube.com/watch?v={v_id})")
-                                st.markdown(f"**📝 영상 설명문(Description):**")
-                                st.code(desc if desc.strip() else "등록된 설명문이 없습니다.", language="text")
+                        if not v_id: continue
                         
-                        # ⏱️ 업로드 간격 패턴 계산
-                        if len(dates) >= 2:
-                            intervals = [abs((dates[i-1] - dates[i]).days) for i in range(1, len(dates))]
-                            avg_interval = sum(intervals) / len(intervals)
+                        # 날짜 형식 파싱 (ISO 8601 패턴 대응)
+                        # 예시: 2026-06-03T13:25:00+00:00 -> 앞 19자리만 잘라서 파싱
+                        try:
+                            pub_time = datetime.datetime.strptime(pub_time_str[:19], "%Y-%m-%dT%H:%M:%S")
+                        except:
+                            pub_time = datetime.datetime.now()
                             
-                            if avg_interval <= 3:
-                                status_txt = "🔥 콘텐츠 생산 속도 매우 빠름 (마케팅 집중기)"
-                            elif avg_interval <= 7:
-                                status_txt = "✅ 정기적인 템포 유지 중 (주 1회 수준)"
-                            else:
-                                status_txt = "⏳ 최근 업로드 텀이 길어짐"
-                                
-                            st.info(f"⏱️ **최근 생산 패턴:** 평균 **{avg_interval:.1f}일** 간격으로 업로드 중 ({status_txt})")
+                        dates.append(pub_time)
+                        
+                        # 대시보드 아코디언 메뉴 구성
+                        with st.expander(f"🎬 {title} ({pub_time.strftime('%Y-%m-%d')})"):
+                            st.markdown(f"**🔗 영상 링크:** [YouTube 영상 바로가기](https://www.youtube.com/watch?v={v_id})")
+                            st.markdown(f"**📝 영상 요약 및 설명문:**")
+                            st.code(desc.strip(), language="text")
+                    
+                    # ⏱️ 최근 생산 패턴 및 업로드 주기 분석 계산
+                    if len(dates) >= 2:
+                        intervals = [abs((dates[i-1] - dates[i]).days) for i in range(1, len(dates))]
+                        avg_interval = sum(intervals) / len(intervals)
+                        
+                        if avg_interval <= 3:
+                            status_txt = "🔥 콘텐츠 생산 속도 매우 빠름 (마케팅 집중기)"
+                        elif avg_interval <= 7:
+                            status_txt = "✅ 정기적인 템포 유지 중 (주 1회 수준)"
                         else:
-                            st.info("⏱️ 주기 분석을 위한 데이터가 부족합니다.")
+                            status_txt = "⏳ 최근 업로드 텀이 길어짐"
                             
-                except Exception as e:
-                    st.error(f"{brand_name} 데이터 처리 과정 중 예외 발생: {e}")
-                
-                progress_yt.progress(int((idx + 1) * 25))
-                st.markdown("---")
+                        st.info(f"⏱️ **최근 생산 패턴:** 평균 **{avg_interval:.1f}일** 간격으로 업로드 중 ({status_txt})")
+                    else:
+                        st.info("⏱️ 주기 분석을 위한 데이터가 부족합니다.")
+                        
+            except Exception as e:
+                st.error(f"{brand_name} 데이터 파싱 중 예외 발생: {e}")
             
-            status_yt.text("✅ 모든 자산운용사 유튜브 실시간 데이터 연동 완료!")
+            # 프로그레스 바 업데이트
+            progress_yt.progress(int((idx + 1) * 25))
+            st.markdown("---")
+        
+        status_yt.text("✅ API 키 없이 모든 운용사 유튜브 실시간 크롤링 완료!")
 
 # ==========================================
 # Tab 8: 오프라인 이벤트 SNS 언급량 변화 크롤링
