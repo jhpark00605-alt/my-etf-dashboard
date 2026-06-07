@@ -641,10 +641,10 @@ with tabs[6]:
 
     # 💡 [핸들 네임 세팅] 증권사 탭처럼 직관적이고 직결성이 높은 @핸들 구조로 변경
     YT_BRANDS = {
-        "KODEX ETF (삼성자산운용)": "@KODEX_ETF",   
-        "TIGER ETF (미래에셋자산운용)": "@TIGERETF", 
-        "RISE ETF (KB자산운용)": "@RISE_ETF",       
-        "ACE ETF (한국투자신탁운용)": "@ACE_ETF"  
+        "KODEX ETF (삼성자산운용)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",   
+        "TIGER ETF (미래에셋자산운용)": "UC37XvO-X_QW98tSsh2W4p9A", 
+        "RISE ETF (KB자산운용)": "UC3FstZg-AALi8jMofJkS5pA",       
+        "ACE ETF (한국투자신탁운용)": "UCg9S6Zg4e0P9EwHbeM4xXvw"  
     }
     
     my_yt_key = st.secrets.get("YOUTUBE_API_KEY")
