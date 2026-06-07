@@ -730,7 +730,7 @@ with tabs[6]:
 # ==========================================
 with tabs[7]: 
     st.subheader("📱 KODEX 소셜 미디어(블로그 & 인스타) 마케팅 동향 AI 요약")
-    st.caption("네이버 블로그 및 구글 인덱싱 인스타그램 마케팅 피드를 기반으로 AI 엔진이 종합 여론을 3줄 요약합니다.")
+    st.caption("네이버 블로그 및 구글 인덱싱 인스타그램 마케팅 피드를 기반으로 AI 엔진이 종합 여론을 요약합니다.")
 
     if st.button("SNS 마케팅 동향 및 AI 요약 불러오기 🔄"):
         import requests
@@ -750,7 +750,7 @@ with tabs[7]:
         sns_items = []
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
-        # 데이터 수집
+        # 1. 데이터 수집 단계
         try:
             status_sns.text("🌐 네이버 블로그 포스팅 수집 중...")
             res_b = requests.get(blog_url, headers=headers, timeout=10)
@@ -776,68 +776,91 @@ with tabs[7]:
         except Exception as e:
             st.error(f"데이터 로드 중 오류 발생: {e}")
 
-        # AI 요약 수행 및 화면 출력
+        # 2. AI 요약 및 출력 단계
         if not sns_items:
             status_sns.text("")
             st.warning("현재 수집된 소셜 미디어 반응이 없습니다.")
         else:
-            # Secrets에 등록된 키 바인딩
+            # 유튜브 탭과 동일하게 Secrets 및 변수에서 API 키 동적 매칭
             my_api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("YOUTUBE_API_KEY") or (API_KEY_GEMINI if 'API_KEY_GEMINI' in locals() or 'API_KEY_GEMINI' in globals() else None)
 
             if not my_api_key:
                 status_sns.text("")
-                st.error("🔑 Secrets에 GEMINI_API_KEY 또는 YOUTUBE_API_KEY가 등록되어 있는지 확인해 주세요.")
+                st.error("⚠️ API 키를 확인하세요 (Streamlit Secrets 설정 필요)")
             else:
-                for idx, item in enumerate(sns_items):
-                    status_sns.text(f"🧠 ({idx+1}/{len(sns_items)}) [{item['type']}] AI 여론 분석 중...")
+                # 💡 [유튜브 엔진 핵심 이식] 사용 가능한 AI 모델 스캔
+                status_sns.text("📡 사용 가능한 소셜 분석 AI 모델 조회 중...")
+                list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={my_api_key}"
+                
+                selected_model = None
+                try:
+                    list_res = requests.get(list_url, timeout=7).json()
+                    available_models = [m['name'] for m in list_res.get('models', []) 
+                                        if 'generateContent' in m.get('supportedGenerationMethods', [])]
                     
-                    context_text = f"출처: {item['type']}\n제목: {item['title']}\n내용: {item['desc']}"
-                    
-                    # 💡 [404 해결 포인트] v1beta 대신 호환성이 가장 뛰어난 정식 v1 주소와 정밀 모델 코드로 매칭 주소를 대치합니다.
-                    final_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={my_api_key}"
-                    
-                    prompt = f"""
-                    너는 온라인 여론과 소셜 미디어 트렌드를 분석하는 금융 마케팅 애널리스트야.
-                    제공된 데이터를 바탕으로, 해당 소셜 채널에서 KODEX ETF에 대해 어떤 반응을 보이고 있는지 분석해줘.
-                    
-                    요구사항:
-                    1. 불필요한 인사말 없이 딱 2~3줄의 깔끔한 요약본을 글머리 기호(- ) 형태로 작성해줘.
-                    2. 정중하고 정제된 비즈니스 톤 (~입니다 문체)을 사용해줘.
+                    # 계정 권한별 모델 매칭 우선순위 체크
+                    for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
+                        if candidate in available_models:
+                            selected_model = candidate
+                            break
+                    if not selected_model and available_models:
+                        selected_model = available_models[0]
+                except Exception as e:
+                    # 스캔 실패 시 기본값 강제 할당 백업
+                    selected_model = "models/gemini-1.5-flash"
 
-                    소셜 데이터:
-                    {context_text}
-                    """
-                    
-                    payload = {
-                        "contents": [{
-                            "parts": [{"text": prompt}]
-                        }]
-                    }
-                    
-                    try:
-                        summary_res = requests.post(
-                            final_url, 
-                            headers={'Content-Type': 'application/json'}, 
-                            data=json.dumps(payload), 
-                            timeout=10
-                        )
+                if not selected_model:
+                    st.error("❌ 사용 가능한 Gemini 모델을 찾을 수 없습니다. API 키 설정을 확인하세요.")
+                else:
+                    # 루프를 돌며 개별 포스팅 분석 수행
+                    for idx, item in enumerate(sns_items):
+                        status_sns.text(f"🤖 {selected_model.split('/')[-1]} 모델로 소셜 분석 중... ({idx+1}/{len(sns_items)})")
                         
-                        if summary_res.status_code == 200:
-                            res_json = summary_res.json()
-                            summary_text = res_json['candidates'][0]['content']['parts'][0]['text']
-                        else:
-                            summary_text = f"⚠️ AI 요약 차단됨 (구글 서버 응답 코드: {summary_res.status_code})\n이유: {summary_res.text[:100]}"
-                    except Exception as e:
-                        summary_text = f"⚡ AI 연동 실패: {str(e)}"
+                        # 💡 동적으로 매칭된 모델 이름을 주소창에 주입 (유튜브 구조 매칭)
+                        gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={my_api_key}"
+                        
+                        context_text = f"출처: {item['type']}\n제목: {item['title']}\n내용: {item['desc']}"
+                        prompt = f"""
+                        너는 온라인 여론과 소셜 미디어 트렌드를 정밀 분석하는 최고 수준의 금융 마케팅 애널리스트야.
+                        제공된 소셜 미디어 데이터를 바탕으로, 해당 채널에서 KODEX ETF에 대해 어떤 마케팅적 반응이나 투자 의견을 보이고 있는지 분석해줘.
+                        
+                        요구사항:
+                        1. 불필요한 인사말 없이 딱 2~3줄의 깔끔한 요약본을 글머리 기호(- ) 형태로 작성해줘.
+                        2. 정중하고 정제된 비즈니스 톤(~입니다 문체)을 사용해줘.
 
-                    # 대시보드 UI 출력
-                    with st.container():
-                        st.markdown(f"### {item['type']} | [{item['title']}]({item['link']})")
-                        st.markdown("**🤖 Gemini AI 소셜 트렌드 분석**")
-                        if "Instagram" in item['type']:
-                            st.info(summary_text)
-                        else:
-                            st.success(summary_text)
-                        st.markdown("---")
+                        분석할 소셜 데이터:
+                        {context_text}
+                        """
                         
-                status_sns.text("✅ 모든 블로그 및 인스타그램 AI 여론 요약 완료!")
+                        payload = {
+                            "contents": [{"parts": [{"text": prompt}]}]
+                        }
+                        
+                        try:
+                            res = requests.post(
+                                gen_url, 
+                                headers={'Content-Type': 'application/json'}, 
+                                data=json.dumps(payload),
+                                timeout=10
+                            )
+                            
+                            if res.status_code == 200:
+                                summary_text = res.json()['candidates'][0]['content']['parts'][0]['text']
+                            elif res.status_code == 429:
+                                summary_text = "🚨 구글 AI 호출량이 일시적으로 초과되었습니다. 잠시 후 다시 시도해 주세요."
+                            else:
+                                summary_text = f"⚠️ 분석 실패 (Error {res.status_code})"
+                        except Exception as e:
+                            summary_text = f"⚡ AI 연동 실패: {str(e)}"
+
+                        # UI 출력부
+                        with st.container():
+                            st.markdown(f"### {item['type']} | [{item['title']}]({item['link']})")
+                            st.markdown("**🤖 Gemini AI 소셜 트렌드 분석**")
+                            if "Instagram" in item['type']:
+                                st.info(summary_text)
+                            else:
+                                st.success(summary_text)
+                            st.markdown("---")
+                            
+                    status_sns.text("✅ 모든 블로그 및 인스타그램 AI 여론 요약 완료!")
