@@ -547,7 +547,7 @@ with tabs[4]:
 # ==========================================
 with tabs[5]: 
     st.subheader("📰 KODEX 마케팅 뉴스 실시간 모니터링 및 AI 요약")
-    st.caption("Google News RSS 피드의 메타데이터를 기반으로 대시보드 내장 AI 엔진이 마케팅적 시사점과 핵심 내용을 3줄 요약합니다.")
+    st.caption("Google News RSS 피드의 메타데이터를 기반으로 st.secrets에 등록된 Gemini AI가 핵심 내용을 3줄 요약합니다.")
 
     if st.button("KODEX 마케팅 기사 및 AI 요약 불러오기 🔄"):
         import requests
@@ -573,13 +573,19 @@ with tabs[5]:
                 status_news.text("")
                 st.warning("최근 KODEX 마케팅 관련 뉴스를 찾을 수 없습니다.")
             else:
+                # 💡 [핵심] st.secrets에서 대문자 GEMINI_API_KEY를 정확히 읽어옵니다.
+                try:
+                    my_api_key = st.secrets["GEMINI_API_KEY"]
+                except Exception:
+                    my_api_key = None
+
                 for idx, item in enumerate(items):
                     title = item.title.text.split(" - ")[0]
                     link = item.link.text
                     pub_date = item.pubDate.text if item.pubDate else "날짜 정보 없음"
                     source = item.source.text if item.source else "언론사 미정"
                     
-                    # 구글 뉴스가 기본 제공하는 간이 설명문(Description) 추출
+                    # 구글 뉴스 RSS의 요약 패킷 추출
                     raw_desc = item.description.text if item.description else ""
                     clean_desc = BeautifulSoup(raw_desc, "html.parser").get_text() if raw_desc else ""
                     
@@ -588,13 +594,8 @@ with tabs[5]:
                     context_text = f"기사 제목: {title}\n기사 주요 내용: {clean_desc}"
                     summary_text = "요약을 생성할 수 없습니다."
                     
-                    # 💡 [404 해결의 핵심 키포인트] 
-                    # 기존 다른 탭 코드에서 성공했던 API Key 변수명이나 secrets 명칭을 직접 하드코딩 방식으로 대입합니다.
-                    # 사용자님의 기존 코드 세팅에 맞춰 자동으로 감지하도록 설계했습니다.
-                    my_api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("gemini_api_key") or (API_KEY_GEMINI if 'API_KEY_GEMINI' in locals() or 'API_KEY_GEMINI' in globals() else None)
-                    
                     if my_api_key:
-                        # 주소 뒤에 기종이나 가공 방식에 구애받지 않도록 구글 AI 스튜디오 표준 v1beta 앤드포인트를 깔끔하게 적용합니다.
+                        # 💡 2026년 기준 가장 안정적인 Gemini 1.5 Flash 공식 주소 구조 적용
                         final_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={my_api_key}"
                         
                         prompt = f"""
@@ -616,19 +617,13 @@ with tabs[5]:
                             if summary_res.status_code == 200:
                                 summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
                             else:
-                                # 💡 만약 사용하시는 키가 구형/특수 모델 전용일 경우 다른 엔드포인트로 자동 우회
-                                fallback_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={my_api_key}"
-                                fb_res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=7)
-                                if fb_res.status_code == 200:
-                                    summary_text = fb_res.json()['candidates'][0]['content']['parts'][0]['text']
-                                else:
-                                    summary_text = f"⚠️ AI 분석 일시 지연 (기존 성공 코드의 URL 주소 확인 필요)"
+                                summary_text = f"⚠️ 구글 AI 응답 에러 (Status Code: {summary_res.status_code})\n주소 체계 혹은 API 키의 유효성을 점검해 주세요."
                         except Exception:
                             summary_text = "⚡ AI 연동 중 네트워크 타임아웃이 발생했습니다."
                     else:
-                        summary_text = "🔑 대시보드에 연동된 Gemini API Key 변수를 찾을 수 없습니다. 상단 Key 설정을 확인해 주세요."
+                        summary_text = "🔑 Streamlit Secrets에서 'GEMINI_API_KEY'를 읽어오지 못했습니다. 대시보드 설정의 Advanced settings -> Secrets 영역을 확인해 주세요."
 
-                    # 3. 대시보드 화면에 깔끔하게 출력
+                    # 3. 화면 출력
                     with st.container():
                         st.markdown(f"### 🔗 [{title}]({link})")
                         st.caption(f"📅 **발행일시:** {pub_date} | 🏢 **언론사:** {source}")
@@ -641,7 +636,6 @@ with tabs[5]:
         except Exception as e:
             status_news.text("")
             st.error(f"뉴스 수집 중 오류가 발생했습니다: {e}")
-
 # ==========================================
 # Tab 7: 운용사 유튜브 신규 영상 및 설명문 크롤링
 # ==========================================
