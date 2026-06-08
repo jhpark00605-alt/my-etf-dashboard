@@ -545,93 +545,144 @@ with tabs[4]:
 # ==========================================
 # Tab 6: KODEX 마케팅 관련 기사 크롤링
 # ==========================================
-with tabs[5]: 
-    st.subheader("📰 KODEX 마케팅 뉴스 실시간 모니터링 및 AI 요약")
-    st.caption("Google News RSS 피드의 메타데이터를 기반으로 st.secrets에 등록된 Gemini AI가 핵심 내용을 3줄 요약합니다.")
+with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예: tabs[0])
+    st.subheader("📰 KODEX 마케팅 뉴스 실시간 모니터링")
+    st.caption("실시간으로 자산운용업계 및 ETF 관련 뉴스를 수집하고, AI 엔진이 마케팅 관점의 핵심 이슈를 즉시 요약합니다.")
 
-    if st.button("KODEX 마케팅 기사 및 AI 요약 불러오기 🔄"):
+    # 뉴스 검색어 설정
+    SEARCH_QUERY = "KODEX ETF OR TIGER ETF OR 자산운용 ETF 마케팅"
+    
+    API_KEY_GEMINI = st.secrets.get("GEMINI_API_KEY")
+
+    # 1. 뉴스 데이터 수집 함수 (네이버 뉴스 RSS 기준 예시 - 환경에 맞게 고쳐 쓰세요)
+    def fetch_market_news(query):
         import requests
-        from bs4 import BeautifulSoup
+        import xml.etree.ElementTree as ET
         import urllib.parse
-        import json
-
-        status_news = st.empty()
-        status_news.text("🌐 KODEX 마케팅 관련 뉴스 실시간 수집 중...")
         
-        query = "삼성자산운용 KODEX (마케팅 OR 홍보 OR 이벤트 OR 캠페인)"
         encoded_query = urllib.parse.quote(query)
-        rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+        # 네이버 뉴스 RSS는 인증키 없이 최근 50개 뉴스를 받아올 수 있어 모니터링용으로 안정적입니다.
+        url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
         
+        news_items = []
         try:
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-            resp = requests.get(rss_url, headers=headers)
-            soup = BeautifulSoup(resp.content, "xml")
-            items = soup.find_all("item")[:8]
+            res = requests.get(url, timeout=10)
+            root = ET.fromstring(res.text)
             
-            if not items:
-                status_news.text("")
-                st.warning("최근 KODEX 마케팅 관련 뉴스를 찾을 수 없습니다.")
-            else:
-                try:
-                    my_api_key = st.secrets["GEMINI_API_KEY"]
-                except Exception:
-                    my_api_key = None
-
-                for idx, item in enumerate(items):
-                    title = item.title.text.split(" - ")[0]
-                    link = item.link.text
-                    pub_date = item.pubDate.text if item.pubDate else "날짜 정보 없음"
-                    source = item.source.text if item.source else "언론사 미정"
-                    
-                    raw_desc = item.description.text if item.description else ""
-                    clean_desc = BeautifulSoup(raw_desc, "html.parser").get_text() if raw_desc else ""
-                    
-                    status_news.text(f"🧠 ({idx+1}/{len(items)}) '{title[:15]}...' AI 심층 분석 및 요약 중...")
-                    
-                    context_text = f"기사 제목: {title}\n기사 주요 내용: {clean_desc}"
-                    summary_text = "요약을 생성할 수 없습니다."
-                    
-                    if my_api_key:
-                        # 호환성이 가장 높은 v1 정식 모델 주소로 타겟팅
-                        final_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={my_api_key}"
-                        
-                        prompt = f"""
-                        너는 금융 업계 최고의 AI 마케팅 분석가야. 
-                        제공된 뉴스 기사의 단서(제목 및 요약 패킷)를 바탕으로, 해당 뉴스 기사가 담고 있는 핵심 사실과 마케팅적 시사점을 유추하여 '반드시' 딱 3줄의 깔끔한 글머리 기호(- ) 형태의 문장으로 요약해줘.
-                        
-                        요구사항:
-                        1. 격식 있는 존댓말(~ 문체)을 사용해줘.
-                        2. 첫 번째 줄은 기사의 핵심 팩트, 두 번째/세 번째 줄은 이것이 KODEX ETF나 운용업계에 가지는 마케팅적 의미나 영향 위주로 작성해줘.
-                        3. 단서가 부족하더라도 금융 상식을 발휘하여 자연스럽고 전문적인 리포트 문체로 채워줘.
-
-                        분석할 기사 단서:
-                        {context_text}
-                        """
-                        
-                        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-                        try:
-                            summary_res = requests.post(final_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=7)
-                            if summary_res.status_code == 200:
-                                summary_text = summary_res.json()['candidates'][0]['content']['parts'][0]['text']
-                            else:
-                                summary_text = f"⚠️ 구글 AI 서버 응답 에러 (코드: {summary_res.status_code})\n새로 발급받은 API 키가 활성화되었는지 확인해 주세요."
-                        except Exception:
-                            summary_text = "⚡ AI 연동 중 네트워크 타임아웃이 발생했습니다."
-                    else:
-                        summary_text = "🔑 Streamlit Secrets에서 'GEMINI_API_KEY'를 읽어오지 못했습니다."
-
-                    with st.container():
-                        st.markdown(f"### 🔗 [{title}]({link})")
-                        st.caption(f"📅 **발행일시:** {pub_date} | 🏢 **언론사:** {source}")
-                        st.markdown("**🤖 Gemini AI 핵심 마케팅 리포트**")
-                        st.info(summary_text)
-                        st.markdown("---")
-                        
-                status_news.text("✅ 모든 뉴스 수집 및 AI 요약 완료!")
+            for item in root.findall('.//item')[:15]: # 최근 뉴스 15개 추출
+                title = item.find('title').text if item.find('title') is not None else ""
+                link = item.find('link').text if item.find('link') is not None else ""
+                pub_date = item.find('pubDate').text if item.find('pubDate') is not None else ""
                 
+                news_items.append({
+                    "제목": title,
+                    "링크": link,
+                    "날짜": pub_date
+                })
+            return news_items
         except Exception as e:
-            status_news.text("")
-            st.error(f"뉴스 수집 중 오류가 발생했습니다: {e}")
+            st.error(f"뉴스 수집 중 오류 발생: {e}")
+            return []
+
+    # 2. 실행 버튼 및 로직
+    if st.button("실시간 뉴스 수집 및 AI 요약 실행 ⚡", key="btn_news_analysis"):
+        if not API_KEY_GEMINI:
+            st.error("⚠️ Gemini API 키가 필요합니다. (Streamlit Secrets 설정을 확인하세요)")
+        else:
+            progress = st.progress(0)
+            status = st.empty()
+            
+            # [Step 1] 실시간 뉴스 크롤링
+            status.text("🔍 ETF 마케팅 관련 최신 뉴스 수집 중...")
+            news_list = fetch_market_news(SEARCH_QUERY)
+            progress.progress(40)
+            
+            if not news_list:
+                st.warning("수집된 최신 뉴스가 없습니다. 잠시 후 다시 시도해 주세요.")
+            else:
+                # 화면에 수집된 뉴스 리스트 먼저 뿌려주기
+                st.markdown("### 📌 수집된 최신 뉴스 헤드라인")
+                news_text_source = ""
+                
+                for idx, news in enumerate(news_list):
+                    st.markdown(f"{idx+1}. [{news['제목']}]({news['링크']}) ({news['날짜'][:16]})")
+                    # AI에게 넘겨줄 텍스트 빌드업
+                    news_text_source += f"제목: {news['제목']}\n링크: {news['링크']}\n---\n"
+                
+                # [Step 2] AI 모델 자동 스캔 및 에러 방어선 가동
+                st.markdown("---")
+                status.text("📡 사용 가능한 구글 AI 모델 스캔 중...")
+                progress.progress(60)
+                
+                list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY_GEMINI}"
+                selected_model = "models/gemini-1.5-flash" # 기본 백업 모델
+                
+                try:
+                    list_res = requests.get(list_url, timeout=5).json()
+                    available_models = [m['name'] for m in list_res.get('models', []) 
+                                        if 'generateContent' in m.get('supportedGenerationMethods', [])]
+                    for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-pro"]:
+                        if candidate in available_models:
+                            selected_model = candidate
+                            break
+                except:
+                    pass # 스캔 실패 시 기본 모델로 우회
+                
+                status.text(f"🤖 {selected_model.split('/')[-1]} 엔진으로 마케팅 뉴스 요약 보고서 생성 중...")
+                progress.progress(80)
+                
+                # 프롬프트 구성 (KODEX 마케팅 담당자 관점)
+                prompt = f"""
+                너는 삼성자산운용의 KODEX ETF 마케팅 전략실의 수석 애널리스트야.
+                아래 수집된 실시간 ETF 관련 뉴스 헤드라인 데이터를 보고, 우리 팀이 아침 회의에서 바로 활용할 수 있는 '실시간 ETF 마케팅 이슈 브리핑'을 작성해줘.
+
+                다음 서식 구조를 반드시 지켜서 깔끔한 마크다운으로 출력해야 해:
+                
+                # 🚨 1. 금일 자산운용업계 핵심 마케팅 이슈 TOP 3
+                - (수집된 뉴스 중 가장 파급력이 크거나 경쟁사가 공격적으로 밀고 있는 이슈 3가지를 선정하고 이유 요약)
+                
+                # 📊 2. 경쟁사(TIGER, RISE, ACE 등) 동향 모니터링
+                - **경쟁사 주요 움직임**: 
+                - **주요 상품 테마**: (뉴스에 언급된 신규 ETF나 마케팅 테마 정리)
+                
+                # 💡 3. KODEX ETF 마케팅 액션 시사점
+                - (경쟁사의 공세나 시장 트렌드에 대응해 우리 KODEX가 취해야 할 언론 홍보나 콘텐츠 마케팅 방향성 제안)
+
+                ---
+                분석할 뉴스 데이터:
+                {news_text_source}
+                """
+                
+                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={API_KEY_GEMINI}"
+                
+                # 💡 [503 및 429 에러 방어선 구축]
+                try:
+                    import requests
+                    import json
+                    
+                    res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
+                    
+                    # 503(서버 과부하)이나 다른 오류 발생 시 v1 엔드포인트 기본 모델로 즉시 우회 재시도
+                    if res.status_code != 200:
+                        status.text("🔄 구글 AI 서버 혼잡으로 인해 안전 우회 경로로 재시도 중...")
+                        fallback_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY_GEMINI}"
+                        res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
+                    
+                    if res.status_code == 200:
+                        briefing = res.json()['candidates'][0]['content']['parts'][0]['text']
+                        progress.progress(100)
+                        status.text("✅ 뉴스 수집 및 AI 요약 브리핑 완료!")
+                        st.markdown("### 📊 AI 실시간 마케팅 이슈 브리핑")
+                        st.markdown(briefing)
+                    else:
+                        progress.progress(100)
+                        status.text("❌ AI 요약 브리핑 일시 불가")
+                        st.error(f"🚨 구글 AI 서버 응답 지연 (Error {res.status_code}). 상단의 실시간 뉴스 리스트를 먼저 확인해 주세요!")
+                
+                except Exception as ai_err:
+                    progress.progress(100)
+                    st.error(f"⚠️ AI 분석 연동 실패: {ai_err}")
 # ==========================================
 # Tab 7: 운용사 유튜브 신규 영상 및 설명문 크롤링
 # ==========================================
