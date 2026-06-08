@@ -609,15 +609,40 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                     # AI에게 넘겨줄 텍스트 빌드업
                     news_text_source += f"제목: {news['제목']}\n링크: {news['링크']}\n---\n"
                 
-                # [Step 2] 최신 표준 엔드포인트로 다이렉트 호출 (404 완벽 방어)
+                # [Step 2] 유튜브 탭 성공 로직 100% 이식 (모델 자동 스캔 및 주소 빌드)
                 st.markdown("---")
-                status.text("🤖 Gemini AI 엔진으로 마케팅 뉴스 요약 보고서 생성 중...")
-                progress.progress(70)
+                status.text("📡 사용 가능한 구글 AI 모델 스캔 중...")
+                progress.progress(60)
+                
+                list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY_GEMINI}"
+                
+                try:
+                    # 1. 현재 API 키가 쓸 수 있는 모든 모델 리스트 원격 조회
+                    list_res = requests.get(list_url, timeout=5).json()
+                    available_models = [m['name'] for m in list_res.get('models', []) 
+                                        if 'generateContent' in m.get('supportedGenerationMethods', [])]
+                    
+                    # 2. 내 키 권한에 맞는 최적의 모델 매칭
+                    selected_model_path = None
+                    for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
+                        if candidate in available_models:
+                            selected_model_path = candidate
+                            break
+                    
+                    # 만약 위 후보군이 없으면 내 키로 쓸 수 있는 첫 번째 모델 강제 배정
+                    if not selected_model_path and available_models:
+                        selected_model_path = available_models[0]
+                        
+                except Exception as e:
+                    selected_model_path = "models/gemini-1.5-flash" # 스캔 실패 시 기본값 백업
+                
+                status.text(f"🤖 {selected_model_path.split('/')[-1]} 엔진으로 마케팅 뉴스 요약 보고서 생성 중...")
+                progress.progress(80)
                 
                 # 프롬프트 구성
                 prompt = f"""
                 너는 삼성자산운용의 KODEX ETF 마케팅 전략실의 수석 애널리스트야.
-                아래 수집된 실시간 ETF 관련 뉴스 헤드라인 데이터를 보고, 우리 팀이 아침 회의에서 바로 활용할 수 있는 '실시간 ETF 마케팅 이슈 브리핑'을 작성해줘.
+                아래 수집된 실시간 ETF 관련 뉴스 헤드라인 데이터를 보고, 우리 팀이 바로 활용할 수 있는 '실시간 ETF 마케팅 이슈 브리핑'을 작성해줘.
 
                 다음 서식 구조를 반드시 지켜서 깔끔한 마크다운으로 출력해야 해:
                 
@@ -638,23 +663,21 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                 
                 payload = {"contents": [{"parts": [{"text": prompt}]}]}
                 
-                # 💡 복잡한 모델 스캔을 제외하고, 구글에서 가장 안정적으로 지원하는 고정 주소 2개를 순차적으로 찌릅니다.
-                # 1차 타겟: v1beta 표준 flash 모델
-                gen_url_primary = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
-                # 2차 타겟 (백업): v1 표준 pro 모델
-                gen_url_fallback = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY_GEMINI}"
+                # 💡 [핵심 수정] 유튜브 탭에서 성공했던 바로 그 주소 구조로 완전 동일하게 빌드합니다.
+                gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model_path}:generateContent?key={API_KEY_GEMINI}"
                 
                 try:
                     import requests
                     import json
                     
-                    # 1차 호출 시도
-                    res = requests.post(gen_url_primary, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
+                    res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
                     
-                    # 1차 시도에서 404나 503 등 에러 발생 시 즉시 v1 백업 주소로 전환
+                    # 일시적 503이나 에러 대응을 위한 안전 우회 경로(v1)
                     if res.status_code != 200:
                         status.text("🔄 구글 AI 서버 우회 경로(v1)로 재시도 중...")
-                        res = requests.post(gen_url_fallback, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
+                        fallback_model = selected_model_path.split('/')[-1] if 'selected_model_path' in locals() else "gemini-pro"
+                        fallback_url = f"https://generativelanguage.googleapis.com/v1/models/{fallback_model}:generateContent?key={API_KEY_GEMINI}"
+                        res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
                     
                     if res.status_code == 200:
                         briefing = res.json()['candidates'][0]['content']['parts'][0]['text']
@@ -665,9 +688,8 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                     else:
                         progress.progress(100)
                         status.text("❌ AI 요약 실패")
-                        # 💡 에러 코드를 상세히 출력하여 디버깅을 돕습니다.
-                        st.error(f"🚨 구글 서버 응답 실패 (Error {res.status_code})")
-                        st.info("💡 다른 탭이 정상인데 이 탭만 실패한다면, secrets에 등록된 'GEMINI_API_KEY'의 맨 앞이나 뒤에 공백(띄어쓰기)이 들어가 있는지, 혹은 특수문자가 깨졌는지 확인해 주세요!")
+                        st.error(f"🚨 AI 호출 실패 (Error {res.status_code})")
+                        st.caption(f"🤖 매칭 시도된 모델 경로: `{selected_model_path}`")
                 
                 except Exception as ai_err:
                     progress.progress(100)
