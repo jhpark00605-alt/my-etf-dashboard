@@ -615,23 +615,24 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                 progress.progress(60)
                 
                 list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY_GEMINI}"
-                selected_model = "models/gemini-1.5-flash" # 기본 백업 모델
+                selected_model = "gemini-1.5-flash" # 💡 404 방지를 위해 'models/' 접두사를 뺀 순수 모델명만 기본값으로 세팅
                 
                 try:
                     list_res = requests.get(list_url, timeout=5).json()
-                    available_models = [m['name'] for m in list_res.get('models', []) 
+                    available_models = [m['name'].split('/')[-1] for m in list_res.get('models', []) 
                                         if 'generateContent' in m.get('supportedGenerationMethods', [])]
-                    for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-pro"]:
+                    
+                    for candidate in ["gemini-1.5-flash-002", "gemini-1.5-flash", "gemini-pro"]:
                         if candidate in available_models:
                             selected_model = candidate
                             break
                 except:
-                    pass # 스캔 실패 시 기본 모델로 우회
+                    pass 
                 
-                status.text(f"🤖 {selected_model.split('/')[-1]} 엔진으로 마케팅 뉴스 요약 보고서 생성 중...")
+                status.text(f"🤖 {selected_model} 엔진으로 마케팅 뉴스 요약 보고서 생성 중...")
                 progress.progress(80)
                 
-                # 프롬프트 구성 (KODEX 마케팅 담당자 관점)
+                # 프롬프트 구성
                 prompt = f"""
                 너는 삼성자산운용의 KODEX ETF 마케팅 전략실의 수석 애널리스트야.
                 아래 수집된 실시간 ETF 관련 뉴스 헤드라인 데이터를 보고, 우리 팀이 아침 회의에서 바로 활용할 수 있는 '실시간 ETF 마케팅 이슈 브리핑'을 작성해줘.
@@ -639,14 +640,14 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                 다음 서식 구조를 반드시 지켜서 깔끔한 마크다운으로 출력해야 해:
                 
                 # 🚨 1. 금일 자산운용업계 핵심 마케팅 이슈 TOP 3
-                - (수집된 뉴스 중 가장 파급력이 크거나 경쟁사가 공격적으로 밀고 있는 이슈 3가지를 선정하고 이유 요약)
+                - (이슈 3가지 선정하고 이유 요약)
                 
                 # 📊 2. 경쟁사(TIGER, RISE, ACE 등) 동향 모니터링
                 - **경쟁사 주요 움직임**: 
-                - **주요 상품 테마**: (뉴스에 언급된 신규 ETF나 마케팅 테마 정리)
+                - **주요 상품 테마**: 
                 
                 # 💡 3. KODEX ETF 마케팅 액션 시사점
-                - (경쟁사의 공세나 시장 트렌드에 대응해 우리 KODEX가 취해야 할 언론 홍보나 콘텐츠 마케팅 방향성 제안)
+                - (우리 KODEX가 취해야 할 언론 홍보나 콘텐츠 마케팅 방향성 제안)
 
                 ---
                 분석할 뉴스 데이터:
@@ -654,18 +655,19 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                 """
                 
                 payload = {"contents": [{"parts": [{"text": prompt}]}]}
-                gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={API_KEY_GEMINI}"
                 
-                # 💡 [503 및 429 에러 방어선 구축]
+                # 💡 [404 에러 원천 차단] 가장 안정적인 표준 URL 구조로 강제 고정합니다.
+                gen_url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={API_KEY_GEMINI}"
+                
                 try:
                     import requests
                     import json
                     
                     res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
                     
-                    # 503(서버 과부하)이나 다른 오류 발생 시 v1 엔드포인트 기본 모델로 즉시 우회 재시도
+                    # 만약 여기서도 경로 에러나 서버 이슈(503/404)가 나면 v1 표준 경로로 즉시 2차 우회
                     if res.status_code != 200:
-                        status.text("🔄 구글 AI 서버 혼잡으로 인해 안전 우회 경로로 재시도 중...")
+                        status.text("🔄 구글 AI 서버 우회 경로(v1)로 재시도 중...")
                         fallback_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY_GEMINI}"
                         res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
                     
@@ -677,8 +679,8 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                         st.markdown(briefing)
                     else:
                         progress.progress(100)
-                        status.text("❌ AI 요약 브리핑 일시 불가")
-                        st.error(f"🚨 구글 AI 서버 응답 지연 (Error {res.status_code}). 상단의 실시간 뉴스 리스트를 먼저 확인해 주세요!")
+                        status.text("❌ AI 요약 브리핑 실패")
+                        st.error(f"🚨 AI 호출 실패 (Error {res.status_code}). URL 주소 규격이나 일시적 서버 오류일 수 있습니다. 상단의 실시간 뉴스 리스트를 먼저 확인해 주세요!")
                 
                 except Exception as ai_err:
                     progress.progress(100)
