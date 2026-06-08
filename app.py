@@ -609,7 +609,7 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                     # AI에게 넘겨줄 텍스트 빌드업
                     news_text_source += f"제목: {news['제목']}\n링크: {news['링크']}\n---\n"
                 
-                # [Step 2] 유튜브 탭 성공 로직 100% 이식 (모델 자동 스캔 및 주소 빌드)
+                # [Step 2] 유튜브 탭 성공 로직 이식 + 타임아웃 60초 연장 버전
                 st.markdown("---")
                 status.text("📡 사용 가능한 구글 AI 모델 스캔 중...")
                 progress.progress(60)
@@ -617,26 +617,23 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                 list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY_GEMINI}"
                 
                 try:
-                    # 1. 현재 API 키가 쓸 수 있는 모든 모델 리스트 원격 조회
-                    list_res = requests.get(list_url, timeout=5).json()
+                    list_res = requests.get(list_url, timeout=10).json()
                     available_models = [m['name'] for m in list_res.get('models', []) 
                                         if 'generateContent' in m.get('supportedGenerationMethods', [])]
                     
-                    # 2. 내 키 권한에 맞는 최적의 모델 매칭
                     selected_model_path = None
                     for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
                         if candidate in available_models:
                             selected_model_path = candidate
                             break
                     
-                    # 만약 위 후보군이 없으면 내 키로 쓸 수 있는 첫 번째 모델 강제 배정
                     if not selected_model_path and available_models:
                         selected_model_path = available_models[0]
                         
                 except Exception as e:
-                    selected_model_path = "models/gemini-1.5-flash" # 스캔 실패 시 기본값 백업
+                    selected_model_path = "models/gemini-1.5-flash" 
                 
-                status.text(f"🤖 {selected_model_path.split('/')[-1]} 엔진으로 마케팅 뉴스 요약 보고서 생성 중...")
+                status.text(f"🤖 {selected_model_path.split('/')[-1]} 엔진으로 마케팅 뉴스 요약 보고서 생성 중 (최대 1분 소요)...")
                 progress.progress(80)
                 
                 # 프롬프트 구성
@@ -658,26 +655,25 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
 
                 ---
                 분석할 뉴스 데이터:
-                {news_text_source}
+                {news_text_source[:4000]}  # 데이터가 너무 길어 타임아웃 유발하는 것을 방지하기 위해 글자수 제한 추가
                 """
                 
                 payload = {"contents": [{"parts": [{"text": prompt}]}]}
-                
-                # 💡 [핵심 수정] 유튜브 탭에서 성공했던 바로 그 주소 구조로 완전 동일하게 빌드합니다.
                 gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model_path}:generateContent?key={API_KEY_GEMINI}"
                 
                 try:
                     import requests
                     import json
                     
-                    res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
+                    # 💡 [핵심 수정] 타임아웃을 60초로 늘려 AI가 답변을 다 만들 때까지 안전하게 기다립니다.
+                    res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=60)
                     
-                    # 일시적 503이나 에러 대응을 위한 안전 우회 경로(v1)
+                    # 일시적 오류 발생 시 우회 경로 재시도 (여기서도 timeout=60 유지)
                     if res.status_code != 200:
                         status.text("🔄 구글 AI 서버 우회 경로(v1)로 재시도 중...")
                         fallback_model = selected_model_path.split('/')[-1] if 'selected_model_path' in locals() else "gemini-pro"
                         fallback_url = f"https://generativelanguage.googleapis.com/v1/models/{fallback_model}:generateContent?key={API_KEY_GEMINI}"
-                        res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
+                        res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=60)
                     
                     if res.status_code == 200:
                         briefing = res.json()['candidates'][0]['content']['parts'][0]['text']
@@ -689,8 +685,11 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                         progress.progress(100)
                         status.text("❌ AI 요약 실패")
                         st.error(f"🚨 AI 호출 실패 (Error {res.status_code})")
-                        st.caption(f"🤖 매칭 시도된 모델 경로: `{selected_model_path}`")
                 
+                except requests.exceptions.Timeout:
+                    progress.progress(100)
+                    status.text("❌ 타임아웃 발생")
+                    st.error("🚨 구글 AI 서버가 답변을 생성하는 데 시간이 너무 오래 걸립니다(60초 초과). 뉴스 양이 많거나 서버가 혼잡할 수 있으니 잠시 후 다시 시도해 주세요!")
                 except Exception as ai_err:
                     progress.progress(100)
                     st.error(f"⚠️ AI 분석 연동 실패: {ai_err}")
