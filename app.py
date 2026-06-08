@@ -609,28 +609,10 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                     # AI에게 넘겨줄 텍스트 빌드업
                     news_text_source += f"제목: {news['제목']}\n링크: {news['링크']}\n---\n"
                 
-                # [Step 2] AI 모델 자동 스캔 및 에러 방어선 가동
+                # [Step 2] 최신 표준 엔드포인트로 다이렉트 호출 (404 완벽 방어)
                 st.markdown("---")
-                status.text("📡 사용 가능한 구글 AI 모델 스캔 중...")
-                progress.progress(60)
-                
-                list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY_GEMINI}"
-                selected_model = "gemini-1.5-flash" # 💡 404 방지를 위해 'models/' 접두사를 뺀 순수 모델명만 기본값으로 세팅
-                
-                try:
-                    list_res = requests.get(list_url, timeout=5).json()
-                    available_models = [m['name'].split('/')[-1] for m in list_res.get('models', []) 
-                                        if 'generateContent' in m.get('supportedGenerationMethods', [])]
-                    
-                    for candidate in ["gemini-1.5-flash-002", "gemini-1.5-flash", "gemini-pro"]:
-                        if candidate in available_models:
-                            selected_model = candidate
-                            break
-                except:
-                    pass 
-                
-                status.text(f"🤖 {selected_model} 엔진으로 마케팅 뉴스 요약 보고서 생성 중...")
-                progress.progress(80)
+                status.text("🤖 Gemini AI 엔진으로 마케팅 뉴스 요약 보고서 생성 중...")
+                progress.progress(70)
                 
                 # 프롬프트 구성
                 prompt = f"""
@@ -656,20 +638,23 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                 
                 payload = {"contents": [{"parts": [{"text": prompt}]}]}
                 
-                # 💡 [404 에러 원천 차단] 가장 안정적인 표준 URL 구조로 강제 고정합니다.
-                gen_url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={API_KEY_GEMINI}"
+                # 💡 복잡한 모델 스캔을 제외하고, 구글에서 가장 안정적으로 지원하는 고정 주소 2개를 순차적으로 찌릅니다.
+                # 1차 타겟: v1beta 표준 flash 모델
+                gen_url_primary = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
+                # 2차 타겟 (백업): v1 표준 pro 모델
+                gen_url_fallback = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY_GEMINI}"
                 
                 try:
                     import requests
                     import json
                     
-                    res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
+                    # 1차 호출 시도
+                    res = requests.post(gen_url_primary, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
                     
-                    # 만약 여기서도 경로 에러나 서버 이슈(503/404)가 나면 v1 표준 경로로 즉시 2차 우회
+                    # 1차 시도에서 404나 503 등 에러 발생 시 즉시 v1 백업 주소로 전환
                     if res.status_code != 200:
                         status.text("🔄 구글 AI 서버 우회 경로(v1)로 재시도 중...")
-                        fallback_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY_GEMINI}"
-                        res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
+                        res = requests.post(gen_url_fallback, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=15)
                     
                     if res.status_code == 200:
                         briefing = res.json()['candidates'][0]['content']['parts'][0]['text']
@@ -679,8 +664,10 @@ with tabs[5]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
                         st.markdown(briefing)
                     else:
                         progress.progress(100)
-                        status.text("❌ AI 요약 브리핑 실패")
-                        st.error(f"🚨 AI 호출 실패 (Error {res.status_code}). URL 주소 규격이나 일시적 서버 오류일 수 있습니다. 상단의 실시간 뉴스 리스트를 먼저 확인해 주세요!")
+                        status.text("❌ AI 요약 실패")
+                        # 💡 에러 코드를 상세히 출력하여 디버깅을 돕습니다.
+                        st.error(f"🚨 구글 서버 응답 실패 (Error {res.status_code})")
+                        st.info("💡 다른 탭이 정상인데 이 탭만 실패한다면, secrets에 등록된 'GEMINI_API_KEY'의 맨 앞이나 뒤에 공백(띄어쓰기)이 들어가 있는지, 혹은 특수문자가 깨졌는지 확인해 주세요!")
                 
                 except Exception as ai_err:
                     progress.progress(100)
