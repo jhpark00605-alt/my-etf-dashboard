@@ -503,7 +503,19 @@ with tabs[3]:
                     req = urllib.request.Request(naver_url, headers={'User-Agent': 'Mozilla/5.0'})
                     
                     with urllib.request.urlopen(req) as response:
-                        res_json = json.loads(response.read().decode('utf-8'))
+                        # 💡 [인코딩 에러 수정] 네이버 금융 한글 데이터(EUC-KR) 디코딩 예외 처리 추가
+                        raw_bytes = response.read()
+                        try:
+                            # 1. 네이버 금융 표준인 euc-kr로 먼저 디코딩 시도
+                            decoded_content = raw_bytes.decode('euc-kr')
+                        except UnicodeDecodeError:
+                            # 2. 만약 실패하면 utf-8이나 cp949로 우회 처리하여 크래시 방지
+                            try:
+                                decoded_content = raw_bytes.decode('cp949')
+                            except UnicodeDecodeError:
+                                decoded_content = raw_bytes.decode('utf-8', errors='ignore')
+                                
+                        res_json = json.loads(decoded_content)
                         etf_items = res_json.get('result', {}).get('etfItemList', [])
                     
                     # 네이버에서 가져온 [종목명, 순자산총액(억원)] 파싱
