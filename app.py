@@ -600,13 +600,13 @@ with tabs[3]:
                         result_df = final_df.sort_values(by='매수강도', ascending=False).head(15)
                         
                         # 7. 대시보드 인터페이스 최종 출력
-                        st.markdown(f"### 🏆 {curr_week} 주차 선행 마케팅 강도 성적표 (결함 보정완료)")
+                        st.markdown(f"### 🏆 {curr_week} 주차 순매수 강도 TOP15")
                         st.caption(f"公式: [금주 {target_investor} 순매수액(억원)] ÷ [{prev_week} 주차 기준 순자산(억원)] × 100 (%)")
                         
                         fig = px.bar(result_df, x='종목명_정제', y='매수강도', 
                                      color='매수강도', text_auto='.2f',
                                      color_continuous_scale="Viridis",
-                                     title=f"'{target_investor}' 전주 자산 규모 대비 순매수 강도 TOP 15",
+                                     title=f"'{target_investor}' 전주 순자산 규모 대비 순매수 강도 TOP 15",
                                      labels={"매수강도": "순매수 강도 (%)", "종목명_정제": "종목명"})
                         st.plotly_chart(fig, use_container_width=True)
                         
