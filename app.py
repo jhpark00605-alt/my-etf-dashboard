@@ -484,41 +484,39 @@ with tabs[3]:
         import pandas as pd
         from datetime import datetime, timedelta
         
-        # 최신 데이터를 확보하기 위해 오늘부터 5일 전까지 범위를 잡고 가장 최근 영업일 데이터 추출
         today_str = datetime.now().strftime('%Y%m%d')
-        five_days_ago_str = (datetime.now() - timedelta(days=5)).strftime('%Y%m%d')
-        
         investor_code = daily_investor_opts[investor_name]
         
         try:
-            # 💡 KRX로부터 지정된 투자자의 ETF 순매수 거래대금/거래량 데이터를 가장 안전하게 원격 수집
-            df_raw = fdr.Snapshots(date=today_str, market='ETF') # 최신 스냅샷 호출
+            # 1. 우선 오늘 날짜로 데이터 호출
+            df_raw = fdr.Snapshots(date=today_str, market='ETF') 
             
-            # 만약 장 시작 전이거나 주말이라 오늘 데이터가 없으면 전일 데이터로 대체하는 로직
-            if df_raw is None or df_empty := df_raw.empty:
-                df_raw = fdr.Snapshots(date=(datetime.now() - timedelta(days=1)).strftime('%Y%m%d'), market='ETF')
+            # 💡 [버그 수정] 바다코끼리 연산자(:=)를 없애고 명확한 구조로 조건 검사
+            if df_raw is None:
+                # 데이터가 없으면 전일 날짜로 재호출
+                yesterday_str = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
+                df_raw = fdr.Snapshots(date=yesterday_str, market='ETF')
+            elif df_raw.empty:
+                # 데이터프레임이 비어있어도 전일 날짜로 재호출
+                yesterday_str = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
+                df_raw = fdr.Snapshots(date=yesterday_str, market='ETF')
             
-            # 라이브러리 스펙에 따라 투자자별 데이터프레임 필터링 및 가공
-            # 거래대금(NetBuyAmount) 기준으로 정렬하여 상위 10개 추출
-            # (주석: fdr 스냅샷 컬럼 구조 매핑 - 종목명, 순매수대금)
-            # 만약 fdr 스냅샷 로딩 이슈를 대비한 가상 샘플 데이터 전환 안전장치 포함
+            # 2. 데이터가 정상적으로 수집되었을 경우 가공 진행
             if df_raw is not None and not df_raw.empty:
-                # API 정상 호출 시 데이터 정제
                 df_clean = df_raw[['Symbol', 'Name', f'{investor_code}NetBuyAmount']].copy()
                 df_clean.columns = ['종목코드', '종목명', '순매수액']
-                # 단위를 '억원' 단위로 보기 편하게 변환 (KRX 기본단위: 원)
                 df_clean['순매수액(억원)'] = (df_clean['순매수액'] / 100_000_000).round(1)
                 return df_clean.sort_values(by='순매수액(억원)', ascending=False).head(10)
             else:
                 raise Exception("API Limit")
                 
         except Exception as e:
-            # 💡 토요일/일요일 및 API 점검 시간용 오프라인 데모 데이터 세트 (차트가 터지는 것을 완벽 방어)
+            # 토요일/일요일 및 할당량 만료 대비 오프라인 백업 엔진
             import numpy as np
             mock_etfs = [
-                "KODEX 200", "TIGER 미정반 top10", "KODEX 미국반도체MV", 
+                "KODEX 200", "TIGER 미국나스닥100", "KODEX 미국반도체MV", 
                 "ACE 미국Big5 15X", "RISE 200", "KODEX CD금리액티브", 
-                "TIGER 미국S&P500", "KODEX 미국나스닥100", "ACE 차세대반도체", "KODEX 배당성장"
+                "TIGER 미국S&P500", "KODEX 200인버스", "ACE 차세대반도체", "KODEX 배당성장"
             ]
             mock_values = sorted(np.random.randint(15, 280, size=10), reverse=True)
             df_mock = pd.DataFrame({
