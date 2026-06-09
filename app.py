@@ -575,8 +575,24 @@ with tabs[3]:
                         result_df = final_df.sort_values(by='매수강도', ascending=False).head(15)
                         
                         # 최종 검증 및 예외 처리
+                        # 💥 [긴급 진단] 왜 데이터가 0으로 수렴하는지 내부를 다 까서 보여줍니다.
                         if result_df['매수강도'].abs().sum() == 0:
-                            st.warning("⚠️ 단위 조정 후에도 매수강도가 0입니다. 데이터 열 이름을 다시 한번 체크해 주세요.")
+                            st.warning(f"⚠️ 매칭은 되었으나, '{target_investor}'의 분석 대상 순매수 금액이 전부 0이거나 데이터가 왜곡되어 있습니다.")
+                            
+                            st.markdown("### 🔍 원인 분석을 위한 내부 데이터 내시경")
+                            
+                            # 진단 1: 엑셀에서 뽑아온 원본 데이터에 진짜 숫자가 있는지 확인
+                            st.write(f"1️⃣ **[금주 시트]** `{target_investor}` 열의 상위 5개 원본 값:")
+                            st.dataframe(df_curr[['종목명', target_investor]].head(5))
+                            
+                            # 진단 2: 전주와 금주를 합쳤을 때 살아남은 데이터가 있는지 확인
+                            st.write(f"2️⃣ **[전주+금주 병합 결과]** 합쳐진 데이터 총 개수: {len(merged_df)}개")
+                            st.write("병합 후 데이터 샘플 (전주와 금주의 종목명이 완벽히 일치해야 여기에 붙습니다):")
+                            st.dataframe(merged_df.head(5))
+                            
+                            # 진단 3: 네이버 자산 데이터와 합친 후 최종 연산 직전 상태 확인
+                            st.write("3️⃣ **[최종 연산 직전 테이블]** (여기에 숫자가 다 0으로 채워져 있다면 데이터 타입을 의심해야 합니다):")
+                            st.dataframe(final_df[['종목명_정제', f'{target_investor}_금주', '실시간순자산(억원)', '정제된_금주순매수(억원)']].head(5))
                         else:
                             st.markdown(f"### 🏆 {curr_week} 주차 마케팅 강도 성적표")
                             st.caption(f"公式: [금주 {target_investor} 순매수액(억원 환산)] ÷ [네이버 실시간 순자산총액(AUM)] × 100 (%)")
