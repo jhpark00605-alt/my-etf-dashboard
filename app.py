@@ -587,8 +587,8 @@ with tabs[3]:
                         result_df = final_df.sort_values(by='매수강도', ascending=False).head(15)
                         
                         # 6. 최종 대시보드 시각화 출력
-                        st.markdown(f"### 🏆 {curr_week} 주차 선행 마케팅 강도 성적표")
-                        st.caption(f"公式: [금주 {target_investor} 순매수액(억원)] ÷ [{prev_week} 주차 기준 순자산(억원)] × 100 (%)")
+                        st.markdown(f"### 🏆 {curr_week} 순매수 강도 랭킹")
+                        st.caption(f"[금주 {target_investor} 순매수액(억원)] ÷ [{prev_week} 주차 기준 순자산(억원)] × 100 (%)")
                         
                         fig = px.bar(result_df, x='종목명_정제', y='매수강도', 
                                      color='매수강도', text_auto='.2f',
