@@ -457,8 +457,11 @@ with tabs[2]:
 # Tab 4: 투자자 & 순매수 데이터 (마케팅 실효성)
 # ==========================================
 with tabs[3]:
-    st.subheader("📊 주차별 순매수 강도 및 마케팅 실효성 분석")
+    st.subheader("📊 ETF 투자자별 순매수 및 마케팅 실효성 분석")
     
+    # ----------------------------------------------------
+    # 🔥 [신규 추가] 실시간 일간 ETF 순매수현황 영역
+    # ----------------------------------------------------
     st.markdown("### ⚡ 실시간 일간 ETF 투자자별 순매수 TOP 10")
     
     # 사용자 편의를 위한 일간 분석 타겟 선택
@@ -546,15 +549,17 @@ with tabs[3]:
     
     st.markdown("---") # 구분을 위한 구분선
     
+    # ----------------------------------------------------
+    # 📂 [기존 유지] 주차별 엑셀 파일 업로드 분석 영역
+    # ----------------------------------------------------
+    st.markdown("### 📂 주차별 순매수 강도 정밀 분석 (엑셀 업로드)")
     uploaded_file = st.file_uploader("ETF 순매수 데이터 엑셀 파일을 업로드해주세요", type=["xlsx"])
 
     if uploaded_file is not None:
-        try: # 1. 여기서 try가 시작됩니다
-            # 엑셀 파일 로드
+        try: 
             xls = pd.ExcelFile(uploaded_file)
             weeks = [s for s in xls.sheet_names if s != '참고사항']
             
-            st.divider()
             col1, col2, col3 = st.columns(3)
             with col1:
                 prev_week = st.selectbox("1주차 (전주)", weeks, index=0)
@@ -564,18 +569,15 @@ with tabs[3]:
                 investor_opts = ['개인', '은행', '금융투자', '기관', '외국인', '투신', '연기금 등']
                 target_investor = st.selectbox("분석 타겟", investor_opts, index=0)
 
-            # 데이터 로드 및 전처리
             df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
             df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
 
-            # '전체' 행 제외 및 숫자 변환 (하이픈 에러 방지)
             df_prev = df_prev[(df_prev['종목명'] != '전체') & (df_prev['종목명'].notna())]
             df_curr = df_curr[(df_curr['종목명'] != '전체') & (df_curr['종목명'].notna())]
             
             df_prev[target_investor] = pd.to_numeric(df_prev[target_investor], errors='coerce').fillna(0)
             df_curr[target_investor] = pd.to_numeric(df_curr[target_investor], errors='coerce').fillna(0)
 
-            # 데이터 결합
             merged_df = pd.merge(
                 df_prev[['종목명', target_investor]], 
                 df_curr[['종목명', target_investor]], 
@@ -584,7 +586,6 @@ with tabs[3]:
             )
 
             if st.button("분석 실행 🚀"):
-                # 금주 비중(%)으로 계산
                 total_curr = merged_df[f'{target_investor}_금주'].sum()
                 merged_df['매수강도'] = (merged_df[f'{target_investor}_금주'] / total_curr) * 100
                 
@@ -595,11 +596,11 @@ with tabs[3]:
                 st.plotly_chart(fig, use_container_width=True)
                 st.dataframe(result_df, use_container_width=True)
 
-        except Exception as e: # 2. try의 짝꿍인 except가 반드시 있어야 합니다!
+        except Exception as e:
             st.error(f"분석 중 오류가 발생했습니다: {e}")
             
     else:
-        st.info("💡 엑셀 파일을 업로드하면 분석을 시작합니다.")
+        st.info("💡 하단 분석을 진행하시려면 주차별 성적표 엑셀 파일을 업로드해주세요.")
 
 # ==========================================
 # Tab 5: KODEX 마케팅 관련 기사 크롤링
