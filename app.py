@@ -498,7 +498,7 @@ with tabs[3]:
                 
                 result_df = merged_df.sort_values(by='매수강도', ascending=False).head(15)
 
-                st.markdown(f"### 🏆 {curr_week} 주차 마케팅 성적표")
+                st.markdown(f"### 🏆 {curr_week} 주차 순매수 강도 랭킹")
                 fig = px.bar(result_df, x='종목명', y='매수강도', color='매수강도', text_auto='.1f')
                 st.plotly_chart(fig, use_container_width=True)
                 st.dataframe(result_df, use_container_width=True)
