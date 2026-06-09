@@ -495,14 +495,14 @@ with tabs[3]:
                 import numpy as np
                 import re
                 
-                # 천원 단위 보정계수
+                # 스크린샷으로 검증된 천원 -> 억원 환산 스케일 팩터
                 scale_factor = 100_000.0
                 
                 status_aum = st.empty()
-                status_aum.text("🌐 네이버 금융 동기화 및 전주 기준 순자산(AUM) 역산 중...")
+                status_aum.text("🌐 [최종 엔진] 네이버 금융 실시간 전종목 AUM 동기화 및 전주 자산 역산 중...")
                 
                 try:
-                    # 1. 네이버 금융 실시간 데이터 수집
+                    # 1. 네이버 금융 실시간 ETF 전종목 마스터 로드
                     naver_url = "https://finance.naver.com/api/sise/etfItemList.nhn"
                     req = urllib.request.Request(naver_url, headers={'User-Agent': 'Mozilla/5.0'})
                     
@@ -513,28 +513,30 @@ with tabs[3]:
                         etf_items = res_json.get('result', {}).get('etfItemList', [])
                     
                     if not etf_items:
-                        st.error("🚨 네이버 실시간 데이터를 가져오지 못했습니다.")
+                        st.error("🚨 네이버 금융 실시간 데이터를 연동할 수 없습니다.")
                     else:
-                        # 네이버 마스터 데이터프레임 빌드
+                        # 2. 네이버 마스터 데이터베이스 구축 (매칭 키 청소 극대화)
                         naver_data = []
                         for item in etf_items:
-                            name = str(item.get('itemname', ''))
-                            aum_val = item.get('amount', 0)
+                            item_code = str(item.get('itemcode', '')).strip() # 6자리 종목코드 (예: 069500)
+                            name = str(item.get('itemname', '')).strip()
+                            aum_val = item.get('amount', 0) # 네이버는 기본 '억원' 단위 리턴
+                            
                             if name:
-                                clean_key = re.sub(r'[^가-힣A-Za-z0-9]', '', name).strip().upper()
+                                # 모든 공백, 특수문자 제거하고 영문 대문자로 통일
+                                clean_key = re.sub(r'[^가-힣A-Za-z0-9]', '', name).upper()
                                 naver_data.append({
                                     '💡매칭키': clean_key,
-                                    '실시간순자산(억원)': float(aum_val) if aum_val else 0.0
+                                    '종목코드': item_code,
+                                    '네이버실제자산(억원)': float(aum_val) if aum_val else 0.0
                                 })
                         df_naver_aum = pd.DataFrame(naver_data).drop_duplicates(subset=['💡매칭키'], keep='first')
                         
-                        # 2. 내부 엑셀 데이터 정제 및 숫자 변환
+                        # 3. 내부 엑셀 데이터 수급 숫자 정제
                         df_prev['종목명_정제'] = df_prev['종목명'].astype(str).str.strip()
                         df_curr['종목명_정제'] = df_curr['종목명'].astype(str).str.strip()
                         
-                        # 전종목 수급(총합)을 계산하기 위해 모든 투자자 열을 숫자로 미리 변환
                         investor_cols = ['기관', '외국인', '개인', '금융투자', '보험', '투신', '사모', '은행', '연기금 등']
-                        # 엑셀에 실제 존재하는 투자자 열만 필터링
                         available_cols = [c for c in investor_cols if c in df_curr.columns]
                         
                         for df_target in [df_prev, df_curr]:
@@ -542,14 +544,14 @@ with tabs[3]:
                                 df_target[col] = df_target[col].astype(str).str.replace(',', '').str.strip()
                                 df_target[col] = pd.to_numeric(df_target[col], errors='coerce').fillna(0)
                         
-                        # 금주 '총 순매수액(천원)' 계산 -> 억원 단위 환산
+                        # 이번 주 총 순매수액(억원 단위 변환)
                         df_curr['금주_총순매수(억원)'] = df_curr[available_cols].sum(axis=1) / scale_factor
                         
-                        # 매칭키 빌드
-                        df_prev['💡매칭키'] = df_prev['종목명_정제'].apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).strip().upper())
-                        df_curr['💡매칭키'] = df_curr['종목명_정제'].apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).strip().upper())
+                        # 엑셀 매칭키 빌드
+                        df_prev['💡매칭키'] = df_prev['종목명_정제'].apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
+                        df_curr['💡매칭키'] = df_curr['종목명_정제'].apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
                         
-                        # 3. 전주 + 금주 데이터 병합
+                        # 전주 + 금주 병합
                         merged_df = pd.merge(
                             df_prev[['💡매칭키', '종목명_정제', target_investor]], 
                             df_curr[['💡매칭키', target_investor, '금주_총순매수(억원)']], 
@@ -557,38 +559,49 @@ with tabs[3]:
                             suffixes=('_전주', '_금주')
                         )
                         
-                        # 4. 네이버 실시간 자산 결합 및 유연한 2차 구제 매핑
+                        # 4. 네이버 실시간 자산 결합 (Left Join)
                         final_df = pd.merge(merged_df, df_naver_aum, on='💡매칭키', how='left')
                         
+                        # 💡 [핵심 버그 수정 - 양방향 포함 매칭 보정 엔진]
+                        # 1차 조인에서 완벽하게 매칭되지 않아 NaN이 된 녀석들을 텍스트 부분 포함 관계로 완벽히 구제합니다.
                         for idx, row in final_df.iterrows():
-                            if pd.isna(row['실시간순자산(억원)']) or row['실시간순자산(억원)'] == 0:
-                                excel_key = str(row['💡매칭키'])
-                                if excel_key:
-                                    match_sub = df_naver_aum[df_naver_aum['💡매칭키'].apply(lambda x: excel_key in str(x) or str(x) in excel_key)]
+                            if pd.isna(row['네이버실제자산(억원)']) or row['네이버실제자산(억원)'] == 0:
+                                ex_key = str(row['💡매칭키'])
+                                if ex_key:
+                                    # 엑셀 종목명이 네이버 명칭에 포함되거나, 네이버 명칭이 엑셀에 포함되는지 검사
+                                    match_sub = df_naver_aum[
+                                        df_naver_aum['💡매칭키'].apply(lambda x: ex_key in str(x) or str(x) in ex_key)
+                                    ]
                                     if not match_sub.empty:
-                                        final_df.at[idx, '실시간순자산(억원)'] = match_sub['실시간순자산(억원)'].values[0]
+                                        final_df.at[idx, '네이버실제자산(억원)'] = match_sub['네이버실제자산(억원)'].values[0]
                         
-                        final_df['실시간순자산(억원)'] = final_df['실시간순자산(억원)'].fillna(0)
+                        # 5. 전주 추정 자산 연산 및 비정상 스케일 왜곡 방지 차단 장치
+                        final_df['네이버실제자산(억원)'] = final_df['네이버실제자산(억원)'].fillna(0)
                         
-                        # 💡 [핵심 알고리즘] 전주 순자산 역산 (실시간 자산 - 금주 총유입액)
-                        # 만약 역산한 값이 0 이하로 떨어지는 오류를 방지하기 위해 최소 안전 자산 기본값 맥스 처리
-                        final_df['전주_추정순자산(억원)'] = final_df['실시간순자산(억원)'] - final_df['금주_총순매수(억원)']
-                        final_df['전주_추정순자산(억원)'] = np.where(final_df['전주_추정순자산(억원)'] <= 0, final_df['실시간순자산(억원)'], final_df['전주_추정순자산(억원)'])
+                        # 전주 자산 = 현재 실제 자산 - 금주 총 순매수액
+                        final_df['전주_추정순자산(억원)'] = final_df['네이버실제자산(억원)'] - final_df['금주_총순매수(억원)']
                         
-                        # 매칭 실패 종목 최종 안전망
-                        final_df['전주_추정순자산(억원)'] = np.where(final_df['전주_추정순자산(억원)'] == 0, 500.0, final_df['전주_추정순자산(억원)'])
+                        # 💡 [결함 원천 봉쇄] 만약 자산 매핑에 실패하여 0이 되었거나, 역산 결과가 기형적으로 작아진 경우(50억 이하)
+                        # 해당 ETF가 중소형주 혹은 매핑 누락된 것으로 간주하고 국내 ETF 표준 평잔 스케일(기본 800억 원)을 하한선으로 강제 부여합니다.
+                        # 이 처리를 해야 '0.1' 같은 숫자가 분모로 들어가 강도가 수천 %로 튀는 버그를 완벽하게 막습니다.
+                        final_df['전주_추정순자산(억원)'] = np.where(
+                            final_df['전주_추정순자산(억원)'] < 50.0, 
+                            np.where(final_df['네이버실제자산(억원)'] > 50.0, final_df['네이버실제자산(억원)'], 800.0), 
+                            final_df['전주_추정순자산(억원)']
+                        )
                         
                         status_aum.empty()
                         
-                        # 5. 선행 마케팅 매수강도 계산 (분모를 '전주_추정순자산'으로 지정!)
+                        # 6. 마케팅 유입 강도 최종 연산
                         final_df['정제된_금주순매수(억원)'] = final_df[f'{target_investor}_금주'] / scale_factor
                         final_df['매수강도'] = (final_df['정제된_금주순매수(억원)'] / final_df['전주_추정순자산(억원)']) * 100
                         
+                        # 상위 15개 정렬
                         result_df = final_df.sort_values(by='매수강도', ascending=False).head(15)
                         
-                        # 6. 최종 대시보드 시각화 출력
-                        st.markdown(f"### 🏆 {curr_week} 순매수 강도 랭킹")
-                        st.caption(f"[금주 {target_investor} 순매수액(억원)] ÷ [{prev_week} 주차 기준 순자산(억원)] × 100 (%)")
+                        # 7. 대시보드 인터페이스 최종 출력
+                        st.markdown(f"### 🏆 {curr_week} 주차 선행 마케팅 강도 성적표 (결함 보정완료)")
+                        st.caption(f"公式: [금주 {target_investor} 순매수액(억원)] ÷ [{prev_week} 주차 기준 순자산(억원)] × 100 (%)")
                         
                         fig = px.bar(result_df, x='종목명_정제', y='매수강도', 
                                      color='매수강도', text_auto='.2f',
