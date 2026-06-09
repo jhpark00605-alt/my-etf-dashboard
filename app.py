@@ -727,14 +727,13 @@ with tabs[5]:
             for idx, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
                 status.text(f"🔍 {name} 채널 고정 DB 접근 중...")
                 
-                # 💡 유튜브 규칙: 채널 ID의 2번째 글자 'C'를 'U'로 바꾸면 해당 채널의 전체 업로드 플레이리스트 ID가 됩니다.
                 upload_playlist_id = "UU" + c_id[2:]
                 
                 params = {
                     "key": API_KEY_YT, 
                     "playlistId": upload_playlist_id, 
                     "part": "snippet", 
-                    "maxResults": 15 # 최신 영상 15개를 명확하게 긁어와 기간 필터링 진행
+                    "maxResults": 50 # 💡 기존 15개에서 50개로 확장하여 더 과거의 영상 데이터까지 안전하게 확보합니다.
                 }
                 
                 try:
@@ -747,11 +746,10 @@ with tabs[5]:
                             title = item["snippet"]["title"]
                             pub_time_str = item["snippet"]["publishedAt"]
                             
-                            # 한국 시간으로 깔끔하게 변환
                             pub_time = pd.to_datetime(pub_time_str).tz_convert('Asia/Seoul')
-                            pub_time_naive = pub_time.tz_localize(None) # 비교를 위해 tz 제거
+                            pub_time_naive = pub_time.tz_localize(None) 
                             
-                            # 💡 수집된 15개의 최신 영상 중, 사용자가 설정한 날짜 범위 내에 있는 것만 차트에 편입
+                            # 사용자가 지정한 날짜 범위 내에 있는지 체크
                             if start_dt <= pub_time_naive <= end_dt:
                                 chart_data_list.append({
                                     "운용사": name,
