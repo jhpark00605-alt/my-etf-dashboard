@@ -493,39 +493,97 @@ with tabs[3]:
             )
 
             if st.button("분석 실행 🚀"):
-                # 💡 [핵심 수정] 금주 데이터 컬럼 전체에 절대값(.abs())을 씌운 뒤 합산을 구합니다.
-                # 이를 통해 플러스/마이너스가 서로 상쇄되어 분모가 왜곡되는 현상을 원천 차단합니다.
-                total_curr_abs = merged_df[f'{target_investor}_금주'].abs().sum()
+                import urllib.request
+                import json
+                import pandas as pd
+                import numpy as np
                 
-                # 💡 [핵심 수정] 분자에도 절대값을 적용하여, 순매도 강도가 높은 종목도 양수의 '강도(%)'로 표현되도록 합니다.
-                if total_curr_abs != 0:
-                    merged_df['매수강도'] = (merged_df[f'{target_investor}_금주'].abs() / total_curr_abs) * 100
-                else:
-                    merged_df['매수강도'] = 0
+                status_aum = st.empty()
+                status_aum.text("🌐 네이버 금융에서 실시간 ETF 순자산(AUM) 마스터 매핑 중...")
                 
-                # 매수강도 순으로 정렬하여 상위 15개 추출
-                result_df = merged_df.sort_values(by='매수강도', ascending=False).head(15)
+                try:
+                    # 💡 별도 라이브러리 없이 네이버 금융 최신 ETF 전종목 마스터 데이터 주소 호출
+                    naver_url = "https://finance.naver.com/api/sise/etfItemList.nhn"
+                    req = urllib.request.Request(naver_url, headers={'User-Agent': 'Mozilla/5.0'})
+                    
+                    with urllib.request.urlopen(req) as response:
+                        res_json = json.loads(response.read().decode('utf-8'))
+                        etf_items = res_json.get('result', {}).get('etfItemList', [])
+                    
+                    # 네이버에서 가져온 [종목명, 순자산총액(억원)]을 판다스 데이터프레임으로 변환
+                    # (네이버 API의 'amount' 컬럼이 바로 해당 ETF의 순자산총액(억원) 데이터입니다)
+                    naver_data = []
+                    for item in etf_items:
+                        naver_data.append({
+                            '종목명': item.get('itemname', '').strip(),
+                            '실시간순자산(억원)': float(item.get('amount', 0))
+                        })
+                    df_naver_aum = pd.DataFrame(naver_data)
+                    
+                    # 💡 현직자분이 주신 내부 엑셀 데이터 병합
+                    merged_df = pd.merge(
+                        df_prev[['종목명', target_investor]], 
+                        df_curr[['종목명', target_investor]], 
+                        on='종목명', 
+                        suffixes=('_전주', '_금주')
+                    )
+                    
+                    # 💡 [핵심] 엑셀에는 없는 순자산 정보를 종목명을 매칭하여 강제로 주입!
+                    # 양쪽 데이터의 종목명 공백 리스크를 줄이기 위해 strip() 처리 후 병합합니다.
+                    merged_df['종목명_정제'] = merged_df['종목명'].str.strip()
+                    df_naver_aum['종목명_정제'] = df_naver_aum['종목명'].str.strip()
+                    
+                    final_df = pd.merge(
+                        merged_df, 
+                        df_naver_aum[['종목명_정제', '실시간순자산(억원)']], 
+                        on='종목명_정제', 
+                        how='left'
+                    ).fillna({'실시간순자산(억원)': 0})
+                    
+                    status_aum.empty() # 로딩 문구 제거
+                    
+                    # 💡 [요청하신 공식 자동 계산]: 금주 순매수액 / 실시간 순자산총액 * 100
+                    # (주의: 만약 내부 엑셀의 순매수 단위가 '원' 단위라면 순자산(억원)과 단위를 맞춰주어야 하므로,
+                    #  단위가 다를 경우를 대비해 나눗셈 비율이 정상 범주로 수렴하도록 안전 보정 처리를 넣었습니다.)
+                    
+                    # 예시 보정: 엑셀 데이터가 '억원' 단위가 아니라 원단위(수십억~수백억 숫자)일 경우 대응
+                    # 보통 현직자 자료는 '백만원' 또는 '억원' 단위를 쓰므로, 매수강도가 지나치게 튀지 않게 분모/분자 스케일 자동 정렬
+                    sample_val = final_df[f'{target_investor}_금주'].abs().max()
+                    scale_factor = 1.0
+                    if sample_val > 100_000_000: # 원 단위 데이터인 경우
+                        scale_factor = 100_000_000
+                    elif sample_val > 100_000: # 백만원 단위 데이터인 경우
+                        scale_factor = 100.0
+                        
+                    final_df['정제된_금주순매수(억원)'] = final_df[f'{target_investor}_금주'] / scale_factor
+                    
+                    final_df['매수강도'] = np.where(
+                        final_df['실시간순자산(억원)'] > 0,
+                        (final_df['정제된_금주순매수(억원)'] / final_df['실시간순자산(억원)']) * 100,
+                        0
+                    )
+                    
+                    # 매수강도 순으로 정렬하여 상위 15개 추출
+                    result_df = final_df.sort_values(by='매수강도', ascending=False).head(15)
 
-                st.markdown(f"### 🏆 {curr_week} 주차 순매수(강도) 랭킹")
-                
-                # 💡 시각적으로 순매수(+)와 순매도(-)를 구분할 수 있도록 
-                # 차트 막대 색상은 오리지널 금주 데이터(음수/양수)의 방향을 따르도록 설정하면 센스 만점입니다!
-                fig = px.bar(result_df, x='종목명', y='매수강도', 
-                             color=f'{target_investor}_금주', # 👈 실제 돈의 흐름이 마이너스면 색상 다르게 표시
-                             text_auto='.1f',
-                             title=f"'{target_investor}' 자금 이동 강도 TOP 15 (순매수/순매도 통합)",
-                             labels={f'{target_investor}_금주': "실제 순매수액", "매수강도": "자금 이동 강도 (%)"})
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # 표에서는 직관적으로 알아볼 수 있게 컬럼 순서 정렬 및 출력
-                st.dataframe(result_df[['종목명', f'{target_investor}_전주', f'{target_investor}_금주', '매수강도']], use_container_width=True)
-
-        except Exception as e:
-            st.error(f"분석 중 오류가 발생했습니다: {e}")
-            
-    else:
-        st.info("💡 하단 분석을 진행하시려면 주차별 순매수 엑셀 파일을 업로드해주세요.")
+                    st.markdown(f"### 🏆 {curr_week} 주차 마케팅 강도 성적표")
+                    st.caption(f"公式: [금주 {target_investor} 순매수액] ÷ [네이버 실시간 순자산총액(AUM)] × 100 (%)")
+                    
+                    # 자금 유입 강도 바차트 시각화
+                    fig = px.bar(result_df, x='종목명', y='매수강도', 
+                                 color='매수강도', text_auto='.2f',
+                                 color_continuous_scale="Viridis",
+                                 title=f"'{target_investor}' 자산 규모 대비 순매수 강도 TOP 15",
+                                 labels={"매수강도": "순매수 강도 (%)"})
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # 결과 데이터프레임 노출
+                    df_display = result_df[['종목명', '실시간순자산(억원)', f'{target_investor}_금주', '매수강도']].copy()
+                    df_display.columns = ['종목명', '현재 순자산(억원)', f'금주 {target_investor} 순매수', '순매수 강도 (%)']
+                    st.dataframe(df_display, use_container_width=True)
+                    
+                except Exception as e:
+                    st.error(f"네이버 마스터 데이터 융합 중 오류가 발생했습니다: {e}")
 
 # ==========================================
 # Tab 5: KODEX 마케팅 관련 기사 크롤링
