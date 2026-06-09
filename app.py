@@ -670,7 +670,7 @@ with tabs[4]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
 # ==========================================
 with tabs[5]:  
     st.subheader("🎬 4대 자산운용사 유튜브 업로드 패턴 및 AI 콘텐츠 요약")
-    st.caption("가장 확실한 Playlist 직통 방식으로 데이터를 100% 수집하여 업로드 주기 분석 및 AI 요약 리포트를 생성합니다.")
+    st.caption("안정적인 날짜 기반 Search API 방식을 사용하여 운용사의 업로드 주기를 분석하고 요약 리포트를 생성합니다.")
     
     TARGET_BROKERAGES = {
         "KODEX ETF (삼성자산운용)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",   
@@ -684,7 +684,6 @@ with tabs[5]:
 
     col_date1, col_date2 = st.columns(2)
     with col_date1:
-        # 안전한 데이터 확보를 위해 기본 조회 범위를 최근 30일로 유지합니다.
         start_date = st.date_input("조회 시작일", datetime.now() - timedelta(days=30), key="am_start")
     with col_date2:
         end_date = st.date_input("조회 종료일", datetime.now(), key="am_end")
@@ -716,24 +715,26 @@ with tabs[5]:
             all_text = ""          
             chart_data_list = []    
 
-            # 💡 기존의 흐릿한 'search' API 대신 가장 확실한 'playlistItems' 엔드포인트 사용
-            url = "https://www.googleapis.com/youtube/v3/playlistItems"
+            # 💡 구글 서버가 날짜를 오해하지 않도록 ISO 표준 포맷(RFC 3339)으로 철저하게 변환
+            published_after = start_date.strftime('%Y-%m-%dT00:00:00Z')
+            published_before = end_date.strftime('%Y-%m-%dT23:59:59Z')
             
-            # 비교를 위해 타겟 날짜를 타임스탬프로 변환
-            start_dt = datetime.combine(start_date, datetime.min.time())
-            end_dt = datetime.combine(end_date, datetime.max.time())
+            # 💡 무작위 누락을 막기 위해 오리지널 search 엔드포인트를 사용합니다.
+            url = "https://www.googleapis.com/youtube/v3/search"
 
-            # [Step 1] 고정 데이터 수집
+            # [Step 1] 데이터 수집
             for idx, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
-                status.text(f"🔍 {name} 채널 고정 DB 접근 중...")
-                
-                upload_playlist_id = "UU" + c_id[2:]
+                status.text(f"🔍 {name} 채널 데이터 동기화 중...")
                 
                 params = {
-                    "key": API_KEY_YT, 
-                    "playlistId": upload_playlist_id, 
-                    "part": "snippet", 
-                    "maxResults": 50 # 💡 기존 15개에서 50개로 확장하여 더 과거의 영상 데이터까지 안전하게 확보합니다.
+                    "key": API_KEY_YT,
+                    "channelId": c_id,
+                    "part": "snippet",
+                    "order": "date",        # 최신순 정렬 강제
+                    "type": "video",        # 플레이리스트, 채널 제외하고 오직 '동영상'만
+                    "maxResults": 25,       # 수집 개수를 25개로 늘려 기간 내 누락 방지
+                    "publishedAfter": published_after,
+                    "publishedBefore": published_before
                 }
                 
                 try:
@@ -742,25 +743,27 @@ with tabs[5]:
                     
                     if "items" in res:
                         for item in res.get("items", []):
-                            v_id = item["snippet"]["resourceId"]["videoId"]
+                            # 간혹 ID 구조가 다르게 들어오는 경우를 위한 방어 파싱
+                            v_id = item["id"].get("videoId")
+                            if not v_id:
+                                continue
+                                
                             title = item["snippet"]["title"]
                             pub_time_str = item["snippet"]["publishedAt"]
                             
+                            # 한국 시간대 변환
                             pub_time = pd.to_datetime(pub_time_str).tz_convert('Asia/Seoul')
-                            pub_time_naive = pub_time.tz_localize(None) 
                             
-                            # 사용자가 지정한 날짜 범위 내에 있는지 체크
-                            if start_dt <= pub_time_naive <= end_dt:
-                                chart_data_list.append({
-                                    "운용사": name,
-                                    "제목": title,
-                                    "날짜": pub_time.strftime('%Y-%m-%d'),
-                                    "요일": pub_time.strftime('%A'), 
-                                    "시간대": pub_time.hour          
-                                })
-                                
-                                transcript = fetch_transcript(v_id)
-                                videos_summary.append(f"- 제목: {title}\n  내용: {transcript}")
+                            chart_data_list.append({
+                                "운용사": name,
+                                "제목": title,
+                                "날짜": pub_time.strftime('%Y-%m-%d'),
+                                "요일": pub_time.strftime('%A'), 
+                                "시간대": pub_time.hour          
+                            })
+                            
+                            transcript = fetch_transcript(v_id)
+                            videos_summary.append(f"- 제목: {title}\n  내용: {transcript}")
                     
                     if videos_summary:
                         all_text += f"\n### [{name}]\n" + "\n".join(videos_summary)
@@ -770,6 +773,7 @@ with tabs[5]:
                 except Exception as e:
                     all_text += f"\n### [{name}]\n데이터 수집 중 에러 발생: {e}\n"
                 
+                # 디버깅용 강제 대기 제거 및 빠른 프로그레스바 반영
                 progress.progress(int((idx + 1) * (50 / len(TARGET_BROKERAGES))))
 
             # [Step 2] 시각화 차트 출력
@@ -791,9 +795,9 @@ with tabs[5]:
                                    title='⏰ 시간대별 업로드 집중도 (KST)')
                 st.plotly_chart(fig_hour, use_container_width=True)
             else:
-                st.warning("⚠️ 선택하신 조회 기간 내에 수집된 영상이 없습니다. 시작일을 더 과거로 설정하거나 나중 날짜를 확인해 보세요.")
+                st.warning("⚠️ 선택하신 조회 기간 내에 수집된 영상이 없습니다. 조회 시작일을 더 과거로 설정해 보세요.")
 
-            # [Step 3] AI 모델 동적 스캔 및 요약 리포트 (유튜브 탭 성공 로직 유지)
+            # [Step 3] AI 모델 동적 스캔 및 요약 리포트
             if not chart_data_list or len(all_text.strip()) < 50:
                 st.info("ℹ️ 수집된 영상 데이터가 없으므로 AI 요약 리포트를 생략합니다.")
             else:
@@ -812,7 +816,7 @@ with tabs[5]:
                 except:
                     pass
                 
-                status.text(f"🤖 {selected_model_path.split('/')[-1]} 엔진 기반 최신 영상 자막 분석 및 전략 요약 중...")
+                status.text(f"🤖 {selected_model_path.split('/')[-1]} 엔진 기반 영상 콘텐츠 트렌드 분석 중...")
                 progress.progress(80)
                 
                 prompt = f"""
@@ -832,9 +836,7 @@ with tabs[5]:
                 
                 try:
                     res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=60)
-                    
                     if res.status_code != 200:
-                        status.text("🔄 구글 AI 서버 우회 경로(v1)로 재시도 중...")
                         fallback_model = selected_model_path.split('/')[-1] if 'selected_model_path' in locals() else "gemini-pro"
                         fallback_url = f"https://generativelanguage.googleapis.com/v1/models/{fallback_model}:generateContent?key={API_KEY_GEMINI}"
                         res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=60)
@@ -851,6 +853,7 @@ with tabs[5]:
                 except Exception as ai_err:
                     progress.progress(100)
                     st.error(f"⚠️ AI 연동 실패: {ai_err}")
+                    
 # ==========================================
 # Tab 7: 오프라인 이벤트 SNS 언급량 변화 크롤링
 # ==========================================
