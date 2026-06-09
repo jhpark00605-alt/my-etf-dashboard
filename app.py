@@ -774,56 +774,67 @@ with tabs[6]:
         import requests
         import pandas as pd
         import urllib.parse
-        from datetime import datetime, timedelta
         
         if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
             st.warning("⚠️ 네이버 API 키가 Secrets에 등록되지 않았습니다.")
             return pd.DataFrame()
             
         encoded_query = urllib.parse.quote(query)
-        # 일주일치를 골고루 반영하기 위해 최대치인 100개를 가져옵니다.
-        url = f"https://openapi.naver.com/v1/search/blog.json?query={encoded_query}&display=100&sort=date"
-        
         headers = {
             "X-Naver-Client-Id": NAVER_CLIENT_ID,
             "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
         }
         
-        try:
-            res = requests.get(url, headers=headers, timeout=10)
-            if res.status_code == 200:
-                data = res.json()
-                items = data.get("items", [])
-                
-                if not items:
-                    return pd.DataFrame()
-                
-                blog_data = []
-                for item in items:
-                    raw_date = item.get("postdate", "")
-                    if raw_date and len(raw_date) == 8:
-                        formatted_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
-                    else:
-                        formatted_date = pd.Timestamp.now().strftime('%Y-%m-%d')
-                        
-                    blog_data.append({
-                        "날짜": formatted_date,
-                        "채널": "네이버 블로그"
-                    })
-                
-                df = pd.DataFrame(blog_data)
-                
-                # 💡 [핵심] 최근 일주일(7일) 범위 내 데이터만 필터링
-                df['날짜'] = pd.to_datetime(df['날짜'])
-                today = pd.Timestamp.now().normalize()
-                seven_days_ago = today - pd.Timedelta(days=6)
-                
-                df = df[(df['날짜'] >= seven_days_ago) & (df['날짜'] <= today)]
-                
-                # 날짜별 데이터 개수 세기
-                df_grouped = df.groupby(["날짜", "채널"]).size().reset_index(name="언급량")
-                df_grouped['날짜'] = df_grouped['날짜'].dt.strftime('%Y-%m-%d')
-                return df_grouped
+        blog_data = []
+        
+        # 💡 [핵심 보완] 최신순(date) 100개 + 유사도순(sim) 100개를 각각 요청하여 과거 일주일 데이터 풀을 넓힙니다.
+        for sort_type in ["date", "sim"]:
+            url = f"https://openapi.naver.com/v1/search/blog.json?query={encoded_query}&display=100&sort={sort_type}"
+            try:
+                res = requests.get(url, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    items = res.json().get("items", [])
+                    for item in items:
+                        raw_date = item.get("postdate", "")
+                        if raw_date and len(raw_date) == 8:
+                            formatted_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
+                            
+                            # 💡 중복 제거를 위해 우선 리스트에 딕셔너리로 담기
+                            blog_data.append({
+                                "날짜": formatted_date,
+                                "채널": "네이버 블로그",
+                                "링크": item.get("link", "") # 완전한 중복 제거를 위해 링크 데이터 활용
+                            })
+                else:
+                    # 하나의 정렬 타입이 실패하더라도 다른 쪽 수집을 위해 로그만 남기고 패스합니다.
+                    pass
+            except Exception as e:
+                pass
+
+        if not blog_data:
+            return pd.DataFrame()
+            
+        # 1. 수집된 데이터를 판다스 프레임으로 변환
+        df = pd.DataFrame(blog_data)
+        
+        # 2. 최신순과 유사도순에서 겹친 동일 글(링크 기준) 과감하게 제거
+        df = df.drop_duplicates(subset=["링크"])
+        
+        # 3. 날짜 필터링 (최근 일주일 범위 내 데이터만 남기기)
+        df['날짜'] = pd.to_datetime(df['날짜'])
+        today = pd.Timestamp.now().normalize()
+        seven_days_ago = today - pd.Timedelta(days=6)
+        
+        df = df[(df['날짜'] >= seven_days_ago) & (df['날짜'] <= today)]
+        
+        if df.empty:
+            return pd.DataFrame()
+            
+        # 4. 날짜별로 묶어서 언급량 개수 세기
+        df_grouped = df.groupby(["날짜", "채널"]).size().reset_index(name="언급량")
+        df_grouped['날짜'] = df_grouped['날짜'].dt.strftime('%Y-%m-%d')
+        
+        return df_grouped
             else:
                 st.error(f"🚨 네이버 API 호출 실패 (에러 코드: {res.status_code})")
                 return pd.DataFrame()
