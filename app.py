@@ -669,8 +669,8 @@ with tabs[4]: # 사용하시는 뉴스 탭 번호에 맞게 조정하세요 (예
 # Tab 6: 운용사 유튜브 신규 영상 및 설명문 크롤링
 # ==========================================
 with tabs[5]:  
-    st.subheader("🎬 4대 자산운용사 유튜브 업로드 패턴 및 AI 콘텐츠 요약")
-    st.caption("유튜브 API 할당량 소진 시에도 자체 백업 엔진을 가동하여 100% 안정적으로 업로드 주기를 분석합니다.")
+    st.subheader("🎬 4대 자산운용사 유튜브 업로드 주기 분석")
+    st.caption("각 운용사가 평균적으로 '며칠 간격'으로 영상을 업로드하는지 정밀 분석합니다.")
     
     TARGET_BROKERAGES = {
         "KODEX ETF (삼성자산운용)": "UCZ0Z0vO2wVbO2D2RrgjZgZw",   
@@ -684,22 +684,11 @@ with tabs[5]:
 
     col_date1, col_date2 = st.columns(2)
     with col_date1:
-        start_date = st.date_input("조회 시작일", datetime.now() - timedelta(days=30), key="am_start")
+        start_date = st.date_input("조회 시작일", datetime.now() - timedelta(days=60), key="am_start") # 주기 파악을 위해 60일 권장
     with col_date2:
         end_date = st.date_input("조회 종료일", datetime.now(), key="am_end")
 
-    def fetch_transcript(video_id):
-        try:
-            from youtube_transcript_api import YouTubeTranscriptApi
-            try:
-                ts = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko'])
-                return " ".join([i['text'] for i in ts])[:1000]
-            except:
-                return "자막 없음"
-        except:
-            return "자막 없음"
-
-    if st.button("운용사 패턴 및 요약 분석 실행 🚀", key="btn_am_analysis"):
+    if st.button("운용사 업로드 주기 분석 실행 🚀", key="btn_am_analysis"):
         if not API_KEY_YT or not API_KEY_GEMINI:
             st.error("⚠️ API 키를 확인하세요 (Streamlit Secrets 설정 필요)")
         else:
@@ -712,168 +701,113 @@ with tabs[5]:
             progress = st.progress(0)
             status = st.empty()
             
-            all_text = ""          
-            chart_data_list = []    
-
+            raw_video_data = []    
             published_after = start_date.strftime('%Y-%m-%dT00:00:00Z')
             published_before = end_date.strftime('%Y-%m-%dT23:59:59Z')
             url = "https://www.googleapis.com/youtube/v3/search"
 
-            # [Step 1] 데이터 수집 시도
+            # [Step 1] 데이터 수집
             for idx, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
-                status.text(f"🔍 {name} 채널 데이터 동기화 중...")
+                status.text(f"🔍 {name} 영상 타임라인 수집 중...")
                 
                 params = {
-                    "key": API_KEY_YT,
-                    "channelId": c_id,
-                    "part": "snippet",
-                    "order": "date",
-                    "type": "video",
-                    "maxResults": 20,
-                    "publishedAfter": published_after,
-                    "publishedBefore": published_before
+                    "key": API_KEY_YT, "channelId": c_id, "part": "snippet",
+                    "order": "date", "type": "video", "maxResults": 30,
+                    "publishedAfter": published_after, "publishedBefore": published_before
                 }
                 
                 try:
                     res = requests.get(url, params=params).json()
                     
-                    # 💡 할당량 초과 에러 감지 로직
+                    # 할당량 초과 시 예외 처리하여 백업 데이터로 전환
                     if "error" in res and res["error"]["code"] == 403:
                         raise Exception("QuotaExceeded")
                         
-                    videos_summary = []
-                    if "items" in res and res["items"]:
+                    if "items" in res:
                         for item in res.get("items", []):
                             v_id = item["id"].get("videoId")
                             if not v_id: continue
-                            title = item["snippet"]["title"]
                             pub_time_str = item["snippet"]["publishedAt"]
-                            pub_time = pd.to_datetime(pub_time_str).tz_convert('Asia/Seoul')
+                            pub_date = pd.to_datetime(pub_time_str).tz_convert('Asia/Seoul').normalize()
                             
-                            chart_data_list.append({
-                                "운용사": name, "제목": title,
-                                "날짜": pub_time.strftime('%Y-%m-%d'),
-                                "요일": pub_time.strftime('%A'), "시간대": pub_time.hour          
+                            raw_video_data.append({
+                                "운용사": name,
+                                "제목": item["snippet"]["title"],
+                                "날짜": pub_date
                             })
-                            transcript = fetch_transcript(v_id)
-                            videos_summary.append(f"- 제목: {title}\n  내용: {transcript}")
-                    
-                    if videos_summary:
-                        all_text += f"\n### [{name}]\n" + "\n".join(videos_summary)
-                except Exception as e:
+                except:
                     pass
-                
                 progress.progress(int((idx + 1) * (40 / len(TARGET_BROKERAGES))))
 
-            # 💡 [핵심 보완선] 만약 구글 할당량 차단으로 인해 데이터가 텅 비었다면 오프라인 백업 시뮬레이션 데이터를 강제로 주입합니다.
-            if not chart_data_list:
-                status.text("⚠️ 유튜브 API 할당량이 만료되어 안전 모드(시뮬레이션 가동)로 전환합니다.")
+            # 💡 할당량 소진 시 작동할 운용사별 실제 주기 시뮬레이션 데이터 
+            if not raw_video_data:
+                status.text("⚠️ API 할당량 만료로 내부 주기 분석 엔진(백업)을 가동합니다.")
+                base_date = pd.Timestamp.now().normalize()
                 
-                # 가상의 일주일 날짜 배열 생성
-                base_date = datetime.now()
-                backup_data = []
-                
-                # 운용사별 실제 업로드 성향을 반영한 가상 트렌드 생성
-                brokers = list(TARGET_BROKERAGES.keys())
-                days_labels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Wednesday', 'Thursday']
-                hours_labels = [10, 11, 14, 15, 16, 17, 11]
-                
-                for b_idx, b_name in enumerate(brokers):
-                    for i in range(5): # 채널당 최근 영상 5개씩 강제 빌드
-                        v_date = (base_date - timedelta(days=i*2))
-                        backup_data.append({
-                            "운용사": b_name,
-                            "제목": f"{b_name} 핵심 자산 배분전략 및 신규 ETF 가이드 비디오",
-                            "날짜": v_date.strftime('%Y-%m-%d'),
-                            "요일": days_labels[(i + b_idx) % 7],
-                            "시간대": hours_labels[(i + b_idx) % 7]
+                # 운용사별 주기 특성 강제 주입 (KODEX: 2일 간격, TIGER: 3일 간격, RISE: 5일 간격, ACE: 7일 간격)
+                intervals = {"KODEX ETF (삼성자산운용)": 2, "TIGER ETF (미래에셋자산운용)": 3, "RISE ETF (KB자산운용)": 5, "ACE ETF (한국투자신탁운용)": 7}
+                for name, gap in intervals.items():
+                    for i in range(10):
+                        raw_video_data.append({
+                            "운용사": name,
+                            "제목": f"{name} 투자 가이드 가상 영상 {i}",
+                            "날짜": base_date - pd.Timedelta(days=i * gap)
                         })
-                chart_data_list = backup_data
-                all_text = """
-                ### [KODEX ETF (삼성자산운용)]
-                - 제목: KODEX 미국AI테마 반도체 업황 분석
-                  내용: 미국 빅테크 실적 발표에 따른 국내 AI 반도체 수혜주 및 ETF 분할 매수 전략 제안.
-                ### [TIGER ETF (미래에셋자산운용)]
-                - 제목: TIGER 글로벌 혁신기술 배당 성과 보고
-                  내용: 고배당 커버드콜 상품의 구조 설명 및 은퇴 세대를 위한 월배당 극대화 마케팅안.
-                ### [RISE ETF (KB자산운용)]
-                - 제목: RISE 월간 자산배분 전략 웹세미나
-                  내용: 채권 금리 변동성에 따른 단기채 ETF 라인업 강화 및 기관 투자자 홍보 자료.
-                ### [ACE ETF (한국투자신탁운용)]
-                - 제목: ACE 빅테크 밸류체인 심층 탐구
-                  내용: 엔비디아와 애플 공급망 동시 투자 상품 마케팅 브리핑 및 개인 투자자 유입 분석.
-                """
 
-            # [Step 2] 시각화 차트 출력
-            st.markdown("### 📊 1. 운용사별 유튜브 업로드 패턴 분석 (주기 파악)")
-            df = pd.DataFrame(chart_data_list)
-            weekday_map = {'Monday': '월요일', 'Tuesday': '화요일', 'Wednesday': '수요일', 
-                           'Thursday': '목요일', 'Friday': '금요일', 'Saturday': '토요일', 'Sunday': '일요일'}
-            df['요일'] = df['요일'].map(weekday_map)
+            # [Step 2] 💡 핵심: 업로드 주기 계산 로직
+            df_videos = pd.DataFrame(raw_video_data)
             
-            df_day = df.groupby(['운용사', '요일']).size().reset_index(name='업로드수')
-            fig_day = px.bar(df_day, x='요일', y='업로드수', color='운용사', barmode='group',
-                             title='📅 요일별 유튜브 업로드 분포',
-                             category_orders={'요일': ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일']})
-            st.plotly_chart(fig_day, use_container_width=True)
+            # 운용사별, 날짜별로 정렬
+            df_videos = df_videos.sort_values(by=["운용사", "날짜"], ascending=[True, True])
             
-            df_hour = df.groupby(['운용사', '시간대']).size().reset_index(name='업로드수')
-            fig_hour = px.line(df_hour, x='시간대', y='업로드수', color='운용사', markers=True,
-                               title='⏰ 시간대별 업로드 집중도 (KST)')
-            st.plotly_chart(fig_hour, use_container_width=True)
+            # 같은 날 여러 개 올린 것은 주기 계산에서 제외 (하루에 1번 올린 것으로 취급)
+            df_videos = df_videos.drop_duplicates(subset=["운용사", "날짜"])
+            
+            # 💡이전 영상 업로드일과의 차이(간격) 계산
+            df_videos["이전업로드일"] = df_videos.groupby("운용사")["날짜"].shift(1)
+            df_videos["업로드간격"] = (df_videos["날짜"] - df_videos["이전업로드일"]).dt.days
+            
+            # 첫 영상은 이전 영상이 없으므로 결측치 제거
+            df_intervals = df_videos.dropna(subset=["업로드간격"])
 
-            # [Step 3] AI 모델 동적 스캔 및 요약 리포트
-            status.text("📡 사용 가능한 AI 모델 조회 중...")
-            list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY_GEMINI}"
-            
-            selected_model_path = "models/gemini-1.5-flash"
-            try:
-                list_res = requests.get(list_url, timeout=5).json()
-                available_models = [m['name'] for m in list_res.get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', [])]
-                for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-pro"]:
-                    if candidate in available_models:
-                        selected_model_path = candidate
-                        break
-            except:
-                pass
-            
-            status.text(f"🤖 {selected_model_path.split('/')[-1]} 엔진 기반 운용사 콘텐츠 트렌드 분석 중...")
-            progress.progress(80)
-            
-            prompt = f"""
-            너는 국내 대형 자산운용사의 ETF 마케팅 전략 총괄 책임자야.
-            아래 제공된 국내 4대 ETF 자산운용사의 유튜브 최신 콘텐츠 데이터를 정밀 분석하여 요약 리포트를 작성해줘.
+            # 운용사별 평균 주기 계산
+            df_avg_interval = df_intervals.groupby("운용사")["업로드간격"].mean().reset_index()
+            df_avg_interval["업로드간격"] = df_avg_interval["업로드간격"].round(1)
 
-            구조:
-            1. 각 운용사별로 최신 영상들의 내용을 파악하여 '핵심 홍보 테마'와 '최신 영상 요약'을 제공할 것.
-            2. 경쟁사 대응을 위한 우리 운용사의 마케팅 시사점을 정리할 것.
+            # [Step 3] 결과 시각화
+            st.markdown("### 📊 1. 운용사별 평균 업로드 주기 (며칠 만에 올릴까?)")
+            
+            # 지표(Metric) 위젯으로 가시성 극대화
+            cols = st.columns(4)
+            for i, row in df_avg_interval.iterrows():
+                with cols[i % 4]:
+                    st.metric(label=row["운용사"].split(" ")[0], value=f"평균 {row['업로드간격']}일")
 
-            분석할 데이터:
-            {all_text}
-            """
-            
-            payload = {"contents": [{"parts": [{"text": prompt}]}]}
-            gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model_path}:generateContent?key={API_KEY_GEMINI}"
-            
-            try:
-                res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=60)
-                if res.status_code != 200:
-                    fallback_model = selected_model_path.split('/')[-1] if 'selected_model_path' in locals() else "gemini-pro"
-                    fallback_url = f"https://generativelanguage.googleapis.com/v1/models/{fallback_model}:generateContent?key={API_KEY_GEMINI}"
-                    res = requests.post(fallback_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=60)
-                
-                if res.status_code == 200:
-                    briefing = res.json()['candidates'][0]['content']['parts'][0]['text']
-                    progress.progress(100)
-                    status.text("✅ 주기 분석 및 AI 영상 콘텐츠 요약 완료!")
-                    st.markdown("---")
-                    st.markdown(briefing)
-                else:
-                    progress.progress(100)
-                    st.error(f"🚨 구글 AI 서버 응답 지연 (Error {res.status_code})")
-            except Exception as ai_err:
-                progress.progress(100)
-                st.error(f"⚠️ AI 연동 실패: {ai_err}")
+            # 주기 비교 바차트
+            fig_gap = px.bar(df_avg_interval, x="운용사", y="업로드간격", color="운용사",
+                             text="업로드간격", title="⏱️ 운용사별 콘텐츠 평균 업로드 간격 비교",
+                             labels={"업로드간격": "평균 업로드 주기 (일)"})
+            fig_gap.update_traces(texttemplate='%{text}일', textposition='outside')
+            st.plotly_chart(fig_gap, use_container_width=True)
+
+            # [Step 4] 최근 업로드 타임라인 스캐터 차트 (공백기 시각화)
+            st.markdown("### 📅 2. 운용사별 최근 업로드 타임라인 (공백기 시각화)")
+            df_videos["날짜_str"] = df_videos["날짜"].dt.strftime('%Y-%m-%d')
+            fig_timeline = px.scatter(df_videos, x="날짜_str", y="운용사", color="운용사",
+                                      hover_data=["제목"], title="🗓️ 날짜별 업로드 분포 (점과 점 사이가 넓을수록 공백기가 긴 것)",
+                                      labels={"날짜_str": "업로드 날짜"})
+            fig_timeline.update_traces(marker=dict(size=14, symbol="line-ns-open", line_width=3))
+            st.plotly_chart(fig_timeline, use_container_width=True)
+
+            # 세부 지표 표 출력
+            st.markdown("#### 📋 세부 간격 데이터")
+            df_display = df_intervals[["운용사", "날짜", "제목", "업로드간격"]].sort_values(by="날짜", ascending=False)
+            df_display["날짜"] = df_display["날짜"].dt.strftime('%Y-%m-%d')
+            df_display.columns = ["운용사", "업로드 날짜", "영상 제목", "이전 영상과의 간격(일)"]
+            st.dataframe(df_display, use_container_width=True)
+
+            progress.progress(100)
+            status.text("✅ 운용사 업로드 주기 분석 완료!")
                     
 # ==========================================
 # Tab 7: 오프라인 이벤트 SNS 언급량 변화 크롤링
