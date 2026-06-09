@@ -493,22 +493,20 @@ with tabs[3]:
                 import json
                 import pandas as pd
                 import numpy as np
+                import re
                 
                 status_aum = st.empty()
                 status_aum.text("🌐 네이버 금융 서버에서 실시간 ETF 순자산 마스터 동기화 중...")
                 
                 try:
-                    # 💡 [핵심 변경] 인코딩 깨짐을 방지하고 순자산 데이터를 정밀하게 내보내는 네이버 금융 API 호출
-                    # 타임스탬프 파라미터(_=12345)를 붙여 브라우저 캐시 문제를 완벽 차단합니다.
-                    naver_url = "https://finance.naver.com/api/sise/etfItemList.nhn?_="
+                    # 1. 네이버 금융 데이터 수집
+                    naver_url = "https://finance.naver.com/api/sise/etfItemList.nhn?_"
                     req = urllib.request.Request(naver_url, headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
                     })
                     
                     with urllib.request.urlopen(req) as response:
                         raw_bytes = response.read()
-                        
-                        # 💡 [안전장치] 글자가 깨지더라도 JSON 구조를 유지하도록 유연하게 디코딩 처리
                         try:
                             decoded_content = raw_bytes.decode('cp949', errors='replace')
                         except Exception:
@@ -517,81 +515,99 @@ with tabs[3]:
                         res_json = json.loads(decoded_content)
                         etf_items = res_json.get('result', {}).get('etfItemList', [])
                     
-                    # 수집된 데이터가 비어있는지 1차 검증
                     if not etf_items:
-                        st.error("🚨 네이버 금융으로부터 실시간 데이터를 받아오지 못했습니다. 잠시 후 다시 시도해주세요.")
+                        st.error("🚨 네이버 금융 API 연동에 실패했습니다.")
                     else:
-                        # 데이터프레임 빌드업
+                        # 네이버 데이터프레임 빌드 (괄호 및 특수문자 제거 규칙 적용)
                         naver_data = []
                         for item in etf_items:
-                            # 네이버 API 필드명 매핑 (itemname=종목명, amount=순자산총액)
                             name = str(item.get('itemname', '')).strip()
                             aum_val = item.get('amount', 0)
-                            
                             if name:
+                                # KODEX 200(H) 같은 경우 (H)를 유지하되 공백만 제거하는 매치키 생성
+                                match_key = re.sub(r'[^가-힣A-Za-z0-9]', '', name).upper()
                                 naver_data.append({
-                                    '종목명_정제': name,
+                                    '네이버종목명': name,
+                                    '💡매칭키': match_key,
                                     '실시간순자산(억원)': float(aum_val) if aum_val else 0.0
                                 })
-                        
                         df_naver_aum = pd.DataFrame(naver_data)
                         
-                        # 내부 엑셀 데이터 로드 및 종목명 공백 제거
+                        # 2. 내부 엑셀 데이터 정제
+                        # 선택한 투자자 컬럼이 진짜 존재하는지 체크
+                        if target_investor not in df_prev.columns or target_investor not in df_curr.columns:
+                            st.error(f"🚨 업로드한 엑셀 파일에 '{target_investor}' 열(Column)이 없습니다! 실제 엑셀의 열 이름을 확인해 주세요.")
+                            st.write("엑셀에 존재하는 열 목록:", list(df_curr.columns))
+                            st.stop()
+                            
                         df_prev['종목명_정제'] = df_prev['종목명'].astype(str).str.strip()
                         df_curr['종목명_정제'] = df_curr['종목명'].astype(str).str.strip()
                         
-                        # 내부 엑셀 데이터 1차 병합
+                        # 엑셀 종목명 매칭키 생성 (숫자, 영문, 한글만 남기고 싹 제거)
+                        df_prev['💡매칭키'] = df_prev['종목명_정제'].apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
+                        df_curr['💡매칭키'] = df_curr['종목명_정제'].apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
+                        
+                        # 전주/금주 데이터 병합
                         merged_df = pd.merge(
-                            df_prev[['종목명_정제', target_investor]], 
-                            df_curr[['종목명_정제', target_investor]], 
-                            on='종목명_정제', 
+                            df_prev[['💡매칭키', '종목명_정제', target_investor]], 
+                            df_curr[['💡매칭키', target_investor]], 
+                            on='💡매칭키', 
                             suffixes=('_전주', '_금주')
                         )
                         
-                        # 💡 [버그 수정 핵심] 대소문자나 운용사 명칭 미세 차이로 매핑 실패하는 것을 방지하기 위해 
-                        # 'KODEX 200'과 'KODEX200' 처럼 띄어쓰기가 다른 부분까지 완벽 매칭하도록 조인 키(Key) 2차 정제
-                        merged_df['💡매칭키'] = merged_df['종목명_정제'].str.replace(' ', '').str.upper()
-                        df_naver_aum['💡매칭키'] = df_naver_aum['종목명_정제'].str.replace(' ', '').str.upper()
-                        
-                        # 네이버 순자산 마스터 최종 결합
+                        # 네이버 순자산 최종 결합
                         final_df = pd.merge(
                             merged_df, 
-                            df_naver_aum[['💡매칭키', '실시간순자산(억원)']], 
+                            df_naver_aum[['💡매칭키', '네이버종목명', '실시간순자산(억원)']], 
                             on='💡매칭키', 
                             how='left'
-                        ).fillna({'실시간순자산(억원)': 0})
+                        )
                         
-                        status_aum.empty() # 로딩 지우기
+                        status_aum.empty()
                         
-                        # 내부 자료 금액 단위 자동 판별 보정계수 (원/백만원/억원 스케일 스캔)
+                        # 데이터 매칭 상태 진단 모니터 노출
+                        matched_count = final_df['실시간순자산(억원)'].notna().sum()
+                        total_count = len(final_df)
+                        
+                        st.info(f"📊 [매핑 진단 결과] 내부 종목 총 {total_count}개 중 {matched_count}개가 네이버 실시간 자산 데이터와 연결되었습니다.")
+                        
+                        # 결측치는 0으로 채움
+                        final_df['실시간순자산(억원)'] = final_df['실시간순자산(억원)'].fillna(0)
+                        
+                        # 3. 금액 단위 보정 (안전장치 강화)
                         sample_val = final_df[f'{target_investor}_금주'].abs().max()
                         scale_factor = 1.0
-                        if sample_val > 500_000_000:    # 수억 이상의 큰 값이 들어있는 경우 (원 단위로 판단)
-                            scale_factor = 100_000_000
-                        elif sample_val > 500_000:       # 수십만 단위인 경우 (백만원 단위로 판단)
-                            scale_factor = 100.0
+                        
+                        # 만약 최대값이 수억~수십억 단위라면 '원' 단위 자료임
+                        if sample_val > 10_000_000:
+                            scale_factor = 100_000_000  # 원 -> 억원으로 변환
+                        # 만약 최대값이 수만~수십만 단위라면 '백만원' 단위 자료임
+                        elif sample_val > 10_000:
+                            scale_factor = 100.0        # 백만원 -> 억원으로 변환
                             
                         final_df['정제된_금주순매수(억원)'] = final_df[f'{target_investor}_금주'] / scale_factor
                         
-                        # 💡 순매수 강도 공식 적용: 금주 순매수(억원) / 실시간 순자산(억원) * 100
+                        # 강도 계산
                         final_df['매수강도'] = np.where(
                             final_df['실시간순자산(억원)'] > 0,
                             (final_df['정제된_금주순매수(억원)'] / final_df['실시간순자산(억원)']) * 100,
                             0
                         )
                         
-                        # 매수강도 순으로 정렬하여 상위 15개 추출
                         result_df = final_df.sort_values(by='매수강도', ascending=False).head(15)
                         
+                        # 최종 검증 및 우회 디버거 화면
                         if result_df.empty or result_df['매수강도'].sum() == 0:
-                            st.warning("⚠️ 매칭된 ETF의 순자산 데이터가 없거나 자금 이동 강도가 0입니다. 내부 자료의 종목명과 네이버 금융의 명칭이 일치하는지 확인해 주세요.")
-                            # 디버깅을 위해 매핑 실패한 데이터 일부 노출
-                            st.write("디버깅용 매핑 데이터 샘플:", final_df[['종목명_정제', '실시간순자산(억원)']].head(5))
-                        else:
-                            st.markdown(f"### 🏆 {curr_week} 주차 마케팅 강도 성적표")
-                            st.caption(f"公式: [금주 {target_investor} 순매수액] ÷ [네이버 실시간 순자산총액(AUM)] × 100 (%)")
+                            st.warning("⚠️ 여전히 결합된 자금 이동 강도가 0입니다. 아래 원본 데이터 매칭 현황을 보고 파일 규격을 맞춰주세요.")
                             
-                            # 바차트 시각화
+                            col_db1, col_db2 = st.columns(2)
+                            with col_db1:
+                                st.write("📝 내 엑셀의 종목명 샘플", final_df[['종목명_정제', f'{target_investor}_금주']].head(8))
+                            with col_db2:
+                                st.write("🌐 네이버 금융의 종목명 샘플", df_naver_aum[['네이버종목명', '실시간순자산(억원)']].head(8))
+                        else:
+                            # [시각화 및 결과 테이블 노출 영역]
+                            st.markdown(f"### 🏆 {curr_week} 주차 마케팅 강도 성적표")
                             fig = px.bar(result_df, x='종목명_정제', y='매수강도', 
                                          color='매수강도', text_auto='.2f',
                                          color_continuous_scale="Viridis",
@@ -599,7 +615,6 @@ with tabs[3]:
                                          labels={"매수강도": "순매수 강도 (%)", "종목명_정제": "종목명"})
                             st.plotly_chart(fig, use_container_width=True)
                             
-                            # 결과 데이터프레임 노출
                             df_display = result_df[['종목명_정제', '실시간순자산(억원)', f'{target_investor}_금주', '매수강도']].copy()
                             df_display.columns = ['종목명', '현재 순자산(억원)', f'금주 {target_investor} 순매수', '순매수 강도 (%)']
                             st.dataframe(df_display, use_container_width=True)
