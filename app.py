@@ -787,7 +787,6 @@ with tabs[6]:
         
         blog_data = []
         
-        # 최신순(date) 100개 + 유사도순(sim) 100개 각각 요청
         for sort_type in ["date", "sim"]:
             url = f"https://openapi.naver.com/v1/search/blog.json?query={encoded_query}&display=100&sort={sort_type}"
             try:
@@ -801,7 +800,7 @@ with tabs[6]:
                             blog_data.append({
                                 "날짜": formatted_date,
                                 "채널": "네이버 블로그",
-                                "링크": item.get("link", "")
+                                "링크": item.get("link", "") # 💡 한글 '링크' 키로 매칭
                             })
             except Exception as e:
                 pass
@@ -810,7 +809,9 @@ with tabs[6]:
             return pd.DataFrame()
             
         df = pd.DataFrame(blog_data)
-        df = df.drop_duplicates(subset=["LINK"])
+        
+        # 💡 한글 '링크' 컬럼 기준으로 중복 제거하도록 버그 수정 완료!
+        df = df.drop_duplicates(subset=["링크"])
         
         df['날짜'] = pd.to_datetime(df['날짜'])
         today = pd.Timestamp.now().normalize()
