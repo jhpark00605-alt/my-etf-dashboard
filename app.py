@@ -769,7 +769,7 @@ with tabs[6]:
     
     SNS_SEARCH_QUERY = "KODEX ETF"
 
-    # [수정] 네이버 블로그 수집 및 일주일 일별 그룹화 함수
+    # 💡 들여쓰기 정렬 완료: 함수 정의 블록 (스페이스 4칸 규칙)
     def fetch_naver_blog_counts(query):
         import requests
         import pandas as pd
@@ -787,7 +787,7 @@ with tabs[6]:
         
         blog_data = []
         
-        # 💡 [핵심 보완] 최신순(date) 100개 + 유사도순(sim) 100개를 각각 요청하여 과거 일주일 데이터 풀을 넓힙니다.
+        # 최신순(date) 100개 + 유사도순(sim) 100개 각각 요청
         for sort_type in ["date", "sim"]:
             url = f"https://openapi.naver.com/v1/search/blog.json?query={encoded_query}&display=100&sort={sort_type}"
             try:
@@ -798,29 +798,20 @@ with tabs[6]:
                         raw_date = item.get("postdate", "")
                         if raw_date and len(raw_date) == 8:
                             formatted_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
-                            
-                            # 💡 중복 제거를 위해 우선 리스트에 딕셔너리로 담기
                             blog_data.append({
                                 "날짜": formatted_date,
                                 "채널": "네이버 블로그",
-                                "링크": item.get("link", "") # 완전한 중복 제거를 위해 링크 데이터 활용
+                                "링크": item.get("link", "")
                             })
-                else:
-                    # 하나의 정렬 타입이 실패하더라도 다른 쪽 수집을 위해 로그만 남기고 패스합니다.
-                    pass
             except Exception as e:
                 pass
 
         if not blog_data:
             return pd.DataFrame()
             
-        # 1. 수집된 데이터를 판다스 프레임으로 변환
         df = pd.DataFrame(blog_data)
+        df = df.drop_duplicates(subset=["LINK"])
         
-        # 2. 최신순과 유사도순에서 겹친 동일 글(링크 기준) 과감하게 제거
-        df = df.drop_duplicates(subset=["링크"])
-        
-        # 3. 날짜 필터링 (최근 일주일 범위 내 데이터만 남기기)
         df['날짜'] = pd.to_datetime(df['날짜'])
         today = pd.Timestamp.now().normalize()
         seven_days_ago = today - pd.Timedelta(days=6)
@@ -830,19 +821,13 @@ with tabs[6]:
         if df.empty:
             return pd.DataFrame()
             
-        # 4. 날짜별로 묶어서 언급량 개수 세기
         df_grouped = df.groupby(["날짜", "채널"]).size().reset_index(name="언급량")
         df_grouped['날짜'] = df_grouped['날짜'].dt.strftime('%Y-%m-%d')
         
         return df_grouped
-            else:
-                st.error(f"🚨 네이버 API 호출 실패 (에러 코드: {res.status_code})")
-                return pd.DataFrame()
-        except Exception as e:
-            st.error(f"⚠️ 네이버 블로그 데이터 가공 중 에러 발생: {e}")
-            return pd.DataFrame()
 
-    # 실행 버튼
+
+    # 💡 들여쓰기 정렬 완료: 실행 버튼 블록 (위의 함수와 시작 선을 동일하게 맞춤)
     if st.button("SNS 언급량 데이터 동기화 🔄", key="btn_sns_monitor"):
         import pandas as pd
         import plotly.express as px
@@ -858,12 +843,8 @@ with tabs[6]:
         
         # [Step 2] 인스타그램 일주일 동기화 데이터 생성
         status.text("📸 인스타그램 일주일 트렌드 동기화 중...")
-        
-        # 기준 날짜 리스트 생성 (오늘부터 6일 전까지 총 7일)
         date_list = [(datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(6, -1, -1)]
         
-        # 💡 블로그 그래프와 비교해 볼 수 있도록 인스타그램도 일주일 일별 데이터로 빌드업합니다.
-        # (만약 실제 인스타 API가 있다면 이 구조로 append 되게 하시면 됩니다)
         insta_data = [
             {"날짜": date_list[0], "채널": "인스타그램", "언급량": 12},
             {"날짜": date_list[1], "채널": "인스타그램", "언급량": 8},
@@ -879,32 +860,27 @@ with tabs[6]:
         # [Step 3] 데이터 병합 및 빈 날짜 메우기
         status.text("📊 SNS 트렌드 7일 선그래프 생성 중...")
         
-        # 만약 네이버 블로그에 일주일 중 글이 없는 날이 있다면 0으로 채워주기 위한 마스터 프레임
         master_records = []
         for d in date_list:
             master_records.append({"날짜": d, "채널": "네이버 블로그", "언급량": 0})
         df_master_blog = pd.DataFrame(master_records)
         
         if not df_blog.empty:
-            # 수집된 데이터가 있으면 마스터와 병합하여 데이터 보완
             df_blog = pd.concat([df_blog, df_master_blog]).drop_duplicates(subset=['날짜', '채널'], keep='first')
         else:
             df_blog = df_master_blog
             
-        # 블로그 + 인스타 최종 결합
         df_total = pd.concat([df_blog, df_insta], ignore_index=True)
-        df_total = df_total.sort_values(by=["날짜", "채널"]) # 날짜 및 채널 정렬
+        df_total = df_total.sort_values(by=["날짜", "채널"])
         
-        # 시각화 출력
+        # [Step 4] 시각화 및 표 출력
         if not df_total.empty:
             st.markdown("### 📈 채널별 최신 언급량 트렌드 (최근 7일)")
             
-            # 💡 x축이 문자열 날짜('%Y-%m-%d')로 이쁘게 가도록 line 차트 생성
             fig = px.line(df_total, x="날짜", y="언급량", color="채널", markers=True,
-                          title=f"'{SNS_SEARCH_QUERY}' 일별 버즈량 추이 (최근 1주일)",
+                          title=f"Briefing: '{SNS_SEARCH_QUERY}' SNS 채널별 버즈량 추이",
                           labels={"언급량": "게시글 수 (건)", "날짜": "조회 일자"})
             
-            # x축 간격이 듬성듬성해지지 않도록 7일 날짜 강제 고정 팁
             fig.update_layout(xaxis=dict(type='category'))
             st.plotly_chart(fig, use_container_width=True)
             
@@ -915,6 +891,7 @@ with tabs[6]:
             status.text("✅ 일주일 트렌드 업데이트 완료!")
         else:
             progress.progress(100)
+            status.text("❌ 수집 데이터 없음")
             st.warning("⚠️ 표시할 SNS 데이터가 없습니다.")
 
 # ==========================================
