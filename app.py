@@ -373,6 +373,7 @@ with tabs[2]:
         from bs4 import BeautifulSoup
         import json
         import urllib.parse
+        import time
 
         # 1. 운용사별 검색어 설정
         BRANDS = {
@@ -406,87 +407,103 @@ with tabs[2]:
             
             progress.progress(int((idx + 1) * 15))
 
-        # 3. 사용 가능한 Gemini 모델 자동 탐색
-        status.text("📡 AI 모델 연결 중...")
-        try:
-            list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
-            list_res = requests.get(list_url).json()
-            available_models = [m['name'] for m in list_res.get('models', []) 
-                                if 'generateContent' in m.get('supportedGenerationMethods', [])]
+        # 3. [개선] 불안정한 전체 조회 대신 최신 스마트 모델(gemini-1.5-flash) 다이렉트 지정
+        selected_model = "models/gemini-1.5-flash"
+        status.text("🤖 AI 요약 리포트 생성 중...")
+        gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={GEMINI_KEY}"
+        
+        news_context = ""
+        for brand, news in all_brand_news.items():
+            news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
             
-            selected_model = None
-            for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-1.5-pro"]:
-                if candidate in available_models:
-                    selected_model = candidate
+        prompt = f"""
+        다음 운용사별 뉴스 데이터를 기반으로, 각 브랜드의 최근 핵심 이슈를 2개씩 요약해줘.
+        반드시 아래 JSON 형식으로만 응답해. 중간에 다른 인사말이나 설명은 절대 쓰지 마.
+        {{
+            "KODEX": ["이슈1", "이슈2"],
+            "TIGER": ["이슈1", "이슈2"],
+            "RISE": ["이슈1", "이슈2"],
+            "ACE": ["이슈1", "이슈2"]
+        }}
+        데이터:
+        {news_context}
+        """
+        
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        
+        # 4. 💡 [503 및 429 에러 방어 자동 재시도 루프 엔진]
+        max_retries = 3
+        success = False
+        res = None
+        
+        for attempt in range(max_retries):
+            try:
+                res = requests.post(
+                    gen_url, 
+                    json=payload,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=45
+                )
+                
+                # 503(서버 과부하)이나 429(요청 초과)가 아니면 정상 탈출
+                if res.status_code not in [503, 429]:
+                    success = True
                     break
-            
-            if not selected_model and available_models:
-                selected_model = available_models[0]
-            
-            if not selected_model:
-                st.error("❌ 사용 가능한 AI 모델을 찾을 수 없습니다.")
-            else:
-                # 4. 선택된 AI 모델로 데이터 분석
-                status.text("🤖 AI 요약 리포트 생성 중...")
-                gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={GEMINI_KEY}"
                 
-                news_context = ""
-                for brand, news in all_brand_news.items():
-                    news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
-                    
-                prompt = f"""
-                다음 운용사별 뉴스 데이터를 기반으로, 각 브랜드의 최근 핵심 이슈를 2개씩 요약해줘.
-                반드시 아래 JSON 형식으로만 응답해.
-                {{
-                    "KODEX": ["이슈1", "이슈2"],
-                    "TIGER": ["이슈1", "이슈2"],
-                    "RISE": ["이슈1", "이슈2"],
-                    "ACE": ["이슈1", "이슈2"]
-                }}
-                데이터:
-                {news_context}
-                """
+                # 에러 감지 시 3초 쉬었다가 다시 찌르기
+                status.text(f"⏳ 구글 서버 과부하(503) 감지... {attempt + 1}차 재시도 중입니다.")
+                time.sleep(3)
                 
-                payload = {"contents": [{"parts": [{"text": prompt}]}]}
-                res = requests.post(gen_url, json=payload)
+            except requests.exceptions.RequestException:
+                time.sleep(3)
+        
+        # 5. 최종 결과 분석 및 화면 레이아웃 출력
+        if success and res and res.status_code == 200:
+            try:
+                raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
+                clean_res = raw_res.replace("```json", "").replace("```", "").strip()
+                summary_data = json.loads(clean_res)
                 
-                if res.status_code == 200:
-                    raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
-                    # [수정된 부분] 따옴표와 괄호를 정확히 닫았습니다.
-                    clean_res = raw_res.replace("```json", "").replace("```", "").strip()
-                    summary_data = json.loads(clean_res)
-                    
-                    progress.progress(100)
-                    status.text("✅ 모든 데이터 업데이트 완료!")
-                    
-                    # 5. 화면 레이아웃 출력
-                    st.markdown("---")
-                    col_a, col_b, col_c, col_d = st.columns(4)
-                    
-                    with col_a:
-                        st.success("**KODEX (삼성)**")
-                        for issue in summary_data.get("KODEX", ["데이터 없음"]):
-                            st.write(f"- {issue}")
-                            
-                    with col_b:
-                        st.warning("**TIGER (미래에셋)**")
-                        for issue in summary_data.get("TIGER", ["데이터 없음"]):
-                            st.write(f"- {issue}")
-                            
-                    with col_c:
-                        st.info("**RISE (KB)**")
-                        for issue in summary_data.get("RISE", ["데이터 없음"]):
-                            st.write(f"- {issue}")
-                            
-                    with col_d:
-                        st.error("**ACE (한국투자)**")
-                        for issue in summary_data.get("ACE", ["데이터 없음"]):
-                            st.write(f"- {issue}")
-                else:
-                    st.error(f"AI 분석 실패: {res.status_code}")
-        except Exception as e:
-            st.error(f"오류 발생: {e}")
-
+                progress.progress(100)
+                status.text("✅ 모든 데이터 업데이트 완료!")
+                
+                st.markdown("---")
+                col_a, col_b, col_c, col_d = st.columns(4)
+                
+                with col_a:
+                    st.success("**KODEX (삼성)**")
+                    for issue in summary_data.get("KODEX", ["데이터 없음"]):
+                        st.write(f"- {issue}")
+                        
+                with col_b:
+                    st.warning("**TIGER (미래에셋)**")
+                    for issue in summary_data.get("TIGER", ["데이터 없음"]):
+                        st.write(f"- {issue}")
+                        
+                with col_c:
+                    st.info("**RISE (KB)**")
+                    for issue in summary_data.get("RISE", ["데이터 없음"]):
+                        st.write(f"- {issue}")
+                        
+                with col_d:
+                    st.error("**ACE (한국투자)**")
+                    for issue in summary_data.get("ACE", ["데이터 없음"]):
+                        st.write(f"- {issue}")
+            except Exception as parse_err:
+                st.error(f"🚨 JSON 파싱 오류 발생 (AI가 규격을 지키지 않음): {parse_err}")
+                st.text("AI 응답 원본:")
+                st.code(raw_res)
+                
+        elif res and res.status_code == 503:
+            progress.progress(100)
+            status.text("❌ 구글 서버 임시 마비")
+            st.error("🚨 현재 구글 Gemini 서버 트래픽이 폭발하여 응답이 일시적으로 제한되었습니다. 잠시 후 '운용사 실시간 이슈 분석 🔍' 버튼을 다시 눌러주세요.")
+        elif res and res.status_code == 429:
+            progress.progress(100)
+            status.text("❌ 호출 한도 초과")
+            st.error("🚨 무료 API 일일 제한 트래픽을 넘었습니다. 약 30초 후에 다시 실행해 주세요!")
+        else:
+            st.error(f"⚠️ 분석 실패 (Error {res.status_code if res else 'Unknown'})")
 # ==========================================
 # Tab 4: 투자자 & 순매수 데이터 (마케팅 실효성)
 # ==========================================
