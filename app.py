@@ -450,7 +450,7 @@ with tabs[2]:
         if not ai_success:
             summary_data = backup_display_data
             
-        # 5. 최종 대시보드 화면 출력 (AI 성공 여부와 상관없이 무조건 성공 레이아웃 출력)
+        # 5. 최종 대시보드 화면 출력 (4개 컬럼 바구니에 정확히 나누어 담기)
         progress.progress(100)
         if ai_success:
             status.text("✅ AI 이슈 분석 요약 완료!")
@@ -459,11 +459,32 @@ with tabs[2]:
             st.info("💡 구글 API 서버 트래픽 초과로 인해 '실시간 뉴스 동향 안전 모드'로 전환되어 최신 핵심 뉴스를 다이렉트로 출력합니다.")
             
         st.markdown("---")
+        
+        # 💡 화면을 4개 열로 정확하게 분할합니다.
         col_a, col_b, col_c, col_d = st.columns(4)
         
+        # 1. 첫 번째 칸: KODEX
         with col_a:
             st.success("**KODEX (삼성)**")
             for issue in summary_data.get("KODEX", ["데이터 없음"]):
+                st.write(f"- {issue}")
+                
+        # 2. 두 번째 칸: TIGER
+        with col_b:
+            st.warning("**TIGER (미래에셋)**")
+            for issue in summary_data.get("TIGER", ["데이터 없음"]):
+                st.write(f"- {issue}")
+                
+        # 3. 세 번째 칸: RISE
+        with col_c:
+            st.info("**RISE (KB)**")
+            for issue in summary_data.get("RISE", ["데이터 없음"]):
+                st.write(f"- {issue}")
+                
+        # 4. 네 번째 칸: ACE
+        with col_d:
+            st.error("**ACE (한국투자)**")
+            for issue in summary_data.get("ACE", ["데이터 없음"]):
                 st.write(f"- {issue}")
                 
 # ==========================================
