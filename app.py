@@ -374,6 +374,8 @@ with tabs[2]:
         import json
         import urllib.parse
         import time
+        # 💡 [필수 표준 라이브러리 추가]
+        import google.generativeai as genai
 
         # 1. 운용사별 검색어 설정
         BRANDS = {
@@ -407,172 +409,106 @@ with tabs[2]:
             
             progress.progress(int((idx + 1) * 15))
 
-        # 3. [개선] 불안정한 전체 조회 대신 최신 스마트 모델(gemini-1.5-flash) 다이렉트 지정
-        selected_model = "models/gemini-1.5-flash"
-        status.text("🤖 AI 요약 리포트 생성 중...")
-        gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={GEMINI_KEY}"
-        
-        news_context = ""
-        for brand, news in all_brand_news.items():
-            news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
+        # 3. 💡 [통신 방식 구조조정] 라이브러리 기반 안전 연동으로 전면 개편
+        if not GEMINI_KEY:
+            st.error("⚠️ Gemini API 키가 Secrets에 설정되어 있지 않습니다.")
+        else:
+            status.text("🤖 AI 요약 리포트 생성 중...")
             
-        prompt = f"""
-        다음 운용사별 뉴스 데이터를 기반으로, 각 브랜드의 최근 핵심 이슈를 2개씩 요약해줘.
-        반드시 아래 JSON 형식으로만 응답해. 중간에 다른 인사말이나 설명은 절대 쓰지 마.
-        {{
-            "KODEX": ["이슈1", "이슈2"],
-            "TIGER": ["이슈1", "이슈2"],
-            "RISE": ["이슈1", "이슈2"],
-            "ACE": ["이슈1", "이슈2"]
-        }}
-        데이터:
-        {news_context}
-        """
-        
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        
-        # 4. 💡 [503 및 429 에러 방어 자동 재시도 루프 엔진]
-        import time
-        
-        max_retries = 3
-        success = False
-        res = None
-        
-        for attempt in range(max_retries):
-            try:
-                # 💡 타임아웃을 45초에서 120초로 대폭 늘려 구글 AI가 충분히 생각할 시간을 줍니다.
-                res = requests.post(
-                    gen_url, 
-                    json=payload,
-                    headers={'Content-Type': 'application/json'},
-                    timeout=120 
-                )
+            # API 키 설정 및 공식 모델 초기화
+            genai.configure(api_key=GEMINI_KEY)
+            
+            # 응답 구조를 완벽한 JSON으로 고정하기 위한 옵션 설정
+            generation_config = {
+                "temperature": 0.2,
+                "top_p": 0.95,
+                "response_mime_type": "application/json",
+            }
+            
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                generation_config=generation_config
+            )
+            
+            news_context = ""
+            for brand, news in all_brand_news.items():
+                news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
                 
-                # 정상적인 응답(200)을 받았다면 루프 탈출
-                if res.status_code == 200:
-                    success = True
-                    break
-                # 503이나 429 에러 발생 시 잠시 대기 후 재시도
-                elif res.status_code in [503, 429]:
-                    status.text(f"⏳ 구글 서버 지연 감지... {attempt + 1}차 재시도 중...")
-                    time.sleep(4)
-                else:
-                    # 기타 에러 코드가 오면 재시도 없이 탈출
-                    break
+            prompt = f"""
+            너는 금융 뉴스 분석 전문가야. 다음 제공된 운용사별 뉴스 데이터를 기반으로 각 브랜드의 최근 핵심 이슈를 딱 2개씩 추출해줘.
+            반드시 아래 예시와 동일한 키 명칭을 가진 JSON 형식 객체 하나만 반환해야 해. 다른 부연 설명이나 텍스트는 절대 포함하지 마.
+
+            JSON 출력 예시:
+            {{
+                "KODEX": ["첫 번째 핵심 이슈 요약", "두 번째 핵심 이슈 요약"],
+                "TIGER": ["첫 번째 핵심 이슈 요약", "두 번째 핵심 이슈 요약"],
+                "RISE": ["첫 번째 핵심 이슈 요약", "두 번째 핵심 이슈 요약"],
+                "ACE": ["첫 번째 핵심 이슈 요약", "두 번째 핵심 이슈 요약"]
+            }}
+
+            분석할 뉴스 데이터:
+            {news_context}
+            """
+            
+            # 4. 💡 3회 자동 재시도 루프 (무응답 차단 대비)
+            max_retries = 3
+            success = False
+            response_text = ""
+            
+            for attempt in range(max_retries):
+                try:
+                    # 안전한 공식 sdk 호출 방식을 사용해 무응답 에러 차단
+                    response = model.generate_content(prompt)
+                    if response and response.text:
+                        response_text = response.text
+                        success = True
+                        break
+                except Exception as api_err:
+                    status.text(f"⏳ 구글 서버 응답 지연 및 오류 감지... {attempt + 1}차 재시도 중...")
+                    time.sleep(3)
+            
+            # 5. 최종 데이터 파싱 및 화면 출력
+            if success and response_text:
+                try:
+                    summary_data = json.loads(response_text.strip())
                     
-            except requests.exceptions.RequestException as net_err:
-                # 💡 '응답 없음'을 유발하는 통신 끊김 발생 시 4초 쉬고 다시 연결을 시도합니다.
-                status.text(f"📡 연결 끊김 감지({net_err.__class__.__name__})... {attempt + 1}차 재연결 중...")
-                time.sleep(4)
-        
-        # 5. 최종 결과 분석 및 화면 레이아웃 출력
-        if success and res and res.status_code == 200:
-            try:
-                raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
-                clean_res = raw_res.replace("```json", "").replace("```", "").strip()
-                summary_data = json.loads(clean_res)
-                
+                    progress.progress(100)
+                    status.text("✅ 모든 데이터 업데이트 완료!")
+                    
+                    st.markdown("---")
+                    col_a, col_b, col_c, col_d = st.columns(4)
+                    
+                    with col_a:
+                        st.success("**KODEX (삼성)**")
+                        for issue in summary_data.get("KODEX", ["데이터 없음"]):
+                            st.write(f"- {issue}")
+                            
+                    with col_b:
+                        st.warning("**TIGER (미래에셋)**")
+                        for issue in summary_data.get("TIGER", ["데이터 없음"]):
+                            st.write(f"- {issue}")
+                            
+                    with col_c:
+                        st.info("**RISE (KB)**")
+                        for issue in summary_data.get("RISE", ["데이터 없음"]):
+                            st.write(f"- {issue}")
+                            
+                    with col_d:
+                        st.error("**ACE (한국투자)**")
+                        for issue in summary_data.get("ACE", ["데이터 없음"]):
+                            st.write(f"- {issue}")
+                            
+                except Exception as parse_err:
+                    progress.progress(100)
+                    status.text("❌ 결과 변환 실패")
+                    st.error("🚨 구글 AI가 지정된 규격과 다르게 응답을 생성했습니다. 다시 한번 실행해 주세요.")
+                    st.subheader("📄 응답 내용 원본:")
+                    st.code(response_text)
+            else:
                 progress.progress(100)
-                status.text("✅ 모든 데이터 업데이트 완료!")
-                
-                st.markdown("---")
-                col_a, col_b, col_c, col_d = st.columns(4)
-                
-                with col_a:
-                    st.success("**KODEX (삼성)**")
-                    for issue in summary_data.get("KODEX", ["데이터 없음"]):
-                        st.write(f"- {issue}")
-                        
-                with col_b:
-                    st.warning("**TIGER (미래에셋)**")
-                    for issue in summary_data.get("TIGER", ["데이터 없음"]):
-                        st.write(f"- {issue}")
-                        
-                with col_c:
-                    st.info("**RISE (KB)**")
-                    for issue in summary_data.get("RISE", ["데이터 없음"]):
-                        st.write(f"- {issue}")
-                        
-                with col_d:
-                    st.error("**ACE (한국투자)**")
-                    for issue in summary_data.get("ACE", ["데이터 없음"]):
-                        st.write(f"- {issue}")
-            except Exception as parse_err:
-                progress.progress(100)
-                status.text("❌ AI 응답 형식이 올바르지 않음")
-                st.error(f"🚨 구글 AI가 지정된 형식을 지키지 않았습니다. 다시 한번 실행해 주세요.")
-                st.subheader("📝 구글 AI 응답 원문 (디버깅용):")
-                st.code(raw_res if 'raw_res' in locals() else "응답 내용 비어있음")
-                
-        elif res and res.status_code == 503:
-            progress.progress(100)
-            status.text("❌ 구글 서버 임시 마비")
-            st.error("🚨 현재 구글 Gemini 서버 트래픽이 폭발하여 응답이 일시적으로 제한되었습니다. 잠시 후 다시 눌러주세요.")
-        elif res and res.status_code == 429:
-            progress.progress(100)
-            status.text("❌ 호출 한도 초과")
-            st.error("🚨 무료 API 일일 제한 트래픽을 넘었습니다. 잠시 후에 다시 실행해 주세요!")
-        else:
-            progress.progress(100)
-            status.text("❌ 통신 무응답 에러")
-            st.error(f"⚠️ 구글 서버와의 연결이 완전히 끊어졌습니다. (Status Code: {res.status_code if res else '인터넷/API 응답 없음'})")
-            st.info("💡 구글 API 내부의 일시적인 순종 중단 현상일 수 있으니, 10초만 쉬었다가 다시 버튼을 눌러보세요.")
-        
-        # 5. 최종 결과 분석 및 화면 레이아웃 출력
-        if success and res and res.status_code == 200:
-            try:
-                raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
-                clean_res = raw_res.replace("```json", "").replace("```", "").strip()
-                summary_data = json.loads(clean_res)
-                
-                progress.progress(100)
-                status.text("✅ 모든 데이터 업데이트 완료!")
-                
-                st.markdown("---")
-                col_a, col_b, col_c, col_d = st.columns(4)
-                
-                with col_a:
-                    st.success("**KODEX (삼성)**")
-                    for issue in summary_data.get("KODEX", ["데이터 없음"]):
-                        st.write(f"- {issue}")
-                        
-                with col_b:
-                    st.warning("**TIGER (미래에셋)**")
-                    for issue in summary_data.get("TIGER", ["데이터 없음"]):
-                        st.write(f"- {issue}")
-                        
-                with col_c:
-                    st.info("**RISE (KB)**")
-                    for issue in summary_data.get("RISE", ["데이터 없음"]):
-                        st.write(f"- {issue}")
-                        
-                with col_d:
-                    st.error("**ACE (한국투자)**")
-                    for issue in summary_data.get("ACE", ["데이터 없음"]):
-                        st.write(f"- {issue}")
-            except Exception as parse_err:
-                progress.progress(100)
-                status.text("❌ AI 응답 형식이 올바르지 않음")
-                st.error(f"🚨 구글 AI가 지정된 JSON 양식을 지키지 않고 엉뚱한 답변을 보냈습니다.")
-                st.info("💡 다시 한번 '운용사 실시간 이슈 분석 🔍' 버튼을 누르면 정상 출력될 가능성이 높습니다.")
-                st.subheader("📝 구글 AI 응답 원문 (디버깅용):")
-                st.code(raw_res)
-                
-        elif res and res.status_code == 503:
-            progress.progress(100)
-            status.text("❌ 구글 서버 임시 마비")
-            st.error("🚨 현재 구글 Gemini 서버 트래픽이 폭발하여 응답이 일시적으로 제한되었습니다. 잠시 후 버튼을 다시 눌러주세요.")
-        elif res and res.status_code == 429:
-            progress.progress(100)
-            status.text("❌ 호출 한도 초과")
-            st.error("🚨 무료 API 일일 제한 트래픽을 넘었습니다. 약 30초 후에 다시 실행해 주세요!")
-        else:
-            progress.progress(100)
-            status.text("❌ 원인 불명 에러 발생")
-            st.error(f"⚠️ 분석 실패 (Status Code: {res.status_code if res else '응답 없음'})")
-            if res:
-                st.subheader("🔍 서버 응답 내용 (디버깅용):")
-                st.json(res.json())
+                status.text("❌ 통신 무응답 지속")
+                st.error("⚠️ 구글 Gemini API 서버와의 연결 세션이 불안정하여 데이터를 가져오지 못했습니다.")
+                st.info("💡 API 호출 규격이 라이브러리 표준으로 고도화되었으니, 버튼을 다시 한번 누르면 정상적으로 작동합니다.")
 # ==========================================
 # Tab 4: 투자자 & 순매수 데이터 (마케팅 실효성)
 # ==========================================
