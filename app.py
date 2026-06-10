@@ -490,20 +490,28 @@ with tabs[2]:
                     for issue in summary_data.get("ACE", ["데이터 없음"]):
                         st.write(f"- {issue}")
             except Exception as parse_err:
-                st.error(f"🚨 JSON 파싱 오류 발생 (AI가 규격을 지키지 않음): {parse_err}")
-                st.text("AI 응답 원본:")
+                progress.progress(100)
+                status.text("❌ AI 응답 형식이 올바르지 않음")
+                st.error(f"🚨 구글 AI가 지정된 JSON 양식을 지키지 않고 엉뚱한 답변을 보냈습니다.")
+                st.info("💡 다시 한번 '운용사 실시간 이슈 분석 🔍' 버튼을 누르면 정상 출력될 가능성이 높습니다.")
+                st.subheader("📝 구글 AI 응답 원문 (디버깅용):")
                 st.code(raw_res)
                 
         elif res and res.status_code == 503:
             progress.progress(100)
             status.text("❌ 구글 서버 임시 마비")
-            st.error("🚨 현재 구글 Gemini 서버 트래픽이 폭발하여 응답이 일시적으로 제한되었습니다. 잠시 후 '운용사 실시간 이슈 분석 🔍' 버튼을 다시 눌러주세요.")
+            st.error("🚨 현재 구글 Gemini 서버 트래픽이 폭발하여 응답이 일시적으로 제한되었습니다. 잠시 후 버튼을 다시 눌러주세요.")
         elif res and res.status_code == 429:
             progress.progress(100)
             status.text("❌ 호출 한도 초과")
             st.error("🚨 무료 API 일일 제한 트래픽을 넘었습니다. 약 30초 후에 다시 실행해 주세요!")
         else:
-            st.error(f"⚠️ 분석 실패 (Error {res.status_code if res else 'Unknown'})")
+            progress.progress(100)
+            status.text("❌ 원인 불명 에러 발생")
+            st.error(f"⚠️ 분석 실패 (Status Code: {res.status_code if res else '응답 없음'})")
+            if res:
+                st.subheader("🔍 서버 응답 내용 (디버깅용):")
+                st.json(res.json())
 # ==========================================
 # Tab 4: 투자자 & 순매수 데이터 (마케팅 실효성)
 # ==========================================
