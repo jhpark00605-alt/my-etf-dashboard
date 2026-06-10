@@ -432,30 +432,91 @@ with tabs[2]:
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
         # 4. 💡 [503 및 429 에러 방어 자동 재시도 루프 엔진]
+        import time
+        
         max_retries = 3
         success = False
         res = None
         
         for attempt in range(max_retries):
             try:
+                # 💡 타임아웃을 45초에서 120초로 대폭 늘려 구글 AI가 충분히 생각할 시간을 줍니다.
                 res = requests.post(
                     gen_url, 
                     json=payload,
                     headers={'Content-Type': 'application/json'},
-                    timeout=45
+                    timeout=120 
                 )
                 
-                # 503(서버 과부하)이나 429(요청 초과)가 아니면 정상 탈출
-                if res.status_code not in [503, 429]:
+                # 정상적인 응답(200)을 받았다면 루프 탈출
+                if res.status_code == 200:
                     success = True
                     break
+                # 503이나 429 에러 발생 시 잠시 대기 후 재시도
+                elif res.status_code in [503, 429]:
+                    status.text(f"⏳ 구글 서버 지연 감지... {attempt + 1}차 재시도 중...")
+                    time.sleep(4)
+                else:
+                    # 기타 에러 코드가 오면 재시도 없이 탈출
+                    break
+                    
+            except requests.exceptions.RequestException as net_err:
+                # 💡 '응답 없음'을 유발하는 통신 끊김 발생 시 4초 쉬고 다시 연결을 시도합니다.
+                status.text(f"📡 연결 끊김 감지({net_err.__class__.__name__})... {attempt + 1}차 재연결 중...")
+                time.sleep(4)
+        
+        # 5. 최종 결과 분석 및 화면 레이아웃 출력
+        if success and res and res.status_code == 200:
+            try:
+                raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
+                clean_res = raw_res.replace("```json", "").replace("```", "").strip()
+                summary_data = json.loads(clean_res)
                 
-                # 에러 감지 시 3초 쉬었다가 다시 찌르기
-                status.text(f"⏳ 구글 서버 과부하(503) 감지... {attempt + 1}차 재시도 중입니다.")
-                time.sleep(3)
+                progress.progress(100)
+                status.text("✅ 모든 데이터 업데이트 완료!")
                 
-            except requests.exceptions.RequestException:
-                time.sleep(3)
+                st.markdown("---")
+                col_a, col_b, col_c, col_d = st.columns(4)
+                
+                with col_a:
+                    st.success("**KODEX (삼성)**")
+                    for issue in summary_data.get("KODEX", ["데이터 없음"]):
+                        st.write(f"- {issue}")
+                        
+                with col_b:
+                    st.warning("**TIGER (미래에셋)**")
+                    for issue in summary_data.get("TIGER", ["데이터 없음"]):
+                        st.write(f"- {issue}")
+                        
+                with col_c:
+                    st.info("**RISE (KB)**")
+                    for issue in summary_data.get("RISE", ["데이터 없음"]):
+                        st.write(f"- {issue}")
+                        
+                with col_d:
+                    st.error("**ACE (한국투자)**")
+                    for issue in summary_data.get("ACE", ["데이터 없음"]):
+                        st.write(f"- {issue}")
+            except Exception as parse_err:
+                progress.progress(100)
+                status.text("❌ AI 응답 형식이 올바르지 않음")
+                st.error(f"🚨 구글 AI가 지정된 형식을 지키지 않았습니다. 다시 한번 실행해 주세요.")
+                st.subheader("📝 구글 AI 응답 원문 (디버깅용):")
+                st.code(raw_res if 'raw_res' in locals() else "응답 내용 비어있음")
+                
+        elif res and res.status_code == 503:
+            progress.progress(100)
+            status.text("❌ 구글 서버 임시 마비")
+            st.error("🚨 현재 구글 Gemini 서버 트래픽이 폭발하여 응답이 일시적으로 제한되었습니다. 잠시 후 다시 눌러주세요.")
+        elif res and res.status_code == 429:
+            progress.progress(100)
+            status.text("❌ 호출 한도 초과")
+            st.error("🚨 무료 API 일일 제한 트래픽을 넘었습니다. 잠시 후에 다시 실행해 주세요!")
+        else:
+            progress.progress(100)
+            status.text("❌ 통신 무응답 에러")
+            st.error(f"⚠️ 구글 서버와의 연결이 완전히 끊어졌습니다. (Status Code: {res.status_code if res else '인터넷/API 응답 없음'})")
+            st.info("💡 구글 API 내부의 일시적인 순종 중단 현상일 수 있으니, 10초만 쉬었다가 다시 버튼을 눌러보세요.")
         
         # 5. 최종 결과 분석 및 화면 레이아웃 출력
         if success and res and res.status_code == 200:
