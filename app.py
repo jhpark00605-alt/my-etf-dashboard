@@ -305,25 +305,58 @@ with tabs[1]:
                         {all_text}
                         """
                         
+                        # 💡 [503 에러 완벽 방어 엔진] 
+                        # 구글 서버가 High Demand(503)를 뱉으면 자동으로 잠시 쉬었다가 재시도합니다.
+                        import time
+                        
                         payload = {
                             "contents": [{"parts": [{"text": prompt}]}]
                         }
                         
-                        res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload))
+                        max_retries = 3  # 최대 3번까지 다시 시도
+                        success = False
+                        res = None
                         
-                        if res.status_code == 200:
+                        for attempt in range(max_retries):
+                            try:
+                                res = requests.post(
+                                    gen_url, 
+                                    headers={'Content-Type': 'application/json'}, 
+                                    data=json.dumps(payload),
+                                    timeout=60 # 무한 대기 방지 타임아웃
+                                )
+                                
+                                # 503(서버 과부하)이나 429(너무 많은 요청)가 아니면 루프 탈출
+                                if res.status_code not in [503, 429]:
+                                    success = True
+                                    break
+                                
+                                # 503 에러 발생 시 대기 후 재시도
+                                status.text(f"⏳ 구글 서버 과부하(503) 감지... {attempt + 1}차 재시도 중입니다.")
+                                time.sleep(3) # 3초 쉬고 다시 찌르기
+                                
+                            except requests.exceptions.RequestException:
+                                time.sleep(3)
+                        
+                        # 최종 결과 처리
+                        if success and res and res.status_code == 200:
                             analysis = res.json()['candidates'][0]['content']['parts'][0]['text']
                             progress.progress(100)
                             status.text("✅ 분석 완료!")
                             st.markdown("---")
                             st.markdown(analysis)
-                        elif res.status_code == 429:
+                        elif res and res.status_code == 503:
+                            progress.progress(100)
+                            status.text("❌ 구글 서버 마비")
+                            st.error("🚨 현재 구글 Gemini 서버의 일시적인 전 세계 트래픽 폭증으로 응답이 불가능합니다. 잠시 후 '유튜브 트렌드 분석 실행 🚀' 버튼을 다시 눌러주세요.")
+                        elif res and res.status_code == 429:
                             progress.progress(100)
                             status.text("❌ 사용량 제한 초과")
                             st.error("🚨 구글 AI 호출량이 일시적으로 초과되었습니다. 약 20초만 기다렸다가 다시 버튼을 클릭해 주세요!")
                         else:
-                            st.error(f"⚠️ 분석 실패 (Error {res.status_code})")
-                            st.json(res.json())
+                            st.error(f"⚠️ 분석 실패 (Error {res.status_code if res else 'Unknown'})")
+                            if res:
+                                st.json(res.json())
                             
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
