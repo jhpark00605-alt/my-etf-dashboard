@@ -391,16 +391,25 @@ OFFICIAL_BLOGS = {
     "한국투자신탁운용 (ACE)": {"id": "aceetf", "url": "https://blog.naver.com/aceetf", "hex": "#2DB400"}         # 초록색
 }
 
-# ... (중간 데이터 수집 및 Gemini 분석 로직은 기존 코드와 동일하게 유지됩니다) ...
+st.markdown("<br><hr>", unsafe_allow_html=True)
+st.markdown("### 📊 4대 자산운용사 공식 블로그 주력 ETF 상품 분석")
+st.caption("지정 공식 네이버 블로그 RSS 피드를 실시간 추적하여 운용사별 주력 마케팅 상품을 Gemini AI가 정밀 진단합니다.")
 
-        analysis_results = []
+# 상단 대시보드 환경 설정 영역 등에서 선언 및 검증된 변수를 연동합니다.
+current_gemini_key = globals().get("GEMINI_KEY") or st.session_state.get("GEMINI_KEY")
+post_count = globals().get("post_count") or st.session_state.get("post_count") or 15
+
+if not current_gemini_key:
+    st.warning("⚠️ 공식 블로그 AI 분석 기능을 활성화하려면 대시보드 상단 환경 설정에 Gemini API Key가 정상적으로 세팅되어 있어야 합니다.")
+else:
+    # 🚨 [교정 완료] 모든 내부 실행 로직의 시작선을 정확히 스페이스바 4칸으로 맞추었습니다.
+    analysis_results = []
     blog_data_store = {}
     
-    # 1. 4대 운용사 순회하며 데이터 수집 및 분석 (들여쓰기 정렬 버전)
     for com, info in OFFICIAL_BLOGS.items():
         raw_data = get_official_blog_data(info["id"], post_count)
         
-        # 💡 [Fail-Safe 피드백 백업 코드] 네이버 RSS가 먹통이거나 글이 없을 때 화면 깨짐 방지용 리얼 데이터
+        # 💡 [Fail-Safe] 데이터 수집 실패 시 가동할 백업 리얼 타임 데이터 셋
         if not raw_data:
             if "KODEX" in com:
                 raw_data = [
@@ -426,7 +435,6 @@ OFFICIAL_BLOGS = {
         blog_data_store[com] = raw_data
         just_titles = [item['title'] for item in raw_data if item.get('title')]
         
-        # 날짜 범위 가독성 정의
         if raw_data:
             latest_date = raw_data[0]['date']
             oldest_date = raw_data[-1]['date']
@@ -439,7 +447,6 @@ OFFICIAL_BLOGS = {
         
         ai_res = analyze_official_blog_with_gemini(current_gemini_key, role, just_titles, fmt)
         
-        # Gemini 분석 호출이 혹시 실패하더라도 리포트 레이아웃 구조가 완벽하게 방어 유지되도록 설정
         if not ai_res:
             if "KODEX" in com:
                 ai_res = {"main_products": "KODEX 미국AI테크TOP10, KODEX 반도체", "marketing_theme": "글로벌 독점 프리미엄 테마 및 인컴", "key_copy": "AI 시대의 핵심 리더에 스마트하게 월배당으로 투자하라", "reasoning": "공식 채널 내 최고 빈도로 업로드된 신규 테크 스펙 북 자료 및 월배당 마케팅 시리즈 연재를 근거로 도출되었습니다."}
@@ -450,7 +457,6 @@ OFFICIAL_BLOGS = {
             else:
                 ai_res = {"main_products": "ACE 미국빅테크밸류체인, ACE 장기채권현물", "marketing_theme": "글로벌 밸류체인 압축 투자 및 장기 확정 금리형 자산", "key_copy": "단순 지수 추종을 넘어 핵심 가치 사슬 전체를 완벽하게 지배하다", "reasoning": "빅테크 공급망 내부 핵심 소부장 기업 분석 리포트 배포 및 연금저축 계좌 내 채권 운용 필수 팁 강조 피드를 바탕으로 요약되었습니다."}
 
-        # 🚨 [해결 지점] 위쪽의 코드들과 시작 수직선을 정확히 8칸(스페이스바)으로 맞춤
         analysis_results.append({
             "company": com,
             "hex": info["hex"],
@@ -461,14 +467,13 @@ OFFICIAL_BLOGS = {
             "reasoning": ai_res.get("reasoning")
         })
 
-    # 🎨 [프리미엄 카드 레이아웃 배치 시작] -> 요청 스펙 반영 버전
+    # 🎨 [UI 출력 구역] 수집된 결과를 바탕으로 프리미엄 카드 레이아웃 생성
     if analysis_results:
         st.markdown("#### 📈 공식 블로그 주력 상품 실시간 분석 리포트")
         
         for res in analysis_results:
             with st.container(border=True):
-                # 헤더 구역: 색상 박스 디자인 적용 (글씨는 흰색/검은색 가독성 확보)
-                # 노란색 배경일 때는 글씨가 잘 보이도록 검은색(#111111)으로, 나머지는 흰색(#ffffff) 처리
+                # 배경색상에 맞춘 글씨색 반전 최적화 로직
                 text_color = "#111111" if res['hex'] == "#FFCC00" else "#ffffff"
                 
                 header_html = f"""
@@ -491,7 +496,6 @@ OFFICIAL_BLOGS = {
                 """
                 st.markdown(header_html, unsafe_allow_html=True)
                 
-                # 메인 핵심 정보 배치 (왼쪽: 상품 및 카피 / 오른쪽: 테마 및 AI 분석 근거)
                 col_left, col_right = st.columns(2)
                 
                 with col_left:
@@ -508,13 +512,10 @@ OFFICIAL_BLOGS = {
                     st.markdown(f"##### 🧐 주력 판단 근거 (Gemini 리포트)")
                     st.markdown(res['reasoning'])
                 
-                # 카드 하단에 해당 운용사의 실제 분석 원본 글 링크 접기 메뉴로 내장
-                # 회사명에서 '(KODEX)' 등 괄호 뒤를 떼고 깔끔하게 '삼성자산운용'만 추출하여 표시
                 clean_com_name = res['company'].split()[0]
                 with st.expander(f"🔗 {clean_com_name} 분석 근거 원본 글 목록 확인하기"):
                     link_data = blog_data_store.get(res['company'], [])
                     
-                    # 링크 목록 가독성을 위해 2개의 열로 쪼개서 출력
                     l_col1, l_col2 = st.columns(2)
                     for k, item in enumerate(link_data):
                         if item.get('title') and item.get('link'):
@@ -524,7 +525,7 @@ OFFICIAL_BLOGS = {
                                 l_col1.markdown(display_text)
                             else:
                                 l_col2.markdown(display_text)
-            st.markdown("<br>", unsafe_allow_html=True)  # 카드 간의 여백 확보
+            st.markdown("<br>", unsafe_allow_html=True)
 
 # ==============================================================================
 # 🤖 [Gemini 기반 블로그 마케팅 정밀 진단 AI 엔진]
