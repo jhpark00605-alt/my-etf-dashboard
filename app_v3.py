@@ -429,6 +429,37 @@ def get_official_blog_data(blog_id, count):
     except:
         return []
 
+def analyze_official_blog_with_gemini(gemini_key, system_role, user_data, output_format):
+    """Gemini API를 활용하여 운용사별 주력 마케팅 상품을 구조화 JSON으로 추출"""
+    if not gemini_key:
+        return None
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
+        )
+        prompt = f"""
+        {system_role}
+        
+        [입력 데이터]
+        {str(user_data)}
+        
+        [작업 지시]
+        제공된 자산운용사 공식 블로그의 최신 글 제목들을 정밀 분석하여, 이 운용사가 현재 어떤 ETF 상품을 '가장 주력'으로 마케팅하고 있는지 밝혀내세요.
+        반드시 제시된 아래의 JSON 형식으로만 정확히 응답하고, 다른 설명문은 절대 포함하지 마세요.
+        
+        [출력 JSON 형식]
+        {output_format}
+        """
+        response = model.generate_content(prompt)
+        if response and response.text:
+            return json.loads(response.text.strip())
+    except:
+        return None
+    return None
+
 
 # ==============================================================================
 # 📊 [섹션] 4대 자산운용사 공식 블로그 주력 ETF 상품 분석 및 UI 출력
@@ -448,7 +479,6 @@ else:
     blog_data_store = {}
     
     for com, info in OFFICIAL_BLOGS.items():
-        # 🚨 [해결] 이제 파이썬이 상단에 정의된 get_official_blog_data 함수를 정확히 인지합니다.
         raw_data = get_official_blog_data(info["id"], post_count)
         
         # 💡 [Fail-Safe] 데이터 수집 실패 시 가동할 백업 리얼 타임 데이터 셋
@@ -568,6 +598,7 @@ else:
                             else:
                                 l_col2.markdown(display_text)
             st.markdown("<br>", unsafe_allow_html=True)
+            
 # ==============================================================================
 # [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할)
 # ==============================================================================
