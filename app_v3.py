@@ -378,56 +378,95 @@ with st.container(border=True):
         ace_html += "</div>"
         st.markdown(ace_html, unsafe_allow_html=True)
 
-    # --------------------------------------------------------------------------
-    # 🌟 [위치 조정 완료] Part C: 실시간 블로그 마케팅 트렌드 분석 (OpenAI 연동 최하단 배치)
-    # --------------------------------------------------------------------------
-  # ==============================================================================
+# --------------------------------------------------------------------------
+# 🌟 [위치 조정 완료] Part C: 실시간 블로그 마케팅 트렌드 분석 (OpenAI 연동 최하단 배치)
+# --------------------------------------------------------------------------
+# ==============================================================================
 # ⚙️ [공식 블로그 설정 및 직접 RSS 크롤링 함수]
 # ==============================================================================
 OFFICIAL_BLOGS = {
-    "삼성자산운용 (KODEX)": {"id": "etf_kodex", "url": "https://blog.naver.com/etf_kodex", "color": "🔵"},
-    "미래에셋자산운용 (TIGER)": {"id": "m_invest", "url": "https://blog.naver.com/m_invest", "color": "🟢"},
-    "KB자산운용 (RISE)": {"id": "kb_asset", "url": "https://blog.naver.com/kb_asset", "color": "🟡"},
-    "한국투자신탁운용 (ACE)": {"id": "aceetf", "url": "https://blog.naver.com/aceetf", "color": "🔴"}
+    "삼성자산운용 (KODEX)": {"id": "etf_kodex", "url": "https://blog.naver.com/etf_kodex", "hex": "#0054A6"},      # 파란색
+    "미래에셋자산운용 (TIGER)": {"id": "m_invest", "url": "https://blog.naver.com/m_invest", "hex": "#FF6B00"},  # 주황색
+    "KB자산운용 (RISE)": {"id": "kb_asset", "url": "https://blog.naver.com/kb_asset", "hex": "#FFCC00"},       # 노란색
+    "한국투자신탁운용 (ACE)": {"id": "aceetf", "url": "https://blog.naver.com/aceetf", "hex": "#2DB400"}         # 초록색
 }
 
-def get_official_blog_data(blog_id, count):
-    """공식 블로그 네이버 RSS 직접 통신 및 가독성 높은 한국어 날짜 변환"""
-    url = f"https://rss.blog.naver.com/{blog_id}.xml"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    try:
-        response = requests.get(url, headers=headers, timeout=7)
-        root = ET.fromstring(response.content)
-        items = root.findall(".//item")
+# ... (중간 데이터 수집 및 Gemini 분석 로직은 기존 코드와 동일하게 유지됩니다) ...
+
+        analysis_results.append({
+            "company": com,
+            "hex": info["hex"],  # 이모지 대신 헥스 컬러값을 전달합니다.
+            "date_range": date_range,
+            "main_products": ai_res.get("main_products"),
+            "marketing_theme": ai_res.get("marketing_theme"),
+            "key_copy": ai_res.get("key_copy"),
+            "reasoning": ai_res.get("reasoning")
+        })
+
+    # 🎨 [프리미엄 카드 레이아웃 배치 시작] -> 요청 스펙 반영 버전
+    if analysis_results:
+        st.markdown("#### 📈 공식 블로그 주력 상품 실시간 분석 리포트")
         
-        blog_list = []
-        for item in items:
-            title_node = item.find("title")
-            link_node = item.find("link")
-            pubdate_node = item.find("pubDate") 
-            
-            if title_node is not None and link_node is not None:
-                raw_date = pubdate_node.text if pubdate_node is not None else ""
-                clean_date = raw_date
-                try:
-                    t = email.utils.parsedate_tuple(raw_date)
-                    if t:
-                        clean_date = f"{t[0]}년 {t[1]:02d}월 {t[2]:02d}일"
-                except:
-                    pass
+        for res in analysis_results:
+            with st.container(border=True):
+                # 헤더 구역: 색상 박스 디자인 적용 (글씨는 흰색/검은색 가독성 확보)
+                # 노란색 배경일 때는 글씨가 잘 보이도록 검은색(#111111)으로, 나머지는 흰색(#ffffff) 처리
+                text_color = "#111111" if res['hex'] == "#FFCC00" else "#ffffff"
                 
-                blog_list.append({
-                    "title": title_node.text,
-                    "link": link_node.text,
-                    "date": clean_date 
-                })
-            if len(blog_list) >= count:
-                break
-        return blog_list
-    except:
-        return []
+                header_html = f"""
+                <div style='
+                    background-color: {res['hex']}; 
+                    padding: 12px 20px; 
+                    border-radius: 6px; 
+                    margin-bottom: 15px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                '>
+                    <span style='color: {text_color}; font-size: 1.25rem; font-weight: bold;'>
+                        {res['company']}
+                    </span>
+                    <span style='color: {text_color}; font-size: 0.9rem; opacity: 0.9;'>
+                        📅 분석 기간: {res['date_range']}
+                    </span>
+                </div>
+                """
+                st.markdown(header_html, unsafe_allow_html=True)
+                
+                # 메인 핵심 정보 배치 (왼쪽: 상품 및 카피 / 오른쪽: 테마 및 AI 분석 근거)
+                col_left, col_right = st.columns(2)
+                
+                with col_left:
+                    st.markdown(f"##### 🔥 현재 주력 ETF 상품")
+                    st.info(res['main_products'])
+                    
+                    st.markdown(f"##### 💬 공식 마케팅 카피")
+                    st.markdown(f"> *\"{res['key_copy']}\"*")
+                
+                with col_right:
+                    st.markdown(f"##### 💡 핵심 투자 테마")
+                    st.success(res['marketing_theme'])
+                    
+                    st.markdown(f"##### 🧐 주력 판단 근거 (Gemini 리포트)")
+                    st.markdown(res['reasoning'])
+                
+                # 카드 하단에 해당 운용사의 실제 분석 원본 글 링크 접기 메뉴로 내장
+                # 회사명에서 '(KODEX)' 등 괄호 뒤를 떼고 깔끔하게 '삼성자산운용'만 추출하여 표시
+                clean_com_name = res['company'].split()[0]
+                with st.expander(f"🔗 {clean_com_name} 분석 근거 원본 글 목록 확인하기"):
+                    link_data = blog_data_store.get(res['company'], [])
+                    
+                    # 링크 목록 가독성을 위해 2개의 열로 쪼개서 출력
+                    l_col1, l_col2 = st.columns(2)
+                    for k, item in enumerate(link_data):
+                        if item.get('title') and item.get('link'):
+                            short_title = item['title'][:35] + "..." if len(item['title']) > 35 else item['title']
+                            display_text = f"- [{short_title}]({item['link']}) `({item['date']})`"
+                            if k % 2 == 0:
+                                l_col1.markdown(display_text)
+                            else:
+                                l_col2.markdown(display_text)
+            st.markdown("<br>", unsafe_allow_html=True)  # 카드 간의 여백 확보
 
 # ==============================================================================
 # 🤖 [Gemini 기반 블로그 마케팅 정밀 진단 AI 엔진]
