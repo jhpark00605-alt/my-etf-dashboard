@@ -1115,12 +1115,10 @@ with st.container(border=True):
     st.subheader("📥 원클릭 PDF 리포트 발행")
     st.caption("아래 버튼을 누르면 대시보드의 실시간 분석 데이터와 Gemini 브리핑을 포함한 A4 규격의 PDF 보고서가 즉시 다운로드됩니다.")
     
-    # 1. PDF 생성을 위한 핵심 함수 정의
     def generate_pdf_report():
         from xhtml2pdf import pisa
         from io import BytesIO
         
-        # [데이터 수집] 대시보드 변수 매칭
         rising_theme = "반도체 / 빅테크 AI"
         falling_theme = "일부 원자재 및 고위험 레버리지 상품군 정체"
         trend_text = "투자자들은 안정적인 월배당 인컴을 확보하는 동시에 고성장 독점 테마로 자금을 이동시키는 바벨 전략을 취하고 있습니다."
@@ -1140,8 +1138,6 @@ with st.container(border=True):
             except:
                 pass
 
-        # 2. 🚨 [핵심 해결책] @import 구문과 src: url()을 활용해 나눔고딕 한글 폰트 실시간 주입
-        # xhtml2pdf 엔진이 이 주소를 통해 서버 단에서 한글 글꼴을 읽어 차트를 제외한 글자 유실을 원천 차단합니다.
         html_string = f"""
         <html>
         <head>
@@ -1222,7 +1218,6 @@ with st.container(border=True):
         </html>
         """
         
-        # 3. HTML을 PDF 바이너리 파일 객체로 즉시 빌드
         pdf_buffer = BytesIO()
         pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
         
@@ -1232,7 +1227,6 @@ with st.container(border=True):
         pdf_buffer.seek(0)
         return pdf_buffer.getvalue()
 
-    # 4. 다운로드 버튼 배치
     try:
         pdf_data = generate_pdf_report()
         if pdf_data:
@@ -1246,4 +1240,4 @@ with st.container(border=True):
         else:
             st.error("PDF 리포트 바이너리를 생성하는 중 오류가 발생했습니다.")
     except Exception as e:
-        st.warning(f"PDF 모듈 구동 중 에러 발생: {e}")
+        st.warning
