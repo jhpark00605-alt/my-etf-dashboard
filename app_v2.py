@@ -61,31 +61,20 @@ with col1:
                 st.warning("수집된 뉴스가 없습니다.")
                 status1.empty()
             else:
-                list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY_GEMINI}"
-                list_res = requests.get(list_url).json()
-                available_models = [m['name'] for m in list_res.get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', [])]
-                
-                selected_model = None
-                for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
-                    if candidate in available_models:
-                        selected_model = candidate
-                        break
-                if not selected_model and available_models:
-                    selected_model = available_models[0]
-                    
-                if not selected_model:
-                    st.error("❌ 사용 가능한 Gemini 모델을 찾을 수 없습니다.")
+                # API 키 체크
+                if not API_KEY_GEMINI:
+                    st.error("❌ Streamlit Secrets에 GEMINI_API_KEY가 설정되지 않았습니다.")
                     status1.empty()
                 else:
-                    gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={API_KEY_GEMINI}"
+                    # 💡 오류 원인 해결: 복잡한 모델 조회를 생략하고 가장 안정적인 1.5-flash로 직행합니다.
+                    gen_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY_GEMINI}"
+                    
                     prompt = f"다음 뉴스 제목들을 분석해서 가장 많이 언급된 핵심 키워드(테마) 6개를 뽑아줘. 각 키워드별 언급량 점수(100~500)를 계산해서 반드시 아래 JSON 형식으로만 응답해줘. 다른 설명은 하지 마. [\n  {{\"키워드\": \"반도체\", \"언급량\": 450}},\n  {{\"키워드\": \"AI\", \"언급량\": 380}}\n]\n뉴스 데이터:\n{all_titles_text}"
                     payload = {"contents": [{"parts": [{"text": prompt}]}]}
                     res = requests.post(gen_url, json=payload)
                     
                     if res.status_code == 200:
                         raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
-                        
-                        # [오류 원천 차단] 백틱을 쓰지 않고 안전하게 JSON 문자열만 파싱합니다.
                         clean_res = raw_res.replace("json", "").replace("`", "").strip()
                         
                         keyword_list = json.loads(clean_res)
@@ -99,7 +88,7 @@ with col1:
                             fig1 = px.bar(df_keywords, x='키워드', y='언급량', color='언급량', color_continuous_scale='Blues')
                             st.plotly_chart(fig1, use_container_width=True)
                     else:
-                        st.error(f"AI 분석 실패 (Error {res.status_code})")
+                        st.error(f"❌ AI 분석 실패 (Error {res.status_code}): API 키나 서버 상태를 확인하세요.")
                         status1.empty()
         except Exception as e:
             st.error(f"오류 발생: {e}")
