@@ -100,10 +100,11 @@ with sections[0]:
                     
                     if res.status_code == 200:
                         raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
-                        clean_res = raw_res.replace("```json", "").replace("
-```", "").strip()
-                        keyword_list = json.loads(clean_res)
                         
+                        # [안전장치] 백틱 기호 대신 문자와 공백 정제 방식으로 줄바꿈 깨짐 오류를 원천 차단합니다.
+                        clean_res = raw_res.replace("json", "").replace("`", "").strip()
+                        
+                        keyword_list = json.loads(clean_res)
                         df_keywords = pd.DataFrame(keyword_list).sort_values(by='언급량', ascending=False)
                         status.text("✅ 분석 완료!")
                         
