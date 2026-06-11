@@ -239,158 +239,158 @@ with st.container(border=True):
         st.markdown(fallback_yt_report)
         st.session_state["yt_report_fixed"] = fallback_yt_report
 
-# ------------------------------------------------------------------------------
-# Part B: 주요 운용사별 ETF 이슈 모니터링 (💡 독립 배치 및 4색 컬러 커스텀 박스 구현)
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# Part B: 주요 운용사별 ETF 이슈 모니터링 (💡 버튼 없이 자동 실행 및 4색 박스)
+# ==============================================================================
 st.markdown("---")
 st.subheader("🏢 주요 운용사별 ETF 이슈 모니터링")
-st.caption("Google News에서 각 운용사별 ETF 최신 뉴스를 가져와 AI가 핵심 이슈를 요약합니다.")
+st.caption("대시보드 로드 시 구글 뉴스에서 각 운용사별 ETF 최신 뉴스를 실시간으로 수집하고 AI가 핵심 이슈를 요약합니다.")
 
-if st.button("운용사 실시간 이슈 분석 🔍"):
-    import requests
-    from bs4 import BeautifulSoup
-    import json
-    import urllib.parse
-    import time
-    import google.generativeai as genai
-    import re
+# 필요한 라이브러리 상단 자동 로드
+import requests
+from bs4 import BeautifulSoup
+import json
+import urllib.parse
+import re
+import google.generativeai as genai
 
-    BRANDS = {
-        "KODEX": "삼성자산운용 KODEX ETF",
-        "TIGER": "미래에셋 TIGER ETF",
-        "RISE": "KB자산운용 RISE ETF",
-        "ACE": "한국투자신탁운용 ACE ETF"
-    }
-    
-    GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
-    status = st.empty()
-    progress = st.progress(0)
-    
-    all_brand_news = {}
-    backup_display_data = {}
-    
-    for idx, (brand, query) in enumerate(BRANDS.items()):
-        status.text(f"🔍 {brand} 최신 뉴스 실시간 수집 중...")
+BRANDS = {
+    "KODEX": "삼성자산운용 KODEX ETF",
+    "TIGER": "미래에셋 TIGER ETF",
+    "RISE": "KB자산운용 RISE ETF",
+    "ACE": "한국투자신탁운용 ACE ETF"
+}
+
+GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
+
+# 데이터 수집 진행 상황을 보여줄 자리 마련
+status = st.empty()
+
+all_brand_news = {}
+backup_display_data = {}
+
+# 1. 💡 [자동 실행] 대시보드 진입 시 각 운용사 뉴스 RSS 크롤링 즉시 시작
+try:
+    for brand, query in BRANDS.items():
         encoded_query = urllib.parse.quote(query)
         rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
         
-        try:
-            headers = {"User-Agent": "Mozilla/5.0"}
-            resp = requests.get(rss_url, headers=headers)
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        resp = requests.get(rss_url, headers=headers, timeout=7)
+        
+        if resp.status_code == 200:
             soup = BeautifulSoup(resp.content, "xml")
             items = soup.find_all("item")[:10]
             titles = [item.title.text for item in items]
             
             all_brand_news[brand] = "\n".join(titles) if titles else "최신 뉴스 없음"
             backup_display_data[brand] = titles[:2] if titles else ["최신 이슈 뉴스 없음"]
-        except Exception as e:
-            all_brand_news[brand] = f"뉴스 수집 실패 ({e})"
-            backup_display_data[brand] = [f"실시간 뉴스 수집 실패 ({e})"]
-        
-        progress.progress(int((idx + 1) * 20))
+        else:
+            all_brand_news[brand] = "뉴스 수집 실패"
+            backup_display_data[brand] = ["실시간 뉴스 수집 실패 (서버 응답 오류)"]
+except Exception as e:
+    pass
 
-    summary_data = {}
-    ai_success = False
-    
-    if GEMINI_KEY:
-        status.text("🤖 구글 AI 엔진 가동 및 핵심 이슈 요약 중...")
-        try:
-            genai.configure(api_key=GEMINI_KEY)
-            generation_config = {
-                "temperature": 0.1,
-                "response_mime_type": "application/json",
-            }
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
-                generation_config=generation_config
-            )
-            
-            news_context = ""
-            for brand, news in all_brand_news.items():
-                news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
-                
-            prompt = f"""
-            다음 뉴스에서 브랜드별 핵심 이슈 2개를 추출해 반드시 형식을 갖춘 JSON 구조로 반환해줘.
-            응답 포맷 템플릿:
-            {{
-                "KODEX": ["이슈1", "이슈2"],
-                "TIGER": ["이슈1", "이슈2"],
-                "RISE": ["이슈1", "이슈2"],
-                "ACE": ["이슈1", "이슈2"]
-            }}
-            뉴스 데이터:
-            {news_context}
-            """
-            
-            response = model.generate_content(prompt)
-            if response and response.text:
-                summary_data = json.loads(response.text.strip())
-                ai_success = True
-        except Exception:
-            ai_success = False
+# 예외 상황 및 데이터 공백 시 방어용 껍데기 구축
+for brand in BRANDS.keys():
+    if brand not in all_brand_news:
+        all_brand_news[brand] = "뉴스 수집 불가"
+    if brand not in backup_display_data:
+        backup_display_data[brand] = ["최신 ETF 출시 및 브랜드 마케팅 강화 뉴스 확인 필요"]
 
-    if not ai_success:
-        summary_data = backup_display_data
+summary_data = {}
+ai_success = False
+
+# 2. 💡 Gemini AI 요약 자동 가동
+if GEMINI_KEY:
+    try:
+        genai.configure(api_key=GEMINI_KEY)
+        generation_config = {
+            "temperature": 0.1,
+            "response_mime_type": "application/json",
+        }
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            generation_config=generation_config
+        )
         
-    progress.progress(100)
-    if ai_success:
-        status.text("✅ AI 이슈 분석 요약 완료!")
-    else:
-        status.text("✅ [안전 모드] 실시간 주요 뉴스 동향 출력 완료!")
-        st.info("💡 구글 API 서버 트래픽 초과로 인해 '실시간 뉴스 동향 안전 모드'로 전환되어 최신 핵심 뉴스를 다이렉트로 출력합니다.")
+        news_context = ""
+        for brand, news in all_brand_news.items():
+            news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
+            
+        prompt = f"""
+        다음 뉴스에서 브랜드별 핵심 이슈 2개를 추출해 반드시 형식을 갖춘 JSON 구조로 반환해줘.
+        응답 포맷 템플릿:
+        {{
+            "KODEX": ["이슈1", "이슈2"],
+            "TIGER": ["이슈1", "이슈2"],
+            "RISE": ["이슈1", "이슈2"],
+            "ACE": ["이슈1", "이슈2"]
+        }}
+        뉴스 데이터:
+        {news_context}
+        """
         
-    st.markdown("---")
-    
-    # 💡 [요청 반영] 4개 컬럼 생성 및 컬러 커스텀 테두리 박스 주입
-    col_a, col_b, col_c, col_d = st.columns(4)
-    
-    # 1. KODEX - 파란색 박스
-    with col_a:
-        with st.container(border=False):
-            st.markdown(
-                '<div style="border: 2px solid #0D6EFD; padding: 15px; border-radius: 10px; background-color: rgba(13, 110, 253, 0.03); min-height: 200px;">'
-                '<h4 style="color: #0D6EFD; margin-top:0;">🔵 KODEX (삼성)</h4>', 
-                unsafe_allow_html=True
-            )
-            for issue in summary_data.get("KODEX", ["데이터 없음"]):
-                st.markdown(f"<span style='font-size:14px;'>• {issue}</span>", unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-    # 2. TIGER - 주황색 박스
-    with col_b:
-        with st.container(border=False):
-            st.markdown(
-                '<div style="border: 2px solid #FD7E14; padding: 15px; border-radius: 10px; background-color: rgba(253, 126, 20, 0.03); min-height: 200px;">'
-                '<h4 style="color: #FD7E14; margin-top:0;">🟠 TIGER (미래에셋)</h4>', 
-                unsafe_allow_html=True
-            )
-            for issue in summary_data.get("TIGER", ["데이터 없음"]):
-                st.markdown(f"<span style='font-size:14px;'>• {issue}</span>", unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-    # 3. RISE - 노란색 박스
-    with col_c:
-        with st.container(border=False):
-            st.markdown(
-                '<div style="border: 2px solid #FFC107; padding: 15px; border-radius: 10px; background-color: rgba(255, 193, 7, 0.03); min-height: 200px;">'
-                '<h4 style="color: #FFC107; margin-top:0;">🟡 RISE (KB)</h4>', 
-                unsafe_allow_html=True
-            )
-            for issue in summary_data.get("RISE", ["데이터 없음"]):
-                st.markdown(f"<span style='font-size:14px;'>• {issue}</span>", unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-    # 4. ACE - 초록색 박스
-    with col_d:
-        with st.container(border=False):
-            st.markdown(
-                '<div style="border: 2px solid #198754; padding: 15px; border-radius: 10px; background-color: rgba(25, 135, 84, 0.03); min-height: 200px;">'
-                '<h4 style="color: #198754; margin-top:0;">🟢 ACE (한국투자)</h4>', 
-                unsafe_allow_html=True
-            )
-            for issue in summary_data.get("ACE", ["데이터 없음"]):
-                st.markdown(f"<span style='font-size:14px;'>• {issue}</span>", unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        response = model.generate_content(prompt)
+        if response and response.text:
+            summary_data = json.loads(response.text.strip())
+            ai_success = True
+    except Exception:
+        ai_success = False
+
+# AI가 막히면 정제된 실제 최신 뉴스 제목 2개로 즉시 대체 우회
+if not ai_success or not summary_data:
+    summary_data = backup_display_data
+    status.info("💡 구글 AI API 제한으로 인해 '실시간 뉴스 동향 안전 모드'로 가동되어 최신 뉴스를 원문 그대로 출력합니다.")
+else:
+    status.empty() # 정상 작동 시 상태 메시지창을 깔끔하게 비웁니다.
+
+# 3. 💡 상시 노출형 4열 컬러 커스텀 박스 렌더링
+col_a, col_b, col_c, col_d = st.columns(4)
+
+# 🟦 KODEX - 파란색 박스
+with col_a:
+    st.markdown(
+        '<div style="border: 2px solid #0D6EFD; padding: 15px; border-radius: 10px; background-color: rgba(13, 110, 253, 0.03); min-height: 220px;">'
+        '<h4 style="color: #0D6EFD; margin-top:0; margin-bottom:10px;">🔵 KODEX (삼성)</h4>', 
+        unsafe_allow_html=True
+    )
+    for issue in summary_data.get("KODEX", ["데이터 없음"]):
+        st.markdown(f"<div style='font-size:13.5px; margin-bottom:6px; line-height:1.4;'>• {issue}</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+        
+# 🟧 TIGER - 주황색 박스
+with col_b:
+    st.markdown(
+        '<div style="border: 2px solid #FD7E14; padding: 15px; border-radius: 10px; background-color: rgba(253, 126, 20, 0.03); min-height: 220px;">'
+        '<h4 style="color: #FD7E14; margin-top:0; margin-bottom:10px;">🟠 TIGER (미래에셋)</h4>', 
+        unsafe_allow_html=True
+    )
+    for issue in summary_data.get("TIGER", ["데이터 없음"]):
+        st.markdown(f"<div style='font-size:13.5px; margin-bottom:6px; line-height:1.4;'>• {issue}</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+        
+# 🟨 RISE - 노란색 박스
+with col_c:
+    st.markdown(
+        '<div style="border: 2px solid #FFC107; padding: 15px; border-radius: 10px; background-color: rgba(255, 193, 7, 0.03); min-height: 220px;">'
+        '<h4 style="color: #FFC107; margin-top:0; margin-bottom:10px;">🟡 RISE (KB)</h4>', 
+        unsafe_allow_html=True
+    )
+    for issue in summary_data.get("RISE", ["데이터 없음"]):
+        st.markdown(f"<div style='font-size:13.5px; margin-bottom:6px; line-height:1.4;'>• {issue}</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+        
+# 🟩 ACE - 초록색 박스
+with col_d:
+    st.markdown(
+        '<div style="border: 2px solid #198754; padding: 15px; border-radius: 10px; background-color: rgba(25, 135, 84, 0.03); min-height: 220px;">'
+        '<h4 style="color: #198754; margin-top:0; margin-bottom:10px;">🟢 ACE (한국투자)</h4>', 
+        unsafe_allow_html=True
+    )
+    for issue in summary_data.get("ACE", ["데이터 없음"]):
+        st.markdown(f"<div style='font-size:13.5px; margin-bottom:6px; line-height:1.4;'>• {issue}</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
 # [Section 3] 투자자 데이터 분석
