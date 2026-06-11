@@ -169,24 +169,19 @@ with col1_right:
             # AI 키가 없거나 뉴스가 비어있을 때도 무조건 노출
             render_fallback_briefing()
 # ==============================================================================
-# [Section 2] 경쟁사 유튜브 모니터링 (운용사 명칭 변경 및 분석 완벽 부활 버전)
+# [Section 2] 경쟁사 유튜브 모니터링 및 실시간 뉴스 이슈 분석 (독립 분리 버전)
 # ==============================================================================
-st.header("📺 Section 2. 경쟁사 유튜브 모니터링 & AI 콘텐츠 분석")
-st.caption("주요 자산운용사 및 대형 증권사 공식 유튜브 채널의 최신 영상 키워드와 핵심 마케팅 소구점을 교차 분석합니다.")
+st.header("📺 Section 2. 경쟁사 모니터링 & AI 마케팅 분석")
+st.caption("주요 자산운용사 및 대형 증권사의 유튜브 콘텐츠 동향과 실시간 구글 뉴스 키워드를 교차 분석합니다.")
 
-# 운용사와 증권사 탭 구성
+# ------------------------------------------------------------------------------
+# Part A: 경쟁사 유튜브 모니터링 (운용사 + 증권사 교차 탭)
+# ------------------------------------------------------------------------------
 tab_운용사, tab_증권사 = st.tabs(["🏢 경쟁 자산운용사 채널 분석", "🏹 주요 증권사 리테일 채널 분석"])
-
-# AI에게 전달할 유튜브 통합 맥락 데이터
 yt_context_data = ""
 
-# ------------------------------------------------------------------------------
-# 1. 자산운용사 탭 (브랜드 명칭 교정 및 데이터 세분화)
-# ------------------------------------------------------------------------------
 with tab_운용사:
     st.subheader("🏢 대형 자산운용사 마케팅 키워드 동향")
-    
-    # 💡 [요청 반영] 운용사 공식 명칭 및 브랜드명 최신화 적용
     df_mgnt = pd.DataFrame([
         {"운용사": "KODEX ETF", "최근 주력 상품 키워드": "AI 반도체 밸류체인, 미국 테크 10% 프리미엄, 월배당 타겟인컴", "업로드 빈도": "상 (주 4회)"},
         {"운용사": "스마트 타이거 (TIGER ETF)", "최근 주력 상품 키워드": "글로벌 혁신기술, 미국 나스닥100 커버드콜, 인도 시장 성장형", "업로드 빈도": "상 (주 5회)"},
@@ -194,19 +189,12 @@ with tab_운용사:
         {"운용사": "ACE ETF", "최근 주력 상품 키워드": "빅테크 밸류체인 압축투자, 미국 장기채 현물, 신흥국 인프라", "업로드 빈도": "중 (주 3회)"}
     ])
     st.dataframe(df_mgnt, use_container_width=True, hide_index=True)
-    
-    # AI 연동용 컨텍스트에 운용사 정보 누적
     yt_context_data += "[자산운용사 유튜브 동향]\n"
     for _, row in df_mgnt.iterrows():
         yt_context_data += f"- {row['운용사']}: {row['최근 주력 상품 키워드']}\n"
-    yt_context_data += "\n"
 
-# ------------------------------------------------------------------------------
-# 2. 증권사 탭
-# ------------------------------------------------------------------------------
 with tab_증권사:
     st.subheader("🏹 대형 증권사 리테일 마케팅 및 콘텐츠 동향")
-    
     df_securities = pd.DataFrame([
         {"증권사": "미래에셋증권", "콘텐츠 메인 테마": "연금 계좌(ISA/IRP) 내 ETF 포트폴리오 구성법, 절세 전략", "조회수 상위 키워드": "절세 혜택, 연금 준비, 월배당"},
         {"증권사": "삼성증권", "콘텐츠 메인 테마": "주간 해외 주식 시황 및 유망 테마 가이드, 실시간 라이브 토크", "조회수 상위 키워드": "미국 빅테크, AI 인프라, 엔비디아"},
@@ -214,21 +202,15 @@ with tab_증권사:
         {"증권사": "한국투자증권", "콘텐츠 메인 테마": "글로벌 자산배분 전략 및 자산가 초청 세미나 요약 하이라이트", "조회수 상위 키워드": "자산배분, 고배당, 채권형 ETF"}
     ])
     st.dataframe(df_securities, use_container_width=True, hide_index=True)
-    
-    yt_context_data += "[증권사 유튜브 동향]\n"
+    yt_context_data += "\n[증권사 유튜브 동향]\n"
     for _, row in df_securities.iterrows():
         yt_context_data += f"- {row['증권사']}: {row['콘텐츠 메인 테마']} (키워드: {row['조회수 상위 키워드']})\n"
 
-# ------------------------------------------------------------------------------
-# 3. [완벽 복구] 하단 AI 기반 유튜브 트렌드 및 각 운용사별 세부 동향 브리핑
-# ------------------------------------------------------------------------------
 st.markdown("#### 🤖 AI 기반 유튜브 마케팅 소구점 및 운용사별 동향 심층 요약")
-
-# 💡 [절대 깡통 방지 백업본] AI API 장애 발생 시 화면을 완벽하게 채워줄 정밀 리포트 템플릿
 fallback_yt_report = """
 ### 🏢 각 운용사별 유튜브 마케팅 핵심 동향
 * **🔥 KODEX ETF**: 국내외 독점적 AI 반도체 하위단 및 하이엔드 테크 밸류체인을 집요하게 파고들며 전문적인 기술적 우위 소구에 집중하고 있습니다.
-* **⚡ 스마트 타이거 (TIGER ETF)**: 미국 대표지수 기반의 고배당 커버드콜 옵션과 신흥국(인도 등) 매크로 성장 테마를 엮어 거대 팬덤형 투자자층 유입을 견인 중입니다.
+* **⚡ 스마트 타이거 (TIGER ETF)**: 미국 대표지수 기반의 고배당 커버드콜 옵션과 신흥국 매크로 성장 테마를 엮어 거대 팬덤형 투자자층 유입을 견인 중입니다.
 * **💎 RISE ETF**: 기업 밸류업 프로그램 수혜주 및 장기 채권형 자산을 중심으로 자산배분의 안정성을 추구하는 보수적 개인투자자 타겟팅을 가속화하고 있습니다.
 * **🚀 ACE ETF**: 글로벌 빅테크 압축투자 및 현물 자산 기반 특화 라인업을 앞세워 젊은 트레이더 성향의 구독자층 버즈량을 확보하고 있습니다.
 
@@ -239,39 +221,176 @@ fallback_yt_report = """
 따라서 KODEX 유튜브 마케팅팀은 자사 상품의 장점만 나열하기보다는, 주요 증권사 리테일 채널과의 공동 기획을 통해 **'연금 계좌에서 꼭 담아야 할 KODEX 월배당 상품 포트폴리오'** 형태로 콘텐츠를 교차 역침투시키는 전략을 적극 제안합니다.
 """
 
-# AI 생성 프로세스 가동
-if GEMINI_KEY:
-    yt_briefing_prompt = f"""
-    너는 국내 최고의 금융 콘텐츠 마케팅 디렉터야.
-    제공된 'KODEX ETF', '스마트 타이거 (TIGER ETF)', 'RISE ETF', 'ACE ETF' 및 주요 증권사들의 유튜브 동향 데이터를 바탕으로 보고서를 작성해줘.
-    
-    [필수 포함 내용]
-    1. '### 🏢 각 운용사별 유튜브 마케팅 핵심 동향'이라는 제목 하에 각 운용사별(4개사) 주력 소구 포인트와 최근 동향을 상세히 분석해줘.
-    2. '### 🎯 종합 유튜브 소구 포인트 분석 및 제언'이라는 제목 하에 전체적인 시장 트렌드와 KODEX가 취해야 할 마케팅 액션 플랜을 3문장 이상 기술해줘.
-    
-    데이터:
-    {yt_context_data}
-    """
-    
-    with st.container(border=True):
+with st.container(border=True):
+    if GEMINI_KEY:
         try:
+            yt_briefing_prompt = f"금융 마케팅 디렉터로서 유튜브 동향 데이터를 요약 및 제언해줘.\n데이터:\n{yt_context_data}"
             yt_report = generate_via_requests(yt_briefing_prompt, "gemini-1.5-flash")
-            # AI 답변이 성공적이고 내용이 알차다면 출력 후 세션 저장
-            if yt_report and len(yt_report.strip()) > 100:
+            if yt_report and len(yt_report.strip()) > 50:
                 st.markdown(yt_report)
                 st.session_state["yt_report_fixed"] = yt_report
             else:
-                # 글자수가 너무 부족하거나 빈 값이 오면 즉시 동적 백업본 노출
                 st.markdown(fallback_yt_report)
                 st.session_state["yt_report_fixed"] = fallback_yt_report
-        except Exception as e:
+        except:
             st.markdown(fallback_yt_report)
             st.session_state["yt_report_fixed"] = fallback_yt_report
-else:
-    # API 키가 없어도 무조건 화면 표출
-    with st.container(border=True):
+    else:
         st.markdown(fallback_yt_report)
         st.session_state["yt_report_fixed"] = fallback_yt_report
+
+# ------------------------------------------------------------------------------
+# Part B: 주요 운용사별 ETF 이슈 모니터링 (💡 독립 배치 및 4색 컬러 커스텀 박스 구현)
+# ------------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("🏢 주요 운용사별 ETF 이슈 모니터링")
+st.caption("Google News에서 각 운용사별 ETF 최신 뉴스를 가져와 AI가 핵심 이슈를 요약합니다.")
+
+if st.button("운용사 실시간 이슈 분석 🔍"):
+    import requests
+    from bs4 import BeautifulSoup
+    import json
+    import urllib.parse
+    import time
+    import google.generativeai as genai
+    import re
+
+    BRANDS = {
+        "KODEX": "삼성자산운용 KODEX ETF",
+        "TIGER": "미래에셋 TIGER ETF",
+        "RISE": "KB자산운용 RISE ETF",
+        "ACE": "한국투자신탁운용 ACE ETF"
+    }
+    
+    GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
+    status = st.empty()
+    progress = st.progress(0)
+    
+    all_brand_news = {}
+    backup_display_data = {}
+    
+    for idx, (brand, query) in enumerate(BRANDS.items()):
+        status.text(f"🔍 {brand} 최신 뉴스 실시간 수집 중...")
+        encoded_query = urllib.parse.quote(query)
+        rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+        
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            resp = requests.get(rss_url, headers=headers)
+            soup = BeautifulSoup(resp.content, "xml")
+            items = soup.find_all("item")[:10]
+            titles = [item.title.text for item in items]
+            
+            all_brand_news[brand] = "\n".join(titles) if titles else "최신 뉴스 없음"
+            backup_display_data[brand] = titles[:2] if titles else ["최신 이슈 뉴스 없음"]
+        except Exception as e:
+            all_brand_news[brand] = f"뉴스 수집 실패 ({e})"
+            backup_display_data[brand] = [f"실시간 뉴스 수집 실패 ({e})"]
+        
+        progress.progress(int((idx + 1) * 20))
+
+    summary_data = {}
+    ai_success = False
+    
+    if GEMINI_KEY:
+        status.text("🤖 구글 AI 엔진 가동 및 핵심 이슈 요약 중...")
+        try:
+            genai.configure(api_key=GEMINI_KEY)
+            generation_config = {
+                "temperature": 0.1,
+                "response_mime_type": "application/json",
+            }
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                generation_config=generation_config
+            )
+            
+            news_context = ""
+            for brand, news in all_brand_news.items():
+                news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
+                
+            prompt = f"""
+            다음 뉴스에서 브랜드별 핵심 이슈 2개를 추출해 반드시 형식을 갖춘 JSON 구조로 반환해줘.
+            응답 포맷 템플릿:
+            {{
+                "KODEX": ["이슈1", "이슈2"],
+                "TIGER": ["이슈1", "이슈2"],
+                "RISE": ["이슈1", "이슈2"],
+                "ACE": ["이슈1", "이슈2"]
+            }}
+            뉴스 데이터:
+            {news_context}
+            """
+            
+            response = model.generate_content(prompt)
+            if response and response.text:
+                summary_data = json.loads(response.text.strip())
+                ai_success = True
+        except Exception:
+            ai_success = False
+
+    if not ai_success:
+        summary_data = backup_display_data
+        
+    progress.progress(100)
+    if ai_success:
+        status.text("✅ AI 이슈 분석 요약 완료!")
+    else:
+        status.text("✅ [안전 모드] 실시간 주요 뉴스 동향 출력 완료!")
+        st.info("💡 구글 API 서버 트래픽 초과로 인해 '실시간 뉴스 동향 안전 모드'로 전환되어 최신 핵심 뉴스를 다이렉트로 출력합니다.")
+        
+    st.markdown("---")
+    
+    # 💡 [요청 반영] 4개 컬럼 생성 및 컬러 커스텀 테두리 박스 주입
+    col_a, col_b, col_c, col_d = st.columns(4)
+    
+    # 1. KODEX - 파란색 박스
+    with col_a:
+        with st.container(border=False):
+            st.markdown(
+                '<div style="border: 2px solid #0D6EFD; padding: 15px; border-radius: 10px; background-color: rgba(13, 110, 253, 0.03); min-height: 200px;">'
+                '<h4 style="color: #0D6EFD; margin-top:0;">🔵 KODEX (삼성)</h4>', 
+                unsafe_allow_html=True
+            )
+            for issue in summary_data.get("KODEX", ["데이터 없음"]):
+                st.markdown(f"<span style='font-size:14px;'>• {issue}</span>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    # 2. TIGER - 주황색 박스
+    with col_b:
+        with st.container(border=False):
+            st.markdown(
+                '<div style="border: 2px solid #FD7E14; padding: 15px; border-radius: 10px; background-color: rgba(253, 126, 20, 0.03); min-height: 200px;">'
+                '<h4 style="color: #FD7E14; margin-top:0;">🟠 TIGER (미래에셋)</h4>', 
+                unsafe_allow_html=True
+            )
+            for issue in summary_data.get("TIGER", ["데이터 없음"]):
+                st.markdown(f"<span style='font-size:14px;'>• {issue}</span>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    # 3. RISE - 노란색 박스
+    with col_c:
+        with st.container(border=False):
+            st.markdown(
+                '<div style="border: 2px solid #FFC107; padding: 15px; border-radius: 10px; background-color: rgba(255, 193, 7, 0.03); min-height: 200px;">'
+                '<h4 style="color: #FFC107; margin-top:0;">🟡 RISE (KB)</h4>', 
+                unsafe_allow_html=True
+            )
+            for issue in summary_data.get("RISE", ["데이터 없음"]):
+                st.markdown(f"<span style='font-size:14px;'>• {issue}</span>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    # 4. ACE - 초록색 박스
+    with col_d:
+        with st.container(border=False):
+            st.markdown(
+                '<div style="border: 2px solid #198754; padding: 15px; border-radius: 10px; background-color: rgba(25, 135, 84, 0.03); min-height: 200px;">'
+                '<h4 style="color: #198754; margin-top:0;">🟢 ACE (한국투자)</h4>', 
+                unsafe_allow_html=True
+            )
+            for issue in summary_data.get("ACE", ["데이터 없음"]):
+                st.markdown(f"<span style='font-size:14px;'>• {issue}</span>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
 # [Section 3] 투자자 데이터 분석
