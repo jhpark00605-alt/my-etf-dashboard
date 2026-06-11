@@ -399,13 +399,15 @@ else:
         "📢 3. 운용사 공식 블로그 추적"
     ])
 
-    # Tab 1: 전체 블로그 시장 트렌드 (자동 실행)
+    # --------------------------------------------------------------------------
+    # Tab 1: 전체 블로그 시장 트렌드
+    # --------------------------------------------------------------------------
     with blog_tab1:
         st.markdown("##### 🌐 전체 블로그 시장 ETF 트렌드 현황")
         raw_data = get_blog_data("국내 ETF 추천")
-        just_titles = [b['title'] for b in raw_data]
         
-        if just_titles:
+        if raw_data:  # 데이터가 잘 수집되었을 때
+            just_titles = [b['title'] for b in raw_data]
             role = "당신은 국내 금융투자 시장의 트렌드를 분석하는 커뮤니티 모니터링 전문가입니다."
             fmt = '{"overview": "전체 분위기 요약 (3줄 이내)", "keywords": ["키워드1", "키워드2", "키워드3"], "themes": "주요 투자 테마 및 이유"}'
             
@@ -415,9 +417,9 @@ else:
                 col1, col2 = st.columns([2, 1])
                 with col1:
                     st.markdown("**📝 AI 시장 현황 요약**")
-                    st.info(ai_res.get("overview"))
+                    st.info(ai_res.get("overview", "요약 데이터가 없습니다."))
                     st.markdown("**💡 주목받는 투자 테마**")
-                    st.success(ai_res.get("themes"))
+                    st.success(ai_res.get("themes", "테마 데이터가 없습니다."))
                 with col2:
                     st.markdown("**🔥 핵심 키워드**")
                     for kw in ai_res.get("keywords", []):
@@ -427,44 +429,54 @@ else:
                 st.markdown("🔗 **분석 근거 자료 (실제 네이버 블로그 출처)**")
                 for i, item in enumerate(raw_data):
                     st.markdown(f"{i+1}. [{item['title']}]({item['link']})")
+            else:
+                st.error("❌ 네이버 블로그 글은 가져왔으나, OpenAI가 분석에 실패했거나 올바른 JSON 형식을 반환하지 않았습니다.")
         else:
-            st.warning("실시간 블로그 데이터를 가져오지 못했습니다.")
+            st.warning("⚠️ 네이버 검색 서버에서 '국내 ETF 추천' 관련 블로그 글을 실시간으로 가져오지 못했습니다. 잠시 후 새로고침(R) 해주세요.")
 
-    # Tab 2: 4대 브랜드별 마케팅 키워드/상품명/테마 추출 (자동 실행)
+    # --------------------------------------------------------------------------
+    # Tab 2: 4대 브랜드별 마케팅 키워드/상품명/테마 추출
+    # --------------------------------------------------------------------------
     with blog_tab2:
         st.markdown("##### 🏢 4대 브랜드별 실시간 소비자 인식 및 마케팅 비교")
         brands = ["KODEX ETF", "TIGER ETF", "RISE ETF", "ACE ETF"]
         brand_results = {}
         brand_raw_links = {}
         
+        # 데이터 수집 진행 상황을 투명하게 알려주기 위해 진척도 간이 안내 추가
         for b in brands:
             raw_data = get_blog_data(b)
-            brand_raw_links[b] = raw_data
-            just_titles = [item['title'] for item in raw_data]
-            
-            if just_titles:
+            if raw_data:
+                brand_raw_links[b] = raw_data
+                just_titles = [item['title'] for item in raw_data]
+                
                 role = f"당신은 {b} 브랜드의 마케팅 평판을 분석하는 전략가입니다."
                 fmt = '{"product": "가장 많이 언급되는 구체적인 상품명 하나", "theme": "주요 투자 테마", "message": "블로그들이 전파하는 핵심 메시지"}'
                 
                 ai_res = analyze_blog_with_openai(current_openai_key, role, just_titles, fmt)
                 if ai_res:
                     brand_results[b] = ai_res
-        
+
         if brand_results:
             b_cols = st.columns(4)
             for idx, b in enumerate(brands):
                 with b_cols[idx]:
                     st.markdown(f"##### 📊 {b.split()[0]}")
                     res = brand_results.get(b, {})
-                    st.markdown(f"**📌 핵심 상품명**\n`{res.get('product')}`")
-                    st.markdown(f"**💡 투자 테마**\n{res.get('theme')}")
-                    st.markdown(f"**💬 핵심 메시지**\n*{res.get('message')}*")
+                    st.markdown(f"**📌 핵심 상품명**\n`{res.get('product', '분석 실패')}`")
+                    st.markdown(f"**💡 투자 테마**\n{res.get('theme', '분석 실패')}")
+                    st.markdown(f"**💬 핵심 메시지**\n*{res.get('message', '분석 실패')}*")
                     
-                    with st.expander("🔗 실제 블로그 근거 보기"):
-                        for item in brand_raw_links.get(b, []):
-                            st.markdown(f"-[{item['title'][:15]}...]({item['link']})")
+                    if b in brand_raw_links:
+                        with st.expander("🔗 실제 블로그 근거 보기"):
+                            for item in brand_raw_links.get(b, []):
+                                st.markdown(f"-[{item['title'][:15]}...]({item['link']})")
+        else:
+            st.warning("⚠️ 4대 브랜드에 대한 블로그 크롤링 데이터 또는 OpenAI 분석 결과가 존재하지 않습니다.")
 
-    # Tab 3: 운용사 공식 블로그 Push 상품 추적 (자동 실행)
+    # --------------------------------------------------------------------------
+    # Tab 3: 운용사 공식 블로그 Push 상품 추적
+    # --------------------------------------------------------------------------
     with blog_tab3:
         st.markdown("##### 📢 자산운용사 공식 블로그 마케팅 모니터링")
         companies = {
@@ -477,9 +489,9 @@ else:
         
         for com, brand in companies.items():
             raw_data = get_blog_data(keyword="", is_official=True, company_name=com)
-            just_titles = [item['title'] for item in raw_data]
-            
-            if just_titles:
+            if raw_data:
+                just_titles = [item['title'] for item in raw_data]
+                
                 role = f"당신은 {com} 공식 마케팅 분석가입니다."
                 fmt = '{"focused_product": "운용사가 밀고 있는 구체적인 ETF 상품명", "marketing_theme": "마케팅 중심 테마", "key_copy": "강조하는 핵심 캐치프레이즈나 논리"}'
                 
@@ -487,15 +499,17 @@ else:
                 if ai_res:
                     table_rows.append({
                         "운용사 (브랜드)": f"{com} ({brand})",
-                        "진짜 밀고 있는 상품": ai_res.get("focused_product"),
-                        "마케팅 테마": ai_res.get("marketing_theme"),
-                        "핵심 카피 (메시지)": ai_res.get("key_copy")
+                        "진짜 밀고 있는 상품": ai_res.get("focused_product", "분석 불가"),
+                        "마케팅 테마": ai_res.get("marketing_theme", "분석 불가"),
+                        "핵심 카피 (메시지)": ai_res.get("key_copy", "분석 불가")
                     })
         
         if table_rows:
             st.markdown("##### 📈 공식 블로그 Push 상품 실시간 분석 표")
             df = pd.DataFrame(table_rows)
             st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.warning("⚠️ 공식 블로그 검색 데이터 수집에 실패했거나 AI 분석 내용이 누락되었습니다.")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
