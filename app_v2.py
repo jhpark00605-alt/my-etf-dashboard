@@ -66,12 +66,20 @@ with col1:
                     st.error("❌ Streamlit Secrets에 GEMINI_API_KEY가 설정되지 않았습니다.")
                     status1.empty()
                 else:
-                    # 💡 404 에러 해결: requests 주소 호출 대신 공식 SDK 라이브러리를 사용합니다.
+                    # 💡 v1beta 404 에러 해결: 구글 공식 SDK의 가장 표준적이고 안전한 모델 선언 방식을 사용합니다.
                     genai.configure(api_key=API_KEY_GEMINI)
-                    model = genai.GenerativeModel(
-                        model_name="gemini-1.5-flash",
-                        generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
-                    )
+                    
+                    try:
+                        # 1차 시도: 가장 대중적인 gemini-1.5-flash 엔진 빌드
+                        model = genai.GenerativeModel(
+                            model_name="gemini-1.5-flash",
+                            generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
+                        )
+                    except:
+                        # 호환성 대비 2차 시도: 기본 gemini-pro 또는 범용 모델로 백업
+                        model = genai.GenerativeModel(
+                            model_name="gemini-pro"
+                        )
                     
                     prompt = f"다음 뉴스 제목들을 분석해서 가장 많이 언급된 핵심 키워드(테마) 6개를 뽑아줘. 각 키워드별 언급량 점수(100~500)를 계산해서 반드시 아래 JSON 형식으로만 응답해줘. 다른 설명은 하지 마. [\n  {{\"키워드\": \"반도체\", \"언급량\": 450}},\n  {{\"키워드\": \"AI\", \"언급량\": 380}}\n]\n뉴스 데이터:\n{all_titles_text}"
                     
