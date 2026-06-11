@@ -964,7 +964,7 @@ with st.container(border=True):
         except Exception as e:
             st.markdown(backup_news_report)
 
-    with col5_top_right:
+   with col5_top_right:
     st.subheader("📱 실시간 네이버 데이터랩 트렌드 (최근 한 달)")
     has_naver_api = False
     
@@ -1027,7 +1027,6 @@ with st.container(border=True):
             hovermode="x unified"
         )
         st.plotly_chart(fig_line, use_container_width=True)
-
 
 # ==============================================================================
 # [통합 인사이트 파트] (📦 하단 최우선 액션 플랜 컨테이너 자동 분할 적용)
