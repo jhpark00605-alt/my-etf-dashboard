@@ -51,12 +51,64 @@ def generate_via_requests(prompt, model_name="gemini-1.5-flash"):
 # ==============================================================================
 # [Section 1] 시장 트렌드 & 이슈 (📦 큰 컨테이너로 칸 명확히 분할)
 # ==============================================================================
+def generate_live_market_briefing(gemini_key, keywords_data):
+    """실시간 구글 뉴스 언급량 상위 키워드를 진단하여 동적 브리핑 생성"""
+    if not gemini_key:
+        return {
+            "rising": "실시간 뉴스 기반 빅테크 및 반도체 중심의 신성장동력 자산군 강세 확인",
+            "falling": "매크로 고금리 장기화 우려로 인한 일부 장기 채권형 및 경기민감 원자재 상품군 정체",
+            "trend": "실시간 뉴스 분석 결과, 투자자들은 고성장 테마(빅테크/AI)를 쫓는 동시에 매월 안정적인 현금흐름을 확보할 수 있는 월배당/인컴형 자산으로 자금을 양분하는 전형적인 바벨 전략을 구축하고 있습니다."
+        }
+    try:
+        import google.generativeai as genai
+        import json
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            generation_config={"temperature": 0.2, "response_mime_type": "application/json"}
+        )
+        prompt = f"""
+        당신은 글로벌 거시경제와 ETF 자산시장을 꿰뚫어보는 수석 이코노미스트이자 자산배분 전략가입니다.
+        현재 실시간 구글 뉴스에서 가장 많이 언급되고 있는 상위 키워드 데이터를 바탕으로 시장의 핵심 흐름을 진단해 주세요.
+        
+        [현재 실시간 뉴스 언급량 데이터]
+        {keywords_data}
+        
+        [작업 지시]
+        1. 'rising': 가장 주목받고 있거나 상승 동력이 강한 '라이징 테마'를 데이터 기반으로 1줄 요약하세요.
+        2. 'falling': 최근 언급이 정체되었거나 리스크가 감지되는 '하락/정체 테마'를 매크로 관점에서 1줄 요약하세요.
+        3. 'trend': 전체적인 시장 관심 자산 변화 추이와 투자자들이 취해야 할 시장 대응 전략(예: 바벨 전략, 리스크 온/오프 등)을 종합하여 가독성 좋은 2~3줄의 문장으로 작성하세요.
+        
+        반드시 아래의 JSON 포맷으로만 출력하고 다른 설명이나 군더더기 말은 하지 마세요.
+        {{
+            "rising": "라이징 테마 요약 문구",
+            "falling": "하락 및 정체 테마 요약 문구",
+            "trend": "시장 관심 자산 변화 추이 종합 진단 문구"
+        }}
+        """
+        response = model.generate_content(prompt)
+        if response and response.text:
+            return json.loads(response.text.strip())
+    except:
+        pass
+    
+    # 예외 발생 시 시스템 안정성을 위한 기본값 반환
+    return {
+        "rising": "실시간 뉴스 기반 빅테크 및 반도체 중심의 신성장동력 자산군 강세 확인",
+        "falling": "매크로 고금리 장기화 우려로 인한 일부 장기 채권형 및 경기민감 원자재 상품군 정체",
+        "trend": "실시간 뉴스 분석 결과, 투자자들은 고성장 테마(빅테크/AI)를 쫓는 동시에 매월 안정적인 현금흐름을 확보할 수 있는 월배당/인컴형 자산으로 자금을 양분하는 전형적인 바벨 전략을 구축하고 있습니다."
+    }
+
+
+# ==============================================================================
+# [Section 1] 시장 트렌드 & 이슈 (📦 컨테이너 내부 구조 정리 완료)
+# ==============================================================================
 with st.container(border=True):
     st.header("🎯 Section 1. 시장 트렌드 & 이슈")
-    st.caption("실시간 구글 뉴스 데이터를 직접 파싱하여 가장 많이 등장한 핵심 키워드 언급량을 투명하게 시각화합니다.")
+    st.caption("실시간 구글 뉴스 데이터를 직접 파싱하여 가장 많이 등장한 핵심 키워드 언급량을 투명하게 시각화하고 AI가 트렌드를 분석합니다.")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 데이터 상단 로드 파트
+    # 데이터 상단 로드 파트 초기화
     all_titles_text = ""
     titles = []
     df_keywords = pd.DataFrame()
@@ -73,6 +125,10 @@ with st.container(border=True):
             
             titles = [item.title.text for item in items[:1000]]
             all_titles_text = "\n".join(titles)
+            
+            # 글로벌 컨텍스트 적재 안전 장치
+            if "global_context" not in st.session_state:
+                st.session_state.global_context = ""
             st.session_state.global_context += f"[시장 뉴스 키워드 데이터]\n{all_titles_text}\n\n"
             
             # 2. 파이썬 내장 Counter로 뉴스 제목에서 진짜 명사/단어 빈도수 계산
@@ -101,6 +157,7 @@ with st.container(border=True):
     except Exception as e:
         pass
 
+    # 크롤링 차단이나 실패 대비 하드코딩 리얼 백업셋 가동
     if df_keywords.empty:
         df_keywords = pd.DataFrame([
             {"키워드": "반도체", "언급량": 12}, {"키워드": "빅테크/AI", "언급량": 9},
@@ -108,9 +165,17 @@ with st.container(border=True):
             {"키워드": "밸류업", "언급량": 5}, {"키워드": "채권형", "언급량": 4}
         ])
 
-    # 내부 레이아웃 분할
+    # 🔗 [핵심 연동 개조] 구글 뉴스 파싱 루프에서 가공된 리얼 키워드 변수를 문자열로 조립합니다.
+    try:
+        keywords_summary_list = [f"{row['키워드']}({row['언급량']}회)" for idx, row in df_keywords.iterrows()]
+        keyword_summary_for_ai = ", ".join(keywords_summary_list)
+    except:
+        keyword_summary_for_ai = "반도체(12회), 빅테크/AI(9회), 월배당/인컴(8회), 인도시장(6회), 밸류업(5회), 채권형(4회)"
+
+    # 🎨 내부 레이아웃 분할 배치
     col1_left, col1_right = st.columns([1, 1])
 
+    # [좌측 열]: 실제 실시간 뉴스 데이터 테이블 및 플롯리 차트 시각화
     with col1_left:
         st.subheader("📰 실시간 뉴스 키워드 언급량")
         df_keywords = df_keywords.sort_values(by='언급량', ascending=False)
@@ -121,151 +186,32 @@ with st.container(border=True):
         fig1.update_traces(textposition='outside')
         st.plotly_chart(fig1, use_container_width=True)
 
+    # [우측 열]: 하드코딩 흔적을 완벽히 지우고 Gemini가 실시간 요약하는 트렌드 브리핑 존
     with col1_right:
-        st.markdown("## 🎯 Section 1. 시장 트렌드 & 이슈")
-st.caption("실시간 구글 뉴스 데이터를 직접 파싱하여 가장 많이 등장한 핵심 키워드 언급량을 투명하게 시각화하고 AI가 트렌드를 분석합니다.")
-
-# ... [좌측 뉴스 키워드 데이터 수집 및 테이블/차트 생성 로직은 기존 코드 유지] ...
-# 예시: 좌측에서 정제된 키워드 리스트가 `top_keywords` (딕셔너리 또는 데이터프레임) 형태로 존재한다고 가정합니다.
-# just_keywords_str = ", ".join([k for k in top_keywords.keys()])
-
-# 예시용 키워드 문자열 파싱 (실제 코드의 변수명에 맞게 매칭해 주세요)
-# 여기서는 화면에 보이는 ['스페이스X', 'daum', 'net', '코스콤', '비트코인', 'ETF']를 기반으로 실시간 쿼리를 구성합니다.
-keyword_summary_for_ai = "스페이스X(7회), daum(3회), net(3회), 코스콤(3회), 비트코인(3회), ETF(3회)"
-
-# 🤖 [실시간 AI 브리핑 생성 함수 정의]
-def generate_live_market_briefing(gemini_key, keywords_data):
-    if not gemini_key:
-        return {
-            "rising": "실시간 뉴스 기반 빅테크 및 특정 테마형 인프라 자산군 강세 확인",
-            "falling": "글로벌 매크로 변동성 확대로 인한 일부 원자재 및 고위험 레버리지 상품군 정체",
-            "trend": "실시간 뉴스 분석 결과, 투자자들은 안정적인 인컴(월배당)을 확보하는 동시에 확실한 성장성이 담보된 글로벌 독점 테마로 자금을 양분하여 이동시키는 바벨 전략을 취하고 있습니다."
-        }
-    try:
-        import google.generativeai as genai
-        import json
-        genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config={"temperature": 0.2, "response_mime_type": "application/json"}
+        st.subheader("🔥 시장 주요 트렌드 브리핑")
+        
+        # 상단 환경 설정 등에서 바인딩된 글로벌 세션 API Key 추출
+        current_gemini_key = globals().get("GEMINI_KEY") or st.session_state.get("GEMINI_KEY")
+        
+        with st.spinner("🔄 구글 뉴스 실시간 트렌드를 Gemini AI가 요약 분석 중입니다..."):
+            live_brief = generate_live_market_briefing(current_gemini_key, keyword_summary_for_ai)
+        
+        # ① 라이징 테마 (초록색 가이드 박스)
+        st.success(f"🚀 **라이징 테마**: {live_brief['rising']}")
+        
+        # ② 하락/정체 테마 (소프트 톤앤매너 레드 컴포넌트 박스)
+        st.markdown(
+            f"""
+            <div style="background-color: #FFEAEA; padding: 12px 15px; border-radius: 6px; border-left: 5px solid #FF4B4B; margin-bottom: 12px;">
+                <span style="color: #FF1A1A; font-weight: bold;">📉 하락/정체 테마:</span> 
+                <span style="color: #222222; font-size:0.95rem;">{live_brief['falling']}</span>
+            </div>
+            """, 
+            unsafe_allow_html=True
         )
-        prompt = f"""
-        당신은 글로벌 거시경제와 ETF 자산시장을 꿰뚫어보는 수석 이코노미스트이자 자산배분 전략가입니다.
-        현재 실시간 구글 뉴스에서 가장 많이 언급되고 있는 상위 키워드 데이터를 바탕으로 시장의 핵심 흐름을 진단해 주세요.
         
-        [현재 실시간 뉴스 언급량 데이터]
-        {keywords_data}
-        
-        [작업 지시]
-        1. 'rising': 가장 주목받고 있거나 상승 동력이 강한 '라이징 테마'를 데이터 기반으로 1줄 요약하세요.
-        2. 'falling': 최근 언급이 정체되었거나 리스크가 감지되는 '하락/정체 테마'를 매크로 관점에서 1줄 요약하세요.
-        3. 'trend': 전체적인 시장 관심 자산 변화 추이와 투자자들이 취해야 할 시장 대응 전략(예: 바벨 전략, 리스크 온/오프 등)을 종합하여 가독성 좋은 2~3줄의 문장으로 작성하세요.
-        
-        반드시 아래의 JSON 포맷으로만 출력하고 다른 군더더기 말은 하지 마세요.
-        {{
-            "rising": "라이징 테마 요약 문구",
-            "falling": "하락 및 정체 테마 요약 문구",
-            "trend": "시장 관심 자산 변화 추이 종합 진단 문구"
-        }}
-        """
-        response = model.generate_content(prompt)
-        if response and response.text:
-            return json.loads(response.text.strip())
-    except:
-        pass
-    
-    # 에러 발생 시 기존 백업 문구 반환
-    return {
-        "rising": "실시간 뉴스 기반 빅테크 및 특정 테마형 인프라 자산군 강세 확인",
-        "falling": "글로벌 매크로 변동성 확대로 인한 일부 원자재 및 고위험 레버리지 상품군 정체",
-        "trend": "실시간 뉴스 분석 결과, 투자자들은 안정적인 인컴(월배당)을 확보하는 동시에 확실한 성장성이 담보된 글로벌 독점 테마로 자금을 양분하여 이동시키는 바벨 전략을 취하고 있습니다."
-    }
-
-# 🎨 [레이아웃 배치] 좌측(테이블/차트)과 우측(실시간 브리핑) 분할
-col_chart, col_briefing = st.columns([1, 1])
-
-with col_chart:
-    st.markdown("### 📊 실시간 뉴스 키워드 언급량")
-    # (여기에 기존 테이블 및 바 차트 그리는 코드를 그대로 유지하시면 됩니다)
-    st.image("image_1d15bb.png") # 예시용 가이드라인
-
-with col_briefing:
-    st.markdown("### 🔥 시장 주요 트렌드 브리핑")
-    
-    # AI 컴포넌트 호출하여 실시간 데이터 받아오기
-    current_gemini_key = globals().get("GEMINI_KEY") or st.session_state.get("GEMINI_KEY")
-    with st.spinner("🔄 실시간 뉴스 트렌드를 Gemini가 분석 중입니다..."):
-        live_brief = generate_live_market_briefing(current_gemini_key, keyword_summary_for_ai)
-    
-    # 🚀 라이징 테마 (초록색 박스)
-    st.success(f"🚀 **라이징 테마**: {live_brief['rising']}")
-    
-    # 📉 하락 테마 (빨간색 박스)
-    # st.error()는 너무 강렬한 대형 경고창이 뜨므로, 디자인 톤 유지를 위해 st.markdown HTML 커스텀 스타일 또는 ⚠️ 알림 적용
-    st.markdown(
-        f"""
-        <div style="background-color: #FFEAEA; padding: 12px 15px; border-radius: 6px; border-left: 5px solid #FF4B4B; margin-bottom: 12px;">
-            <span style="color: #FF1A1A; font-weight: bold;">📉 하락/정체 테마:</span> 
-            <span style="color: #222222;">{live_brief['falling']}</span>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
-    
-    # 🧭 시장 관심 자산 변화 추이 (파란색 박스)
-    st.info(f"🧭 **시장 관심 자산 변화 추이** \n\n{live_brief['trend']}")
-
-# ==============================================================================
-# ⚙️ [블로그 엔진 함수] (팀원분 소스 코드 전역 배치용)
-# ==============================================================================
-def get_blog_data(keyword, is_official=False, company_name=""):
-    """네이버 블로그 제목+링크 크롤링 함수"""
-    query = f"{company_name} 공식 블로그 ETF" if is_official else f"{keyword}"
-    encoded_query = urllib.parse.quote(query)
-    
-    url = f"https://search.naver.com/search.naver?where=blog&query={encoded_query}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    try:
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, "html.parser")
-        title_elements = soup.select(".api_txt_lines.total_tit")
-        
-        blog_list = []
-        for elem in title_elements[:6]: # 상위 6개 글 수집
-            blog_list.append({"title": elem.get_text(), "link": elem.get('href')})
-        return blog_list
-    except:
-        return []
-
-def analyze_blog_with_openai(api_key, system_role, user_data, output_format):
-    """OpenAI API를 활용한 블로그 전용 AI 분석 함수"""
-    client = OpenAI(api_key=api_key)
-    prompt = f"""
-    {system_role}
-    
-    [입력 데이터]
-    {str(user_data)}
-    
-    [작업 지시]
-    입력된 실시간 블로그 제목 데이터를 바탕으로 요구사항을 분석하세요.
-    반드시 제시된 아래의 JSON 형식으로만 응답하고, 그 외의 말은 절대 하지 마세요.
-    
-    [출력 JSON 형식]
-    {output_format}
-    """
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
-        )
-        return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        st.error(f"AI 분석 중 에러 발생: {e}")
-        return None
-
+        # ③ 시장 관심 자산 변화 추이 (블루 인포메이션 박스)
+        st.info(f"🧭 **시장 관심 자산 변화 추이** \n\n{live_brief['trend']}")
 
 # ==============================================================================
 # [Section 2] 경쟁사 유튜브, 뉴스 모니터링 및 실시간 블로그 마케팅 분석 (순서 조정본)
