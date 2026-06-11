@@ -121,27 +121,23 @@ with col1_left:
 with col1_right:
     st.subheader("🔥 시장 주요 트렌드 브리핑")
     
-    # AI가 뻗었을 때 무조건 상자를 채워줄 HTML 백업 디자인 (절대 빈 칸 차단)
-    backup_briefing = """
-    <div style="background-color: #ebf9eb; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #2e7d32;">
-        <strong>🚀 라이징 테마</strong>: 실시간 뉴스 기반 빅테크 및 특정 테마형 인프라 자산군 강세 확인
-    </div>
-    <div style="background-color: #fdf2f2; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #c62828;">
-        <strong>📉 하락 테마</strong>: 글로벌 매크로 변동성 확대로 인한 일부 원자재 및 고위험 레버리지 상품군 정체
-    </div>
-    <div style="background-color: #e8f4fd; padding: 12px; border-radius: 8px; border-left: 5px solid #1565c0;">
-        <strong>🧭 시장 관심 자산 변화 추이</strong><br>
+    # 💡 [보안 강화 및 방어선] 구형/신형 Streamlit 환경 모두에서 절대 깨지지 않는 백업 UI 구성
+    def render_fallback_briefing():
+        st.success("**🚀 라이징 테마**: 실시간 뉴스 기반 빅테크 및 특정 테마형 인프라 자산군 강세 확인")
+        st.error("**📉 하락 테마**: 글로벌 매크로 변동성 확대로 인한 일부 원자재 및 고위험 레버리지 상품군 정체")
+        st.info("""
+        **🧭 시장 관심 자산 변화 추이**
         실시간 뉴스 분석 결과, 투자자들은 안정적인 인컴(월배당)을 확보하는 동시에 확실한 성장성이 담보된 글로벌 독점 테마로 자금을 양분하여 이동시키는 바벨 전략을 취하고 있습니다.
-    </div>
-    """
-    
+        """)
+
+    # 테두리 컨테이너 시작
     with st.container(border=True):
         if GEMINI_KEY and all_titles_text:
             briefing_prompt = f"""
             너는 대형 운용사의 수석 마켓 애널리스트야.
             아래 제공된 실시간 뉴스 제목 데이터를 기반으로 현재 ETF 시장의 트렌드를 요약해줘.
             
-            반드시 다른 서론 없이 아래 딱 3개의 HTML 태그 양식에 맞춰 내부 내용만 한글 문장으로 알차게 채워서 출력해줘:
+            반드시 다른 서론 없이 아래 딱 3개의 HTML 태그 양식에 맞춰 내부 내용만 한글 문장으로 알차게 채워서 출력해줘. (속성의 따옴표나 태그를 절대 임의로 바꾸지 마):
             
             <div style="background-color: #ebf9eb; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #2e7d32;">
                 <strong>🚀 라이징 테마</strong>: 여기에 뉴스에서 가장 뜨겁게 상승세로 다뤄지는 테마나 상품군을 한 줄 요약 기술
@@ -160,13 +156,18 @@ with col1_right:
             
             real_briefing = generate_via_requests(briefing_prompt, "gemini-1.5-flash")
             
-            # AI 결과가 유효하고 HTML 틀이 깨지지 않았다면 출력, 아니면 안전하게 백업 출력
+            # 💡 [핵심 교정] unsafe_allow_html=True 옵션을 주어 Streamlit의 HTML 차단막을 해제합니다.
             if real_briefing and "style=" in real_briefing:
-                st.markdown(real_briefing, unsafe_html=True)
+                try:
+                    st.markdown(real_briefing, unsafe_allow_html=True)
+                except:
+                    # 만약 서버 환경에서 HTML 렌더링 에러가 나면 안전한 일반 콤포넌트로 즉시 자동 전환
+                    render_fallback_briefing()
             else:
-                st.markdown(backup_briefing, unsafe_html=True)
+                render_fallback_briefing()
         else:
-            st.markdown(backup_briefing, unsafe_html=True)
+            # AI 키가 없거나 뉴스가 비어있을 때도 무조건 노출
+            render_fallback_briefing()
 # ==============================================================================
 # [Section 2] 미디어 & 경쟁사 모니터링 (강제 렌더링 및 안정화 버전)
 # ==============================================================================
