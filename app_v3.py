@@ -1110,11 +1110,7 @@ with st.container(border=True):
         from io import BytesIO
         from datetime import datetime
         
-        # ==========================================
-        # 1. [DATA GATHERING] 대시보드 내 실시간 데이터 동적 수집
-        # ==========================================
-        
-        # [Section 1] Gemini 브리핑 데이터 추출
+        # 1. Section 1 데이터 수집
         rising_theme = "반도체 / 빅테크 AI"
         falling_theme = "일부 원자재 및 고위험 레버리지 상품군 정체"
         trend_text = "투자자들은 안정적인 월배당 인컴을 확보하는 동시에 고성장 독점 테마로 자금을 이동시키는 바벨 전략을 취하고 있습니다."
@@ -1127,17 +1123,15 @@ with st.container(border=True):
             except:
                 pass
 
-        # [Section 1] 실시간 뉴스 키워드 언급량 테이블 데이터 추출
+        # 2. Section 1 뉴스 키워드 테이블 파싱
         keyword_table_html = ""
         if 'df_keywords' in locals() or 'df_keywords' in globals():
             try:
-                # df_keywords 데이터프레임이 존재할 경우 상위 5개 가져와 HTML 테이블화
                 for idx, row in df_keywords.head(5).iterrows():
                     keyword_table_html += f"<tr><td>{row['키워드']}</td><td style='text-align:center;'>{row['언급량']}회</td></tr>"
             except:
                 pass
         if not keyword_table_html:
-            # 백업용 데이터셋 예시 구조화
             keyword_table_html = """
             <tr><td>스페이스X</td><td style="text-align:center;">7회</td></tr>
             <tr><td>daum</td><td style="text-align:center;">3회</td></tr>
@@ -1146,7 +1140,7 @@ with st.container(border=True):
             <tr><td>ETF에</td><td style="text-align:center;">3회</td></tr>
             """
 
-        # [Section 3] 엑셀 투자자 분석 결과 데이터 추출
+        # 3. Section 3 투자자 순매수 데이터 파싱
         excel_summary = "업로드된 주차별 엑셀 순매수 데이터셋이 아직 없습니다. 대시보드에서 파일을 드롭해 주세요."
         investor_table_html = ""
         if 'res_df' in locals() or 'res_df' in globals():
@@ -1170,11 +1164,10 @@ with st.container(border=True):
         if not investor_table_html:
             investor_table_html = "<tr><td colspan='4' style='text-align:center; color:#9CA3AF;'>대시보드에 엑셀 파일이 업로드되면 실시간 순매수 TOP 5 데이터 테이블이 이곳에 인쇄됩니다.</td></tr>"
 
-        # [Section 5] 실시간 네이버 데이터랩 트렌드 데이터 추출
+        # 4. Section 5 네이버 트렌드 데이터 파싱
         datalab_summary = "최근 한 달간의 자산 검색 추이를 분석한 결과, 특정 일정 및 매크로 이벤트에 따라 검색 흐름의 변동성이 포착되었습니다."
         datalab_table_html = ""
         
-        # API 실시간 데이터 혹은 백업 데이터프레임 타겟팅
         target_dl_df = None
         if 'df_raw' in locals() or 'df_raw' in globals():
             target_dl_df = df_raw
@@ -1183,7 +1176,6 @@ with st.container(border=True):
 
         if target_dl_df is not None:
             try:
-                # 최근 데이터 중 간격을 두어 5개 샘플링하여 레포트에 기록
                 for idx, row in target_dl_df.tail(5).iterrows():
                     datalab_table_html += f"<tr><td>{row['날짜']}</td><td style='text-align:center; font-weight:bold;'>{float(row['검색 지수']):,.1f}</td></tr>"
             except:
@@ -1191,9 +1183,7 @@ with st.container(border=True):
         if not datalab_table_html:
             datalab_table_html = "<tr><td colspan='2' style='text-align:center;'>트렌드 트래킹 데이터 로딩 실패</td></tr>"
 
-        # ==========================================
-        # 2. [HTML TEMPLATE] 전체 내용을 담은 프리미엄 A4 스타일시트
-        # ==========================================
+        # 5. HTML 코드가 시작되고 끝나는 따옴표 서식을 엄격히 일치시켰습니다.
         html_string = f"""
         <html>
         <head>
@@ -1246,7 +1236,6 @@ with st.container(border=True):
                 .badge-success {{ color: #15803D; font-weight: bold; }}
                 .badge-danger {{ color: #B91C1C; font-weight: bold; }}
                 
-                /* 테이블 스타일 가독성 극대화 */
                 table {{
                     width: 100%;
                     border-collapse: collapse;
@@ -1331,3 +1320,38 @@ with st.container(border=True):
                         </tr>
                     </thead>
                     <tbody>
+                        {datalab_table_html}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="footer">
+                본 보고서는 네이버 증권 실시간 데이터와 구글 Gemini API 연동을 통해 삼성자산운용 KODEX 대시보드 에이전트에서 실시간 자동 빌드되었습니다.
+            </div>
+        </body>
+        </html>
+        """
+        
+        pdf_buffer = BytesIO()
+        pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
+        
+        if pisa_status.err:
+            return None
+        
+        pdf_buffer.seek(0)
+        return pdf_buffer.getvalue()
+
+    try:
+        pdf_data = generate_pdf_report()
+        if pdf_data:
+            st.download_button(
+                label="📄 전체 대시보드 통합 PDF 보고서 다운로드",
+                data=pdf_data,
+                file_name=f"KODEX_Full_Market_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        else:
+            st.error("통합 PDF 리포트 바이너리를 바인딩하는 과정에서 구조적 에러가 발생했습니다.")
+    except Exception as e:
+        st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
