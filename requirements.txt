@@ -6,5 +6,5 @@ plotly
 openpyxl
 beautifulsoup4
 lxml
-openai
+reportlab==4.1.0
 xhtml2pdf==0.2.16
