@@ -964,7 +964,7 @@ with st.container(border=True):
         except Exception as e:
             st.markdown(backup_news_report)
 
-   with col5_top_right:
+with col5_top_right:
     st.subheader("📱 실시간 네이버 데이터랩 트렌드 (최근 한 달)")
     has_naver_api = False
     
