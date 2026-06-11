@@ -516,7 +516,7 @@ with col5_top_right:
         st.plotly_chart(fig_line, use_container_width=True)
 
 # ==============================================================================
-# [통합 연동] Section 1~5 종합 데이터를 관통하는 실시간 Gemini AI 마케팅 세줄요약 인사이트 (포맷팅 오류 해결)
+# [통합 연동] Section 1~5 종합 데이터를 관통하는 실시간 Gemini AI 마케팅 세줄요약 인사이트 (구문 에러 교정본)
 # ==============================================================================
 st.markdown("---")
 st.markdown("### ⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트 (실시간 수집 데이터 관통)")
@@ -541,7 +541,7 @@ if 'g_news_context' in locals() and g_news_context:
     dynamic_context += f"[KODEX 보도자료]\n{g_news_context}\n\n"
 
 
-# 2. 💡 [리얼 타임 동적 백업] AI가 뻗어도 '실제 수집 데이터의 단어'를 조합해 전략을 만드는 똑똑한 기본값 설정
+# 2. 리얼 타임 동적 백업전략 설정 (AI 미가동 시 실제 수집 데이터 단어로 조합)
 current_keyword = df_keywords['키워드'].iloc[0] if 'df_keywords' in locals() and not df_keywords.empty else "반도체/월배당"
 current_etf = top_bought_etfs if 'top_bought_etfs' in locals() and top_bought_etfs else "KODEX AI반도체 / 커버드콜 시리즈"
 
@@ -551,7 +551,7 @@ final_insights = [
     "⚡ **[트렌드 가속 락인]** 네이버 데이터랩 검색 강도 추이와 개인/기관의 순매수 강도가 일치하는 타이밍을 저격하여 고자산가 유입 경로에 최적화된 디지털 타겟 마케팅을 집행하십시오."
 ]
 
-# 3. 💡 [AI 실시간 연동 및 텍스트 정화]
+# 3. 💡 [SyntaxError 해결 구간] try-except 구문 및 AI 호출 인자 정상화
 if GEMINI_KEY and len(dynamic_context.strip()) > 30:
     insight_prompt = f"""
     너는 삼성자산운용 KODEX ETF의 최고 마케팅 전략 책임자야.
@@ -559,7 +559,7 @@ if GEMINI_KEY and len(dynamic_context.strip()) > 30:
     
     [필수 규칙]
     - 번호(1., 2., 3.)나 기호(-, *, 백틱)를 절대 붙이지 마.
-    - 서론이나 결론 없이 문장 3개만 엔터(\n)로 구분해서 출력해줘.
+    - 서론이나 결론 없이 문장 3개만 엔터(\\n)로 구분해서 출력해줘.
     - 문장의 시작은 반드시 이모지와 대괄호 태그로 시작해줘. (예: 📣 **[테마 캠페인]** 내용...)
 
     데이터:
@@ -567,4 +567,40 @@ if GEMINI_KEY and len(dynamic_context.strip()) > 30:
     """
     
     try:
-        ai_insights = generate_via_requests
+        # 괄호와 인자값을 정확히 채워 넣어 문법 에러를 해결했습니다.
+        ai_insights = generate_via_requests(insight_prompt, "gemini-1.5-flash")
+        
+        if ai_insights:
+            parsed_lines = []
+            for line in ai_insights.split('\n'):
+                clean_line = line.strip()
+                if not clean_line:
+                    continue
+                # 불필요하게 튀어나온 숫자나 특수문자 기호 청소
+                clean_line = re.sub(r'^[0-9\-\*\.\s]+', '', clean_line)
+                if clean_line:
+                    parsed_lines.append(clean_line)
+            
+            if len(parsed_lines) >= 3:
+                final_insights = parsed_lines[:3]
+    except Exception as e:
+        # 예외 발생 시 에러를 뿜지 않고 부드럽게 넘어가도록 except 블록을 명시했습니다.
+        pass
+
+# 4. 3열 카드 레이아웃 렌더링
+col_a, col_b, col_c = st.columns(3)
+
+with col_a:
+    with st.container(border=True):
+        st.markdown("### 🎯 **핵심 전략 01**")
+        st.write(final_insights[0])
+
+with col_b:
+    with st.container(border=True):
+        st.markdown("### 💰 **핵심 전략 02**")
+        st.write(final_insights[1])
+
+with col_c:
+    with st.container(border=True):
+        st.markdown("### 🌏 **핵심 전략 03**")
+        st.write(final_insights[2])
