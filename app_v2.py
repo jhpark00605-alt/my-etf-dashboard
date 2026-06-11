@@ -84,8 +84,10 @@ with col1:
                     
                     if res.status_code == 200:
                         raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
-                        # 단선 줄바꿈 SyntaxError 완벽 해결
-                        clean_res = raw_res.replace("```json", "").replace("```", "").strip()
+                        
+                        # [오류 원천 차단] 백틱을 쓰지 않고 안전하게 JSON 문자열만 파싱합니다.
+                        clean_res = raw_res.replace("json", "").replace("`", "").strip()
+                        
                         keyword_list = json.loads(clean_res)
                         df_keywords = pd.DataFrame(keyword_list).sort_values(by='언급량', ascending=False)
                         
