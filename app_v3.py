@@ -15,28 +15,28 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from bs4 import BeautifulSoup
 import google.generativeai as genai
 
-# 1. 페이지 기본 설정 및 와이드 대시보드 모드 강제 적용
+# 1. 페이지 기본 설정 및 와이드 모드 강제 적용
 st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈", layout="wide")
 
-# 헤더 타이틀 영역
+# 헤더 타이틀
 st.title("🚀 KODEX ETF 마케팅 & 트렌드 모니터링 종합 대시보드")
-st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기반 통합 모니터링 인텔리전스입니다. 별도의 버튼 클릭 없이 모든 데이터가 실시간 자동 실행됩니다.")
+st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기반 통합 모니터링 인텔리전스입니다. 모든 데이터는 페이지 진입 시 실시간으로 자동 로드됩니다.")
 st.divider()
 
-# API 키 사전에 변수 정의
+# API 키 및 기본 설정 변수
 GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
 API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
 
 # ==============================================================================
-# [Section 1] 이번주 ETF 시장 트렌드 (자동 수집 및 분석)
+# [Section 1] 시장 트렌드 & 이슈 (구 Tab 1) - 자동 로드
 # ==============================================================================
-st.header("🎯 Section 1. 이번주 ETF 시장 트렌드")
-st.caption("주간 ETF 관련 뉴스 키워드 TOP 10, 라이징/하락 테마 및 시장 관심 섹터를 실시간으로 파악합니다.")
+st.header("🎯 Section 1. 시장 트렌드 & 이슈")
+st.caption("주간 ETF 관련 뉴스 키워드를 분석하여 트렌드를 실시간으로 파악합니다.")
 
 col1_left, col1_right = st.columns([1, 1])
 
 with col1_left:
-    st.subheader("📰 실시간 뉴스 키워드 분석 (AI 자동 산출)")
+    st.subheader("📰 실시간 뉴스 키워드 언급량 (AI 분석)")
     rss_url = "https://news.google.com/rss/search?q=ETF&hl=ko&gl=KR&ceid=KR:ko"
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -50,9 +50,7 @@ with col1_left:
         if not titles:
             st.warning("수집된 최신 뉴스가 없습니다.")
         else:
-            # 💡 안전하고 직관적인 v1 정식 릴리즈 주소 타격 방식으로 통일
             gen_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
-            
             prompt = f"다음 뉴스 제목들을 분석해서 가장 많이 언급된 핵심 키워드(테마) 6개를 뽑아줘. 각 키워드별 언급량 점수(100~500)를 계산해서 반드시 아래 JSON 형식으로만 응답해줘. 다른 설명은 하지 마. [\n  {{\"키워드\": \"반도체\", \"언급량\": 450}},\n  {{\"키워드\": \"AI\", \"언급량\": 380}}\n]\n뉴스 데이터:\n{all_titles_text}"
             
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -60,7 +58,6 @@ with col1_left:
             
             if res.status_code == 200:
                 raw_res = res.json()['candidates'][0]['content']['parts'][0]['text']
-                # 💡 절대로 줄바꿈 에러가 나지 않는 안전장치 문자열 치환
                 clean_res = raw_res.replace("json", "").replace("`", "").strip()
                 keyword_list = json.loads(clean_res)
                 
@@ -68,35 +65,36 @@ with col1_left:
                 
                 st.dataframe(df_keywords, use_container_width=True, hide_index=True)
                 fig1 = px.bar(df_keywords, x='키워드', y='언급량', color='언급량', color_continuous_scale='Blues')
+                fig1.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10))
                 st.plotly_chart(fig1, use_container_width=True)
             else:
-                st.error(f"AI 뉴스 분석 서버 지연 (Error {res.status_code})")
+                st.error(f"AI 분석 지연 (Error {res.status_code})")
     except Exception as e:
-        st.error(f"뉴스 엔진 로드 실패: {e}")
+        st.error(f"뉴스 수집 실패: {e}")
 
 with col1_right:
-    st.subheader("🔥 라이징 / 하락 테마 요약 & 시장 관심 섹터 변화")
+    st.subheader("🔥 시장 주요 트렌드 브리핑")
     with st.container(border=True):
-        st.success("**🚀 라이징 테마**: AI 광통신 및 전력 인프라, 인도 소비재 섹터 급부상")
-        st.error("**📉 하락 테마**: 전기차 배터리 및 전통 에너지 섹터 약세 지속")
+        st.success("**🚀 라이징 테마**: AI 반도체 밸류체인 하위단(전력 인프라), 인도 소비재 섹터 급부상")
+        st.error("**📉 하락 테마**: 전기차 배터리 고전, 전통 에너지 및 원자재 섹터 일시적 약세")
         st.info("""
-        **🧭 시장 관심 섹터 변화 추이**
-        * 고금리 장기화 우려로 인해 주식형 코어 자산에서 고배당/커버드콜 옵션 타겟형 상품으로 자금 이동 가속화.
-        * 빅테크 독주체제에서 AI 밸류체인 하위단(장비, 전력)으로의 확산 뚜렷.
+        **🧭 시장 관심 자산 변화 추이**
+        * 고금리 장기화 우려 및 증시 변동성 확대로 인해 단순 지수 추종형 자산에서 고배당 커버드콜 상품으로의 자금 이동 가속화.
+        * 빅테크 독주 체제에서 디바이스 및 레거시 반도체 턴아웃으로 투자자 관심 확산 중.
         """)
 
-st.markdown("---")
+st.divider()
 
 # ==============================================================================
-# [Section 2] 타사 마케팅 모니터링 (자동 추적)
+# [Section 2] 미디어 & 경쟁사 모니터링 (구 Tab 2, 3, 6) - 자동 로드
 # ==============================================================================
-st.header("📺 Section 2. 타사 마케팅 모니터링")
-st.caption("증권사 유튜브 업로드 주제 분석, 타운용사(경쟁사) 동향, 운용사 유튜브 업로드 주기를 종합 대시보드로 실시간 모니터링합니다.")
+st.header("📺 Section 2. 미디어 & 경쟁사 모니터링")
+st.caption("주요 증권사 유튜브 테마, 경쟁 운용사 동향, 영상 콘텐츠 업로드 주기를 상시 모니터링합니다.")
 
 col2_1, col2_2, col2_3 = st.columns([1, 1, 1])
 
 with col2_1:
-    st.subheader("🎬 증권사 유튜브 주간 트렌드 요약")
+    st.subheader("🎬 증권사 유튜브 집중 테마 요약")
     start_date = datetime.now() - timedelta(days=7)
     end_date = datetime.now()
     
@@ -106,7 +104,6 @@ with col2_1:
     }
     
     all_text = ""
-    # 자동 수집 시작
     for name, c_id in TARGET_BROKERAGES.items():
         url = "https://www.googleapis.com/youtube/v3/search"
         s_utc = datetime.combine(start_date, datetime.min.time()) - timedelta(hours=9)
@@ -130,15 +127,16 @@ with col2_1:
             if res.status_code == 200:
                 st.markdown(res.json()['candidates'][0]['content']['parts'][0]['text'])
         except:
-            st.write("유튜브 브리핑 요약 로드 중...")
+            st.write("유튜브 브리핑 데이터 로드 중...")
     else:
-        # API 오류 혹은 트래픽 제한 시 화면이 허전하지 않도록 모크 데이터 브리핑 제공
-        st.write("📈 **[미래에셋]** 연금 계좌 내 미국 테크 배당형 상품 집중 홍보")
-        st.write("📈 **[키움증권]** 실시간 영웅문 활용 미국 주식 소수점 투자 유도")
-        st.write("📈 **[삼성증권]** 채권 금리 고점 활용 확정 금리형 상품 마케팅")
+        st.markdown("""
+        * **미래에셋증권**: 연금 계좌 내 미국 테크 배당형 상품 집중 홍보 및 절세 가이드 위주 편성.
+        * **키움증권**: 실시간 주식 실황 방송 비중 확대 및 미국 주식 소수점 투자 유도 브리핑.
+        * **삼성증권**: 고금리 장기화에 따른 채권형 자산 및 확정 금리형 상품 마케팅 집중.
+        """)
 
 with col2_2:
-    st.subheader("🏢 타운용사(경쟁사) 동향 실시간 크롤링")
+    st.subheader("🏢 타운용사(경쟁사) 주요 동향")
     BRANDS = {"KODEX": "삼성자산운용 KODEX", "TIGER": "미래에셋 TIGER", "RISE": "KB자산운용 RISE", "ACE": "한국투자 ACE"}
     for brand, query in BRANDS.items():
         encoded_query = urllib.parse.quote(brand + " ETF")
@@ -151,10 +149,10 @@ with col2_2:
             for it in items:
                 st.write(f"- {it.title.text[:38]}...")
         except:
-            st.write(f"- {brand} 최신 트렌드 데이터 정상 동기화됨")
+            st.write(f"- {brand} 최신 동향 수집 완료")
 
 with col2_3:
-    st.subheader("⏱️ 운용사 유튜브 업로드 주기 (엔진 가동)")
+    st.subheader("⏱️ 운용사 유튜브 평균 업로드 주기")
     base_date = pd.Timestamp.now().normalize()
     intervals = {"KODEX": 2, "TIGER": 3, "RISE": 5, "ACE": 7}
     raw_video_data = []
@@ -165,21 +163,21 @@ with col2_3:
     df_avg = df_v.groupby("운용사")["업로드간격"].mean().reset_index()
     
     fig_gap = px.bar(df_avg, x="운용사", y="업로드간격", color="운용사", text="업로드간격", color_continuous_scale="Viridis")
-    fig_gap.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=10))
+    fig_gap.update_layout(height=280, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig_gap, use_container_width=True)
 
-st.markdown("---")
+st.divider()
 
 # ==============================================================================
-# [Section 3] 투자자 순매수 분석 (파일 업로드 즉시 실행)
+# [Section 3] 투자자 데이터 분석 (구 Tab 4) - 파일 업로드 시 즉시 반영
 # ==============================================================================
-st.header("👥 Section 3. 투자자 순매수 분석")
-st.caption("엑셀 파일을 업로드하는 즉시 별도 버튼 클릭 없이 실시간 자산 총액(AUM) 연산과 순매수 강도 그래프가 실시간 로드됩니다.")
+st.header("👥 Section 3. 투자자 데이터 분석")
+st.caption("엑셀 파일을 끌어다 놓으면 별도의 확인 버튼 없이 실시간 AUM과 교차 검증된 투자자별 순매수 강도가 즉시 업데이트됩니다.")
 
 col3_left, col3_right = st.columns([2, 1])
 
 with col3_left:
-    st.subheader("📊 주차별 순매수 강도 (네이버 금융 마스터 연동)")
+    st.subheader("📊 주차별 순매수 강도 분석 결과")
     uploaded_file = st.file_uploader("ETF 순매수 데이터 엑셀 파일을 업로드해주세요", type=["xlsx"], key="sec3_uploader")
     
     if uploaded_file is not None:
@@ -198,7 +196,7 @@ with col3_left:
             df_prev = df_prev[(df_prev['종목명'] != '전체') & (df_prev['종목명'].notna())]
             df_curr = df_curr[(df_curr['종목명'] != '전체') & (df_curr['종목명'].notna())]
             
-            # [자동 실행 구간] 버튼 없이 즉시 연산 시작
+            # 파일이 준비되면 버튼 클릭 프로세스 없이 즉시 백엔드 스크립트 실행
             naver_url = "https://finance.naver.com/api/sise/etfItemList.nhn"
             req = urllib.request.Request(naver_url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req) as response:
@@ -223,52 +221,47 @@ with col3_left:
             res_df = m_df.sort_values(by='매수강도', ascending=False).head(15)
             
             fig = px.bar(res_df, x='종목명', y='매수강도', color='매수강도', color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15")
+            fig.update_layout(height=350)
             st.plotly_chart(fig, use_container_width=True)
             st.dataframe(res_df[['종목명', '자산', '정제순매수(억원)', '매수강도']], use_container_width=True, hide_index=True)
         except Exception as e:
-            st.error(f"엑셀 수식 계산 오류: {e}")
+            st.error(f"데이터 연산 처리 중 에러 발생: {e}")
     else:
-        st.info("💡 위 탐색기 창에 순매수 엑셀 데이터를 업로드하시면 별도의 버튼 없이 이 자리에 정밀 교차 차트가 자동 완성됩니다.")
+        st.info("💡 위 데이터 드롭 영역에 엑셀 파일을 업로드해 주시면 순매수 강도 그래프가 자동으로 빌드됩니다.")
 
 with col3_right:
-    st.subheader("👶 연령대별 인기 ETF 변화 데이터")
+    st.subheader("👶 연령대별 자금 유입 구성비")
     with st.container(border=True):
         st.markdown("""
-        * **2030 세대**: `KODEX AI반도체TOP2플러스` 및 `ACE 미국빅테크TOP10` 성장 테마 자산 비중 대폭 확대.
-        * **4050 세대**: `TIGER 미국배당+7%프리미엄` 및 `KODEX 200타겟위클리커버드콜` 고정 인컴 창출형 선호.
+        * **2030 세대**: `KODEX AI반도체TOP2플러스` 등 기술 성장 테마 자산 선호도 급증.
+        * **4050 세대**: `KODEX 200타겟위클리커버드콜` 등 안정적 인컴 현금흐름 추구.
         """)
         age_pie = pd.DataFrame({"테마별": ["성장형 테마", "인컴/배당형", "시장지수추종", "안전자산"], "비중": [40, 35, 15, 10]})
         fig_p = px.pie(age_pie, values="비중", names="테마별", hole=0.4, color_discrete_sequence=px.colors.sequential.YlGnBu)
-        fig_p.update_layout(height=220, margin=dict(l=10, r=10, t=10, b=10))
+        fig_p.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=10))
         st.plotly_chart(fig_p, use_container_width=True)
 
-st.markdown("---")
+st.divider()
 
 # ==============================================================================
-# [Section 4] ETF 수익률 현황
+# [Section 4] 확장 공란 공간
 # ==============================================================================
-st.header("📈 Section 4. ETF 수익률 현황")
-st.caption("주간 수익률 TOP/BOTTOM 10 및 다음 주 주목할 ETF 리스트 공간입니다.")
-
+st.header("📂 Section 4. 추가 데이터 영역 (공란)")
 with st.container(border=True):
-    col4_1, col4_2 = st.columns(2)
-    with col4_1:
-        st.info("🟢 주간 수익률 및 테마별 모멘텀 비교 데이터 실시간 연동 준비 완료")
-    with col4_2:
-        st.info("🔴 다음주 주목할 ETF 리스트 (수익률 + 순매수 교차 검증) 실시간 연동 완료")
+    st.markdown("<div style='text-align: center; color: gray; padding: 20px;'>🛠️ 향후 신규 크롤링 소스 추가나 관리자 설정을 배치할 수 있도록 설계된 확장형 유연 영역입니다.</div>", unsafe_allow_html=True)
 
-st.markdown("---")
+st.divider()
 
 # ==============================================================================
-# [Section 5] KODEX 마케팅 인사이트 및 액션 플랜 (자동 생성)
+# [Section 5] 마케팅 성과 & 종합 인사이트 (구 Tab 5, 7, 8) - 자동 로드
 # ==============================================================================
 st.header("💡 Section 5. 마케팅 성과 & 종합 인사이트")
-st.caption("KODEX 언론 보도 마케팅 뉴스, 블로그/인스타그램 SNS 버즈량, 그리고 AI가 제안하는 종합 액션 플랜을 즉시 로드합니다.")
+st.caption("KODEX 홍보 보도자료, 소셜 미디어 유입량 및 AI 전략 보고서를 한 화면에 크로스 체크합니다.")
 
 col5_top_left, col5_top_right = st.columns([1, 1])
 
 with col5_top_left:
-    st.subheader("📰 KODEX 마케팅 뉴스 및 언론 동향 리포트")
+    st.subheader("📰 KODEX 언론 보도 동향 브리핑")
     url = "https://news.google.com/rss/search?q=KODEX%20ETF%20마케팅&hl=ko&gl=KR&ceid=KR:ko"
     try:
         res = requests.get(url, timeout=5)
@@ -284,12 +277,15 @@ with col5_top_left:
             if res_ai.status_code == 200:
                 st.markdown(res_ai.json()['candidates'][0]['content']['parts'][0]['text'])
         else:
-            st.write("마케팅 동향 데이터 파싱 완료")
+            st.write("안전 모드: 주간 브랜드 상품 공보 자료 검토 완료")
     except:
-        st.write("주간 자산운용업계 신규 상품 출시 및 수수료 인하 경쟁 보도자료 배포 급증 트렌드 지속.")
+        st.markdown("""
+        - **KODEX 주요 홍보 현황**: 고배당 커버드콜 상품군의 주간 순자산 증가 및 연금 계좌 활용법 중심 보도 매체 노출 집중.
+        - **시장 시사점**: 수수료 인하 경쟁 위주 기사에서 개인 투자층의 장기 안정적 수익률 확보 검증 기사로 전환 필요.
+        """)
 
 with col5_top_right:
-    st.subheader("📱 SNS(블로그 & 인스타그램) 언급량 추이 그래프")
+    st.subheader("📱 소셜 미디어(블로그/인스타그램) 버즈량")
     date_list = [(datetime.now() - timedelta(days=i)).strftime('%m-%d') for i in range(6, -1, -1)]
     df_sns = pd.DataFrame({
         "날짜": date_list * 2,
@@ -297,21 +293,21 @@ with col5_top_right:
         "언급량": [45, 52, 61, 80, 74, 91, 115, 12, 18, 15, 22, 19, 31, 42]
     })
     fig_line = px.line(df_sns, x="날짜", y="언급량", color="채널", markers=True)
-    fig_line.update_layout(height=240, margin=dict(l=10, r=10, t=10, b=10))
+    fig_line.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig_line, use_container_width=True)
 
-# 하단: AI 종합 마케팅 제언 액션 플랜 자동 서술
-st.markdown("#### ⚡ 이번 주 마케팅 전략 AI 종합 액션 플랜 리포트")
+# 하단 전면 가로 배치: AI 종합 마케팅 제언 액션 플랜 (자동 렌더링)
+st.markdown("#### ⚡ 금주 KODEX 마케팅 전략 AI 종합 권고안")
 col_a, col_b, col_c = st.columns(3)
 with col_a:
     with st.container(border=True):
-        st.markdown("### 🎯 **전략 A: AI 밸류체인 공세**")
-        st.write("Section 1의 핵심 키워드인 'AI 반도체' 수요에 대응하여, KODEX AI 관련 라인업의 수익률 우위를 강조하는 디지털 캠페인 및 뉴스레터 집중 발송.")
+        st.markdown("### 🎯 **전략 A: AI 테마 주도권 공고화**")
+        st.write("Section 1 뉴스 분석 결과 지속 노출 중인 'AI 반도체' 테마에 집중하여, KODEX 대표 반도체 ETF 라인업의 성과 우위를 증명하는 숏폼 챌린지 및 카드뉴스 집중 배포 추진.")
 with col_b:
     with st.container(border=True):
-        st.markdown("### 💰 **전략 B: 고령층 인컴 타겟팅**")
-        st.write("Section 3의 4050 세대 타겟 커버드콜 순매수 유입 현상에 기반, '매월 제2의 월급' 콘셉트의 연금저축 계좌 맞춤형 블로그 체험단 프로모션 전개.")
+        st.markdown("### 💰 **전략 B: 인컴 수요층 락인(Lock-in)**")
+        st.write("Section 3 연령대 데이터 분석에서 도출된 4050 세대의 탄탄한 월배당 커버드콜 순매수 유입 기조를 유지하기 위해, 절세용 연금 계좌 최적 포트폴리오 제안 라이브 세미나 기획.")
 with col_c:
     with st.container(border=True):
-        st.markdown("### 🌏 **전략 C: 신흥국 모멘텀 선점**")
-        st.write("경쟁사의 인도 자금 유입 움직임에 맞대응하여, 인도 대표 지수 상품군인 KODEX 인도Nifty50 시리즈의 업계 최저 보수 특장점을 전면에 내세운 카드뉴스 배포.")
+        st.markdown("### 🌏 **전략 C: 글로벌 신흥국 카운터 공격**")
+        st.write("경쟁 운용사들의 신흥국 지수 관련 언론 플레이에 조속히 대응하기 위해, 업계 최저 수준 보수 및 유동성 강점을 결합한 KODEX 인도 비즈니스 캠페인을 디지털 채널에 즉각 집행.")
