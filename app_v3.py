@@ -964,80 +964,69 @@ with st.container(border=True):
         except Exception as e:
             st.markdown(backup_news_report)
 
-    제공해주신 실제 Section 5 내부 코드 조각을 바탕으로, 네이버 API 연동 성공 시(has_naver_api = True)와 API 연동 실패 후 백업 더미 데이터가 가동될 때(if not has_naver_api:) 두 군데 모두의 차트 잘림 현상을 완벽하게 조정한 전체 코드입니다.
-
-기존 코드에서 가장 문제가 되었던 height=260과 margin=dict(l=10, r=10, t=10, b=10) 옵션을 높이 420 및 상단 마진 60, 하단 마진 60 이상으로 확장하여 타이틀과 세로형 날짜 축이 프레임 밖으로 절대 잘려 나가지 않도록 튜닝했습니다.
-
-with col5_top_right: 블록 전체를 아래 코드로 교체해 주세요.
-
-🛠️ 잘림 현상이 완벽히 해결된 Section 5 우측 열 (col5_top_right) 전체 마스터 코드
-Python
-with col5_top_right:
-        st.subheader("📱 실시간 네이버 데이터랩 트렌드 (최근 한 달)")
-        has_naver_api = False
-        
-        if NAVER_ID and NAVER_SECRET:
-            try:
-                end_d = datetime.now()
-                start_d = end_d - timedelta(days=30)
-                
-                url = "https://openapi.naver.com/v1/datalab/search"
-                body = {
-                    "startDate": start_d.strftime('%Y-%m-%d'),
-                    "endDate": end_d.strftime('%Y-%m-%d'),
-                    "timeUnit": "date",
-                    "keywordGroups": [
-                        {"groupName": "KODEX ETF", "keywords": ["KODEX ETF", "KODEX"]}
-                    ]
-                }
-                
-                request_nv = urllib.request.Request(url)
-                request_nv.add_header("X-Naver-Client-Id", NAVER_ID)
-                request_nv.add_header("X-Naver-Client-Secret", NAVER_SECRET)
-                request_nv.add_header("Content-Type", "application/json")
-                
-                response_nv = urllib.request.urlopen(request_nv, data=json.dumps(body).encode("utf-8"), timeout=5)
-                if response_nv.getcode() == 200:
-                    data_nv = json.loads(response_nv.read().decode('utf-8'))
-                    results = data_nv.get('results', [])
-                    if results and len(results[0].get('data', [])) > 0:
-                        raw_data = results[0]['data']
-                        df_raw = pd.DataFrame(raw_data)
-                        df_raw['period'] = pd.to_datetime(df_raw['period'])
-                        df_raw['날짜'] = df_raw['period'].dt.strftime('%m월 %d일')
-                        df_raw['검색 지수'] = df_raw['ratio'].astype(float)
-                        
-                        fig_line = px.line(df_raw, x="날짜", y="검색 지수", markers=True, title="📊 네이버 데이터랩 KODEX ETF 일별 검색 트렌드")
-                        
-                        # 🚨 [레이아웃 튜닝 ①]: API 정상 작동 시 차트 잘림 해소
-                        fig_line.update_layout(
-                            height=420,                                 # 세로 크기를 늘려 상하단 여유 공간 확보
-                            margin=dict(l=25, r=20, t=65, b=65),         # t(상단)와 b(하단) 마진을 충분히 주어 글자 잘림 방지
-                            title_font=dict(size=14),                   # 타이틀 폰트 최적화
-                            xaxis=dict(tickangle=90),                   # 날짜 라벨을 90도 회전시켜 공간 겹침 방지
-                            hovermode="x unified"
-                        )
-                        st.plotly_chart(fig_line, use_container_width=True)
-                        has_naver_api = True
-            except:
-                pass
-
-        # 💡 네이버 API 연동 실패 혹은 미세팅 시 작동하는 실시간 시뮬레이션 백업 차트 구역
-        if not has_naver_api:
-            base = datetime.now()
-            date_list = [(base - timedelta(days=i)).strftime('%m월 %d일') for i in range(29, -1, -1)]
-            df_sns = pd.DataFrame({"날짜": date_list, "검색 지수": np.random.randint(45, 95, size=30)})
-            fig_line = px.line(df_sns, x="날짜", y="검색 지수", markers=True, title="📈 KODEX ETF 트렌드 추이 (백업 컨텍스트)")
+    with col5_top_right:
+    st.subheader("📱 실시간 네이버 데이터랩 트렌드 (최근 한 달)")
+    has_naver_api = False
+    
+    if NAVER_ID and NAVER_SECRET:
+        try:
+            end_d = datetime.now()
+            start_d = end_d - timedelta(days=30)
             
-            # 🚨 [레이아웃 튜닝 ②]: 백업 가동 시 차트 잘림 해소 (올려주신 에러 이미지 보정 지점)
-            fig_line.update_layout(
-                height=420,                                     # 260에서 420으로 크게 확장하여 천장 공간 확보
-                margin=dict(l=25, r=20, t=65, b=65),             # 상단 마진을 65 이상 열어 타이틀이 프레임에 잘리는 현상 타파
-                title_font=dict(size=14),
-                xaxis=dict(tickangle=90),                       # 가로축 날짜('05월 13일' 등)가 온전히 보이도록 세로 정렬
-                hovermode="x unified"
-            )
-            st.plotly_chart(fig_line, use_container_width=True)
+            url = "https://openapi.naver.com/v1/datalab/search"
+            body = {
+                "startDate": start_d.strftime('%Y-%m-%d'),
+                "endDate": end_d.strftime('%Y-%m-%d'),
+                "timeUnit": "date",
+                "keywordGroups": [
+                    {"groupName": "KODEX ETF", "keywords": ["KODEX ETF", "KODEX"]}
+                ]
+            }
+            
+            request_nv = urllib.request.Request(url)
+            request_nv.add_header("X-Naver-Client-Id", NAVER_ID)
+            request_nv.add_header("X-Naver-Client-Secret", NAVER_SECRET)
+            request_nv.add_header("Content-Type", "application/json")
+            
+            response_nv = urllib.request.urlopen(request_nv, data=json.dumps(body).encode("utf-8"), timeout=5)
+            if response_nv.getcode() == 200:
+                data_nv = json.loads(response_nv.read().decode('utf-8'))
+                results = data_nv.get('results', [])
+                if results and len(results[0].get('data', [])) > 0:
+                    raw_data = results[0]['data']
+                    df_raw = pd.DataFrame(raw_data)
+                    df_raw['period'] = pd.to_datetime(df_raw['period'])
+                    df_raw['날짜'] = df_raw['period'].dt.strftime('%m월 %d일')
+                    df_raw['검색 지수'] = df_raw['ratio'].astype(float)
+                    
+                    fig_line = px.line(df_raw, x="날짜", y="검색 지수", markers=True, title="📊 네이버 데이터랩 KODEX ETF 일별 검색 트렌드")
+                    
+                    fig_line.update_layout(
+                        height=420,                                 
+                        margin=dict(l=25, r=20, t=65, b=65),         
+                        title_font=dict(size=14),                   
+                        xaxis=dict(tickangle=90),                   
+                        hovermode="x unified"
+                    )
+                    st.plotly_chart(fig_line, use_container_width=True)
+                    has_naver_api = True
+        except:
+            pass
+
+    if not has_naver_api:
+        base = datetime.now()
+        date_list = [(base - timedelta(days=i)).strftime('%m월 %d일') for i in range(29, -1, -1)]
+        df_sns = pd.DataFrame({"날짜": date_list, "검색 지수": np.random.randint(45, 95, size=30)})
+        fig_line = px.line(df_sns, x="날짜", y="검색 지수", markers=True, title="📈 KODEX ETF 트렌드 추이 (백업 컨텍스트)")
+        
+        fig_line.update_layout(
+            height=420,                                     
+            margin=dict(l=25, r=20, t=65, b=65),             
+            title_font=dict(size=14),
+            xaxis=dict(tickangle=90),                       
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_line, use_container_width=True)
 
 
 # ==============================================================================
