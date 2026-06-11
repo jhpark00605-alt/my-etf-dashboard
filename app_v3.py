@@ -391,6 +391,48 @@ OFFICIAL_BLOGS = {
     "한국투자신탁운용 (ACE)": {"id": "aceetf", "url": "https://blog.naver.com/aceetf", "hex": "#2DB400"}         # 초록색
 }
 
+def get_official_blog_data(blog_id, count):
+    """공식 블로그 네이버 RSS 직접 통신 및 가독성 높은 한국어 날짜 변환"""
+    url = f"https://rss.blog.naver.com/{blog_id}.xml"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=7)
+        root = ET.fromstring(response.content)
+        items = root.findall(".//item")
+        
+        blog_list = []
+        for item in items:
+            title_node = item.find("title")
+            link_node = item.find("link")
+            pubdate_node = item.find("pubDate") 
+            
+            if title_node is not None and link_node is not None:
+                raw_date = pubdate_node.text if pubdate_node is not None else ""
+                clean_date = raw_date
+                try:
+                    t = email.utils.parsedate_tuple(raw_date)
+                    if t:
+                        clean_date = f"{t[0]}년 {t[1]:02d}월 {t[2]:02d}일"
+                except:
+                    pass
+                
+                blog_list.append({
+                    "title": title_node.text,
+                    "link": link_node.text,
+                    "date": clean_date 
+                })
+            if len(blog_list) >= count:
+                break
+        return blog_list
+    except:
+        return []
+
+
+# ==============================================================================
+# 📊 [섹션] 4대 자산운용사 공식 블로그 주력 ETF 상품 분석 및 UI 출력
+# ==============================================================================
 st.markdown("<br><hr>", unsafe_allow_html=True)
 st.markdown("### 📊 4대 자산운용사 공식 블로그 주력 ETF 상품 분석")
 st.caption("지정 공식 네이버 블로그 RSS 피드를 실시간 추적하여 운용사별 주력 마케팅 상품을 Gemini AI가 정밀 진단합니다.")
@@ -402,11 +444,11 @@ post_count = globals().get("post_count") or st.session_state.get("post_count") o
 if not current_gemini_key:
     st.warning("⚠️ 공식 블로그 AI 분석 기능을 활성화하려면 대시보드 상단 환경 설정에 Gemini API Key가 정상적으로 세팅되어 있어야 합니다.")
 else:
-    # 🚨 [교정 완료] 모든 내부 실행 로직의 시작선을 정확히 스페이스바 4칸으로 맞추었습니다.
     analysis_results = []
     blog_data_store = {}
     
     for com, info in OFFICIAL_BLOGS.items():
+        # 🚨 [해결] 이제 파이썬이 상단에 정의된 get_official_blog_data 함수를 정확히 인지합니다.
         raw_data = get_official_blog_data(info["id"], post_count)
         
         # 💡 [Fail-Safe] 데이터 수집 실패 시 가동할 백업 리얼 타임 데이터 셋
@@ -526,172 +568,6 @@ else:
                             else:
                                 l_col2.markdown(display_text)
             st.markdown("<br>", unsafe_allow_html=True)
-
-# ==============================================================================
-# 🤖 [Gemini 기반 블로그 마케팅 정밀 진단 AI 엔진]
-# ==============================================================================
-def analyze_official_blog_with_gemini(gemini_key, system_role, user_data, output_format):
-    """Gemini API를 활용하여 운용사별 주력 마케팅 상품을 구조화 JSON으로 추출"""
-    if not gemini_key:
-        return None
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
-        )
-        prompt = f"""
-        {system_role}
-        
-        [입력 데이터]
-        {str(user_data)}
-        
-        [작업 지시]
-        제공된 자산운용사 공식 블로그의 최신 글 제목들을 정밀 분석하여, 이 운용사가 현재 어떤 ETF 상품을 '가장 주력'으로 마케팅하고 있는지 밝혀내세요.
-        반드시 제시된 아래의 JSON 형식으로만 정확히 응답하고, 다른 설명문은 절대 포함하지 마세요.
-        
-        [출력 JSON 형식]
-        {output_format}
-        """
-        response = model.generate_content(prompt)
-        if response and response.text:
-            return json.loads(response.text.strip())
-    except:
-        return None
-    return None
-
-
-# ==============================================================================
-# 📺 [메인 대시보드 화면 연동 영역] - 버튼 없이 즉시 로드 및 Gemini 연동
-# ==============================================================================
-st.markdown("<br><hr>", unsafe_allow_html=True)
-st.markdown("### 📊 4대 자산운용사 공식 블로그 주력 ETF 상품 분석")
-st.caption("지정 공식 네이버 블로그 RSS 피드를 실시간 추적하여 운용사별 주력 마케팅 상품을 Gemini AI가 정밀 진단합니다.")
-
-# 상단 대시보드 뉴스 영역 등에서 선언 및 검증된 GEMINI_KEY 변수를 그대로 연동합니다.
-current_gemini_key = globals().get("GEMINI_KEY") or st.session_state.get("GEMINI_KEY")
-# 혹시 사이드바나 슬라이더 변수명이 다를 경우를 대비하여 기본값(15개) 방어코드 지정
-post_count = globals().get("post_count") or st.session_state.get("post_count") or 15
-
-if not current_gemini_key:
-    st.warning("⚠️ 공식 블로그 AI 분석 기능을 활성화하려면 대시보드 상단 환경 설정에 Gemini API Key가 정상적으로 세팅되어 있어야 합니다.")
-else:
-    analysis_results = []
-    blog_data_store = {}
-    
-    # 별도의 버튼(st.button) 조건 없이 페이지 열람 즉시 순차 분석 프로세스 진행
-    for com, info in OFFICIAL_BLOGS.items():
-        raw_data = get_official_blog_data(info["id"], post_count)
-        
-        # 💡 [Fail-Safe 피드백 백업 코드] 네이버 RSS가 먹통이거나 글이 없을 때 화면 깨짐 방지용 리얼 데이터
-        if not raw_data:
-            if "KODEX" in com:
-                raw_data = [
-                    {"title": "삼성 KODEX 미국AI테크TOP10 월배당형 신규 상장 가이드", "link": "https://blog.naver.com/etf_kodex", "date": "2026년 06월 11일"},
-                    {"title": "국내 반도체 대장주 압축 투자, KODEX 반도체 ETF 포트폴리오 전략", "link": "https://blog.naver.com/etf_kodex", "date": "2026년 06월 08일"}
-                ]
-            elif "TIGER" in com:
-                raw_data = [
-                    {"title": "미래에셋 TIGER 미국나스닥100 커버드콜 투자로 매월 고정 인컴 만들기", "link": "https://blog.naver.com/m_invest", "date": "2026년 06월 11일"},
-                    {"title": "인도 시장의 폭발적인 성장성에 투자하는 방법: TIGER 인도니프티50", "link": "https://blog.naver.com/m_invest", "date": "2026년 06월 09일"}
-                ]
-            elif "RISE" in com:
-                raw_data = [
-                    {"title": "기업 가치 제고 수혜주 선점, RISE 코리아밸류업 지수 구성 종목 공개", "link": "https://blog.naver.com/kb_asset", "date": "2026년 06월 10일"},
-                    {"title": "자산배분의 기본, RISE 국고채 10년형을 활용한 연금 계좌 헤지 전략", "link": "https://blog.naver.com/kb_asset", "date": "2026년 06월 05일"}
-                ]
-            else:
-                raw_data = [
-                    {"title": "한투 ACE 미국빅테크밸류체인 가치사슬 압축 투자 핵심 포인트", "link": "https://blog.naver.com/aceetf", "date": "2026년 06월 11일"},
-                    {"title": "글로벌 시장의 숨은 강자, ACE 장기 채권 현물 ETF 분배금 안내", "link": "https://blog.naver.com/aceetf", "date": "2026년 06월 07일"}
-                ]
-
-        blog_data_store[com] = raw_data
-        just_titles = [item['title'] for item in raw_data if item.get('title')]
-        
-        # 날짜 범위 가독성 정의
-        if raw_data:
-            latest_date = raw_data[0]['date']
-            oldest_date = raw_data[-1]['date']
-            date_range = f"{oldest_date} ~ {latest_date}"
-        else:
-            date_range = "실시간 분석 기간 데이터 로드 중"
-            
-        role = f"당신은 {com}의 공식 블로그 포스트를 정밀 분석하여 현재 이 자산운용사가 어떤 ETF 상품을 가장 주력(Push)으로 밀고 있는지 밝혀내는 수석 마케팅 전략가입니다."
-        fmt = '{"main_products": "가장 집중적으로 밀고 있는 핵심 주력 ETF 상품명들 (쉼표로 구분)", "marketing_theme": "현재 밀고 있는 핵심 투자 테마", "key_copy": "공식 글에서 강조하는 핵심 캐치프레이즈나 대고객 설득 논리", "reasoning": "수집된 제목들을 바탕으로 이 상품들을 주력이라고 판단한 구체적인 근거 요약"}'
-        
-        ai_res = analyze_official_blog_with_gemini(current_gemini_key, role, just_titles, fmt)
-        
-        # Gemini 분석 호출이 혹시 실패하더라도 리포트 레이아웃 구조가 완벽하게 방어 유지되도록 설정
-        if not ai_res:
-            if "KODEX" in com:
-                ai_res = {"main_products": "KODEX 미국AI테크TOP10, KODEX 반도체", "marketing_theme": "글로벌 독점 프리미엄 테마 및 인컴", "key_copy": "AI 시대의 핵심 리더에 스마트하게 월배당으로 투자하라", "reasoning": "공식 채널 내 최고 빈도로 업로드된 신규 테크 스펙 북 자료 및 월배당 마케팅 시리즈 연재를 근거로 도출되었습니다."}
-            elif "TIGER" in com:
-                ai_res = {"main_products": "TIGER 미국나스닥100커버드콜, TIGER 인도니프티50", "marketing_theme": "고배당 타겟 인컴 및 신흥국 매크로 성장", "key_copy": "안정적인 월배당 현금흐름 위에 포스트 차이나의 혁신 성장을 더하다", "reasoning": "나스닥 커버드콜 옵션 배당금 수령 인증 가이드 및 인도 인프라 투자 매력도 심층 분석 연재 버즈를 기반으로 판단했습니다."}
-            elif "RISE" in com:
-                ai_res = {"main_products": "RISE 코리아밸류업, RISE 국고채10년", "marketing_theme": "정부 기업 밸류업 프로그램 및 자산배분 안정성", "key_copy": "새로운 이름 RISE와 함께 내 자산을 든든하고 합리적으로 키우는 방법", "reasoning": "리브랜딩 메시지와 융합하여 정기 배당이 기대되는 밸류업 지수 집중 해설 지표 콘텐츠 비중 확대를 근거로 파악했습니다."}
-            else:
-                ai_res = {"main_products": "ACE 미국빅테크밸류체인, ACE 장기채권현물", "marketing_theme": "글로벌 밸류체인 압축 투자 및 장기 확정 금리형 자산", "key_copy": "단순 지수 추종을 넘어 핵심 가치 사슬 전체를 완벽하게 지배하다", "reasoning": "빅테크 공급망 내부 핵심 소부장 기업 분석 리포트 배포 및 연금저축 계좌 내 채권 운용 필수 팁 강조 피드를 바탕으로 요약되었습니다."}
-
-        analysis_results.append({
-            "company": com,
-            "color": info["color"],
-            "date_range": date_range,
-            "main_products": ai_res.get("main_products"),
-            "marketing_theme": ai_res.get("marketing_theme"),
-            "key_copy": ai_res.get("key_copy"),
-            "reasoning": ai_res.get("reasoning")
-        })
-
-    # 🎨 [프리미엄 카드 레이아웃 배치 시작] (보내주신 이쁜 디자인 그대로 구현)
-    if analysis_results:
-        st.markdown("#### 📈 공식 블로그 주력 상품 실시간 분석 리포트")
-        
-        for res in analysis_results:
-            with st.container(border=True):
-                # 헤더 구역 (운용사명과 분석 기간 배치)
-                col_header, col_time = st.columns([2, 1])
-                with col_header:
-                    st.subheader(f"{res['color']} {res['company']}")
-                with col_time:
-                    st.markdown(f"<div style='text-align: right; color: gray; font-size: 0.95rem; padding-top: 5px;'>📅 분석 기간: <b>{res['date_range']}</b></div>", unsafe_allow_html=True)
-                
-                st.markdown("---")
-                
-                # 메인 핵심 정보 배치 (왼쪽: 상품 및 카피 / 오른쪽: 테마 및 AI 분석 근거)
-                col_left, col_right = st.columns(2)
-                
-                with col_left:
-                    st.markdown(f"##### 🔥 현재 주력 ETF 상품")
-                    st.info(res['main_products'])
-                    
-                    st.markdown(f"##### 💬 공식 마케팅 카피")
-                    st.markdown(f"> *\"{res['key_copy']}\"*")
-                
-                with col_right:
-                    st.markdown(f"##### 💡 핵심 투자 테마")
-                    st.success(res['marketing_theme'])
-                    
-                    st.markdown(f"##### 🧐 주력 판단 근거 (Gemini 리포트)")
-                    st.markdown(res['reasoning'])
-                
-                # 카드 하단에 해당 운용사의 실제 분석 원본 글 링크 접기 메뉴로 내장
-                with st.expander(f"🔗 {res['company'].split()[0]} 분석 근거 원본 글 목록 확인하기"):
-                    link_data = blog_data_store.get(res['company'], [])
-                    
-                    # 링크 목록 가독성을 위해 2개의 열로 쪼개서 이쁘게 출력
-                    l_col1, l_col2 = st.columns(2)
-                    for k, item in enumerate(link_data):
-                        if item.get('title') and item.get('link'):
-                            short_title = item['title'][:35] + "..." if len(item['title']) > 35 else item['title']
-                            display_text = f"- [{short_title}]({item['link']}) `({item['date']})`"
-                            if k % 2 == 0:
-                                l_col1.markdown(display_text)
-                            else:
-                                l_col2.markdown(display_text)
-            st.markdown("<br>", unsafe_allow_html=True)  # 카드 간의 여백 확보
-
 # ==============================================================================
 # [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할)
 # ==============================================================================
