@@ -208,6 +208,10 @@ def analyze_blog_with_openai(api_key, system_role, user_data, output_format):
         st.error(f"AI 분석 중 에러 발생: {e}")
         return None
 
+# ==============================================================================
+# 🔑 [API 키 설정] 여기에 실제 발급받으신 OpenAI API 키를 입력하세요!
+# ==============================================================================
+openai_key = "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"  # <-- 여기에 본인의 실제 OpenAI 키를 넣어줍니다.
 
 # ==============================================================================
 # [Section 2] 경쟁사 유튜브, 뉴스 모니터링 및 실시간 블로그 마케팅 분석 (순서 조정본)
