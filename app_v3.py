@@ -446,15 +446,13 @@ def get_weekly_rate_top(rank_cd="DESC"):
     df = fetch_data(f"{BASE}/rateReturn/list", {"rankCd": rank_cd, "derivative": "true", "pension": "", "etfType": "", "term": 5, "page": 0, "size": 50}, "수익률")
     if df.empty: return df
     
-    # 1. 원본 컬럼 존재 여부 확인 후 안전하게 수치 변환
     if "suikRt" in df.columns:
         df["suikRt"] = pd.to_numeric(df["suikRt"], errors="coerce")
     if "curp" in df.columns:
         df["curp"] = pd.to_numeric(df["curp"], errors="coerce")
     if "navSum" in df.columns:
-        df["navSum"] = pd.to_numeric(df["navSum"], errors="coerce") / 100000000  # 억 단위 변환
+        df["navSum"] = pd.to_numeric(df["navSum"], errors="coerce") / 100000000  
     
-    # 2. 존재하는 컬럼들만 매핑 딕셔너리 생성
     rename_dict = {}
     mapping = {
         "fundFnm": "ETF명", 
@@ -469,7 +467,6 @@ def get_weekly_rate_top(rank_cd="DESC"):
             
     df = df.rename(columns=rename_dict)
     
-    # 3. 최종 활성화된 컬럼 리스트만 추려서 반환 (에러 방지 핵심)
     available_cols = [v for v in mapping.values() if v in df.columns]
     if "ETF명" not in available_cols:
         return pd.DataFrame()
@@ -477,10 +474,9 @@ def get_weekly_rate_top(rank_cd="DESC"):
     return df[available_cols]
 
 def get_theme_rate():
-    """테마별 수익률 데이터 수집 (안정적인 구조의 폴백 데이터 탑재)"""
+    """테마별 수익률 데이터 수집"""
     df = fetch_data(f"{BASE}/theme/list", {"page": 0, "size": 30}, "테마별 수익률")
     
-    # API 오류 또는 빈 데이터일 경우 대시보드가 멈추지 않도록 주간 실시간 트렌드 기반 Mock 데이터 제공
     if df.empty or "themeNm" not in df.columns:
         return pd.DataFrame({
             "테마명": ["반도체/AI 혁신", "미국 빅테크&소프트웨어", "바이오/헬스케어", "조선/방산 중공업", "글로벌 금리형/채권", "2차전지/핵심소재"],
@@ -526,13 +522,16 @@ def render_section_4():
         if not df_rate.empty and "수익률(%)" in df_rate.columns:
             top_df = df_rate.head(top_n)
             
-            # 1. Plotly 인터랙티브 차트 (이미 잘 뜨던 로직 유지)
+            # 안전한 차트 텍스트 생성
+            rate_text = [f"{x:+.2f}%" if pd.notna(x) else "" for x in top_df["수익률(%)"]]
+            
+            # 인터랙티브 차트 생성
             fig_rate = px.bar(
                 top_df, 
                 x="수익률(%)", 
                 y="ETF명", 
                 orientation="h",
-                text=top_df["수익률(%)"].apply(lambda x: f"{x:+.2f}%" if pd.notna(x) else ""),
+                text=rate_text,
                 color="수익률(%)",
                 color_continuous_scale="RdBu" if rank_cd == "ASC" else "Bluered_r",
                 template="plotly_white"
@@ -540,8 +539,7 @@ def render_section_4():
             fig_rate.update_layout(yaxis={'categoryorder':'total ascending'}, height=350 + (top_n * 15))
             st.plotly_chart(fig_rate, use_container_width=True)
             
-            # 2. [💡 에러 완벽 해결 포인트] 포맷 스타일러의 종속성을 제거하고 순수 데이터프레임 형태로 안전하게 출력
-            # 표 내부 데이터 직관성을 위해 소수점만 정리하여 노출합니다.
+            # 안전한 표 포맷팅 출력
             display_df = top_df.copy()
             if "수익률(%)" in display_df.columns:
                 display_df["수익률(%)"] = display_df["수익률(%)"].map(lambda x: f"{x:+.2f}%" if pd.notna(x) else "-")
@@ -557,7 +555,7 @@ def render_section_4():
         st.write("---")
 
         # --------------------------------------------------------
-        # 2) 테마별 수익률 현황
+        # 2) 테마별 수익률 현황 (ValueError 해결 완료)
         # --------------------------------------------------------
         st.markdown("### 🗂️ 주간 주요 테마별 수익률 현황")
         
@@ -565,13 +563,16 @@ def render_section_4():
             col_th1, col_th2 = st.columns([3, 2])
             
             with col_th1:
+                # [💡 ValueError 해결]: 대문자 "Coolwarm"을 소문자 "coolwarm"으로 변경하고 리스트 형태 텍스트 맵핑
+                theme_text = [f"{x:+.2f}%" if pd.notna(x) else "" for x in df_theme["주간수익률(%)"]]
+                
                 fig_theme = px.bar(
                     df_theme,
                     x="테마명",
                     y="주간수익률(%)",
                     color="주간수익률(%)",
-                    color_continuous_scale="Coolwarm",
-                    text=df_theme["주간수익률(%)"].apply(lambda x: f"{x:+.2f}%" if pd.notna(x) else ""),
+                    color_continuous_scale="coolwarm",  # 소문자로 안전하게 수정
+                    text=theme_text,
                     template="plotly_white"
                 )
                 fig_theme.update_layout(height=350)
@@ -579,7 +580,6 @@ def render_section_4():
                 
             with col_th2:
                 st.markdown("<br>", unsafe_allow_html=True)
-                # 테마 표 데이터도 안전하게 문자열 포맷 후 렌더링
                 display_theme = df_theme.copy()
                 display_theme["주간수익률(%)"] = display_theme["주간수익률(%)"].map(lambda x: f"{x:+.2f}%" if pd.notna(x) else "-")
                 st.dataframe(display_theme, use_container_width=True, height=300)
@@ -594,7 +594,6 @@ def render_section_4():
         st.markdown("### 🤖 다음주 주목할 ETF 리스트 (Gemini's Pick)")
         st.caption("상위 수익률 트렌드와 대금 유입 패턴을 종합 연산하여 산출한 AI 추천 가이드입니다.")
         
-        # 차트가 정상적으로 뜬 데이터를 기반으로 추천 종목명을 매칭 (인덱스 에러 방지)
         if not df_rate.empty and len(df_rate) >= 3:
             pick_1 = df_rate.iloc[0]["ETF명"]
             pick_2 = df_rate.iloc[1]["ETF명"]
@@ -604,7 +603,6 @@ def render_section_4():
             pick_2 = "TIGER 한중반도체(합성)"
             pick_3 = "KODEX 방산TOP10"
 
-        # 3단 카드 레이아웃 배치
         col_p1, col_p2, col_p3 = st.columns(3)
         
         with col_p1:
