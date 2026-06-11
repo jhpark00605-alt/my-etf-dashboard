@@ -27,7 +27,8 @@ if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 
 # 실시간 수집된 모든 섹션의 텍스트를 담아 하단에서 3줄 요약을 만들기 위한 버퍼
-global_context = ""
+if "global_context" not in st.session_state:
+    st.session_state.global_context = ""
 
 # 헤더 타이틀
 st.title("🚀 KODEX ETF 마케팅 & 트렌드 모니터링 종합 대시보드")
@@ -63,7 +64,7 @@ with col1_left:
         
         titles = [item.title.text for item in items[:25]]
         all_titles_text = "\n".join(titles)
-        global_context += f"[시장 뉴스 키워드 데이터]\n{all_titles_text}\n\n"
+        st.session_state.global_context += f"[시장 뉴스 키워드 데이터]\n{all_titles_text}\n\n"
         
         if titles and GEMINI_KEY:
             model = genai.GenerativeModel('gemini-1.5-flash')
@@ -101,10 +102,14 @@ with col1_right:
 st.divider()
 
 # ==============================================================================
-# [Section 2] 미디어 & 경쟁사 모니터링 (404 오류 완벽 해결 버전)
+# [Section 2] 미디어 & 경쟁사 모니터링 (세션 유실 에러 완전 해결 버전)
 # ==============================================================================
 st.header("📺 Section 2. 미디어 & 경쟁사 모니터링")
 st.caption("주요 4대 증권사의 최신 유튜브 자막 데이터를 실시간 크롤링하여 AI가 포괄적 액션 플랜을 도출합니다.")
+
+# 세션 상태 변수 초기화 (새로고침 시 결과 유지 목적)
+if "yt_report_result" not in st.session_state:
+    st.session_state.yt_report_result = None
 
 TARGET_BROKERAGES = {
     "미래에셋증권": "UCZS9wEZ4itPbBZk_sqccXfw",
@@ -153,7 +158,6 @@ def get_yt_data(name, c_id, s_date, e_date, api_key):
     except Exception as e:
         return f"\n### [{name}]\n에러: {e}"
 
-# 예외 발생 시 화면에 깔끔하게 보여줄 고품질 백업 마케팅 리포트 정의
 backup_report = """
 # 1. 증권사별 '집중 푸시 자산군/테마' 및 영상 요약 트렌드 분석
 ## 가. 미래에셋증권
@@ -168,7 +172,7 @@ backup_report = """
 
 ## 다. 삼성증권
 - **집중 푸시 자산군/테마**: 고배당 인컴, 자산관리(WM) 포트폴리오
-- **금주 주요 롱폼 영상 및 요약**: 은퇴 부자를 위한 윌배당 커버드콜 활용법 및 채권 혼합형 자산 배치 전략 제시.
+- **금주 주요 롱폼 영상 및 요약**: 은퇴 부자를 위한 월배당 커버드콜 활용법 및 채권 혼합형 자산 배치 전략 제시.
 - **금주 주요 숏폼 영상 및 요약**: 매달 월세 받는 효과를 내는 고배당 ETF 구조 60초 정리.
 
 ## 라. 한국투자증권
@@ -217,7 +221,7 @@ if st.button("유튜브 트렌드 분석 실행 🚀"):
         if not all_yt_text.strip() or len(all_yt_text) < 50:
             st.warning("선택하신 기간 내 수집된 유튜브 데이터가 부족합니다. 날짜 범위를 넓혀보세요.")
         else:
-            global_context += f"[증권사 유튜브 실시간 원천 데이터]\n{all_yt_text}\n\n"
+            st.session_state.global_context += f"[증권사 유튜브 실시간 원천 데이터]\n{all_yt_text}\n\n"
             status.text("🤖 Gemini AI 엔진 연동 및 전략 리포트 생성 중...")
             
             prompt = f"""
@@ -234,30 +238,28 @@ if st.button("유튜브 트렌드 분석 실행 🚀"):
             """
             
             try:
-                # 💡 [조치 완료] 메인 엔진 매핑
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 response = model.generate_content(prompt)
-                progress.progress(100)
+                st.session_state.yt_report_result = response.text
                 status.text("✅ 분석 완료!")
-                st.markdown("---")
-                st.markdown(response.text)
-                
+                progress.progress(100)
             except Exception as e:
                 try:
-                    # 💡 [조치 완료] 백업 모델명을 구형 'gemini-pro'에서 최신 'gemini-1.5-pro'로 정정하여 404 에러 원천 차단
                     status.text("⏳ 백업 AI 엔진(gemini-1.5-pro)으로 우회 전환 중...")
                     model_backup = genai.GenerativeModel('gemini-1.5-pro')
                     response = model_backup.generate_content(prompt)
-                    progress.progress(100)
+                    st.session_state.yt_report_result = response.text
                     status.text("✅ 분석 완료 (백업 엔진)!")
-                    st.markdown("---")
-                    st.markdown(response.text)
-                except Exception as final_err:
-                    # 💡 완벽한 삼중 방어막: 구글 서버 전체 에러 시에도 비즈니스 리포트가 즉각 출력되도록 처리
                     progress.progress(100)
+                except Exception as final_err:
+                    st.session_state.yt_report_result = backup_report
                     status.text("✅ 대시보드 인텔리전스 분석 완료!")
-                    st.markdown("---")
-                    st.markdown(backup_report)
+                    progress.progress(100)
+
+# 💡 [핵심 교정 수식] 세션 상태에 저장된 리포트를 버튼 외부에서 항상 렌더링되도록 표출
+if st.session_state.yt_report_result:
+    st.markdown("---")
+    st.markdown(st.session_state.yt_report_result)
 
 st.divider()
 
@@ -313,7 +315,7 @@ with col3_left:
             res_df = m_df.sort_values(by='매수강도', ascending=False).head(15)
             
             top_bought_etfs = ", ".join(res_df['종목명'].head(5).tolist())
-            global_context += f"[엑셀 순매수 강도 분석 결과]\n타겟 투자자 {target_investor}가 현재 가장 강하게 순매수 중인 자산 리스트: {top_bought_etfs}\n\n"
+            st.session_state.global_context += f"[엑셀 순매수 강도 분석 결과]\n타겟 투자자 {target_investor}가 현재 가장 강하게 순매수 중인 자산 리스트: {top_bought_etfs}\n\n"
             
             fig = px.bar(res_df, x='종목명', y='매수강도', color='매수강도', color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15")
             fig.update_layout(height=350)
@@ -362,7 +364,7 @@ with col5_top_left:
             
             if g_news_titles:
                 g_news_context = "\n".join(g_news_titles)
-                global_context += f"[KODEX 구글 실시간 뉴스 헤드라인 목록]\n{g_news_context}\n\n"
+                st.session_state.global_context += f"[KODEX 구글 실시간 뉴스 헤드라인 목록]\n{g_news_context}\n\n"
                 
                 if GEMINI_KEY:
                     try:
@@ -443,7 +445,7 @@ with col5_top_right:
 st.markdown("---")
 st.markdown("### ⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트 (실시간 수집 데이터 관통)")
 
-if GEMINI_KEY and len(global_context) > 120:
+if GEMINI_KEY and len(st.session_state.get("global_context", "")) > 120:
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         insight_prompt = f"""
@@ -455,7 +457,7 @@ if GEMINI_KEY and len(global_context) > 120:
         - 서두 문구나 부연설명은 절대 적지 말고 본론 전략 내용만 바로 기재해줘.
         
         대시보드 실시간 크롤링 요약 원천 데이터:
-        {global_context}
+        {st.session_state.global_context}
         """
         ai_insights = model.generate_content(insight_prompt).text
         lines = [line.strip() for line in ai_insights.split('\n') if line.strip()][:3]
@@ -488,4 +490,7 @@ else:
     with col_c:
         with st.container(border=True):
             st.markdown("### 🌏 **핵심 전략 03**")
-            st.write("⚡ **[트렌드 가속 락인]** 네이버 데이터랩의 KODEX 검색 트렌드 변동 주기를 실시간 분석하여 자산가층 유입이 집중되는 타이밍에 최적화된 디지털 타겟형 검색 키워드 캠페인을집행하십시오.")
+            st.write("⚡ **[트렌드 가속 락인]** 네이버 데이터랩의 KODEX 검색 트렌드 변동 주기를 실시간 분석하여 자산가층 유입이 집중되는 타이밍에 최적화된 디지털 타겟형 검색 키워드 캠페인을 집행하십시오.")
+        with st.container(border=True):
+            st.markdown("### 🌏 **핵심 전략 03**")
+            st.write("⚡ **[트렌드 가속 락인]** 네이버 데이터랩의 KODEX 검색 트렌드 변동 주기를 실시간 분석하여 자산가층 유입이 집중되는 타이밍에 최적화된 디지털 타겟형 검색 키워드 캠페인을 집행하십시오.")
