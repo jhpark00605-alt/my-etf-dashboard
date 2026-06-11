@@ -335,7 +335,7 @@ col5_top_left, col5_top_right = st.columns([1, 1])
 with col5_top_left:
     st.subheader("📰 KODEX 마케팅/보도 뉴스 동향 (구글 실시간 분석)")
     
-    # 구글 뉴스 RSS에서 'KODEX ETF' 관련 최신 뉴스 수집
+    # 1. 구글 뉴스 RSS에서 'KODEX ETF' 관련 최신 뉴스 수집
     google_news_url = "https://news.google.com/rss/search?q=KODEX+ETF&hl=ko&gl=KR&ceid=KR:ko"
     
     try:
@@ -351,20 +351,37 @@ with col5_top_left:
             
             if g_news_titles:
                 g_news_context = "\n".join(g_news_titles)
-                # 하단 종합 3줄 요약에 데이터를 보태기 위해 글로벌 컨텍스트에 누적
+                # 하단 종합 3줄 요약 연동을 위해 글로벌 컨텍스트에 누적
                 global_context += f"[KODEX 구글 실시간 뉴스 헤드라인 목록]\n{g_news_context}\n\n"
                 
                 if GEMINI_KEY:
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    news_prompt = f"""
-                    다음은 구글 뉴스를 통해 실시간 수집된 삼성자산운용 KODEX ETF 관련 최신 보도자료 헤드라인들이야. 
-                    현재 KODEX가 언론을 통해 집중적으로 홍보하고 있는 마케팅 방향성이나 신규 출시 테마 상품군이 무엇인지 요약 리포트를 가독성 좋게 작성해줘.
-                    
-                    뉴스 데이터:
-                    {g_news_context}
-                    """
-                    news_report = model.generate_content(news_prompt).text
-                    st.markdown(news_report)
+                    try:
+                        # 💡 [Error 방어] 공식 가이드라인 규격에 맞춘 정확한 모델 인스턴스 생성
+                        # v1beta 경로 오류를 우회하기 위해 가장 안정적인 일반 flash 모델명 세팅
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        
+                        news_prompt = f"""
+                        너는 삼성자산운용 KODEX ETF의 최고 마케팅 전략가야.
+                        다음은 구글 뉴스를 통해 실시간 수집된 KODEX ETF 관련 최신 보도자료 헤드라인들이야. 
+                        현재 KODEX가 언론을 통해 집중적으로 홍보하고 있는 핵심 마케팅 방향성이나 신규 출시 테마 상품군이 무엇인지 분석해서 요약 리포트를 가독성 좋게 작성해줘.
+                        
+                        뉴스 데이터:
+                        {g_news_context}
+                        """
+                        
+                        # 💡 안전하게 콘텐츠 생성 호출
+                        response = model.generate_content(news_prompt)
+                        st.markdown(response.text)
+                        
+                    except Exception as gemini_err:
+                        # 혹시 모델명이 또 충돌날 경우를 대비한 2차 백업 모델(gemini-pro) 우회 엔진
+                        try:
+                            model_backup = genai.GenerativeModel('gemini-pro')
+                            response = model_backup.generate_content(news_prompt)
+                            st.markdown(response.text)
+                        except Exception as e2:
+                            st.error(f"❌ Gemini AI 모델 연결 오류: {gemini_err}")
+                            st.info("💡 팁: Streamlit Secrets에 등록된 'GEMINI_API_KEY'의 권한이나 모델 활성화 상태를 확인해 주세요.")
                 else:
                     st.info("💡 실시간 보도 뉴스는 로드되었으나, Gemini API 키가 없어 요약 리포트를 표시할 수 없습니다.")
             else:
@@ -373,8 +390,7 @@ with col5_top_left:
             st.error(f"❌ 구글 뉴스 서버 통신 실패 (Status Code: {news_resp.status_code})")
             
     except Exception as e:
-        st.markdown(f"❌ 구글 뉴스 파싱 중 오류 발생: {e}")
-
+        st.markdown(f"❌ 구글 뉴스 파싱 중 외부 오류 발생: {e}")
 with col5_top_right:
     st.subheader("📱 실시간 네이버 데이터랩 트렌드 (최근 한 달)")
     has_naver_api = False
