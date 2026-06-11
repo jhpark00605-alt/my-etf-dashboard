@@ -60,8 +60,7 @@ with col1_left:
             
             response = model.generate_content(prompt)
             raw_res = response.text
-            clean_res = raw_res.replace("```json", "").replace("
-```", "").replace("json", "").strip()
+            clean_res = raw_res.replace("```json", "").replace("```", "").replace("json", "").strip()
             keyword_list = json.loads(clean_res)
             
             df_keywords = pd.DataFrame(keyword_list).sort_values(by='언급량', ascending=False)
