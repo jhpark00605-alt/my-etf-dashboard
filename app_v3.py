@@ -391,6 +391,9 @@ OFFICIAL_BLOGS = {
     "한국투자신탁운용 (ACE)": {"id": "aceetf", "url": "https://blog.naver.com/aceetf", "hex": "#2DB400"}         # 초록색
 }
 
+# ==============================================================================
+# 💡 [필수 함수 정의 구역] (실행부보다 반드시 위에 위치해야 NameError가 나지 않습니다)
+# ==============================================================================
 def get_official_blog_data(blog_id, count):
     """공식 블로그 네이버 RSS 직접 통신 및 가독성 높은 한국어 날짜 변환"""
     url = f"https://rss.blog.naver.com/{blog_id}.xml"
@@ -455,6 +458,7 @@ def analyze_official_blog_with_gemini(gemini_key, system_role, user_data, output
         """
         response = model.generate_content(prompt)
         if response and response.text:
+            import json
             return json.loads(response.text.strip())
     except:
         return None
@@ -462,7 +466,7 @@ def analyze_official_blog_with_gemini(gemini_key, system_role, user_data, output
 
 
 # ==============================================================================
-# 📊 [섹션] 4대 자산운용사 공식 블로그 주력 ETF 상품 분석 및 UI 출력
+# 📊 [섹션] 4대 자산운용사 공식 블로그 주력 ETF 상품 분석 및 UI 출력 (실행부)
 # ==============================================================================
 st.markdown("<br><hr>", unsafe_allow_html=True)
 st.markdown("### 📊 4대 자산운용사 공식 블로그 주력 ETF 상품 분석")
@@ -517,6 +521,7 @@ else:
         role = f"당신은 {com}의 공식 블로그 포스트를 정밀 분석하여 현재 이 자산운용사가 어떤 ETF 상품을 가장 주력(Push)으로 밀고 있는지 밝혀내는 수석 마케팅 전략가입니다."
         fmt = '{"main_products": "가장 집중적으로 밀고 있는 핵심 주력 ETF 상품명들 (쉼표로 구분)", "marketing_theme": "현재 밀고 있는 핵심 투자 테마", "key_copy": "공식 글에서 강조하는 핵심 캐치프레이즈나 대고객 설득 논리", "reasoning": "수집된 제목들을 바탕으로 이 상품들을 주력이라고 판단한 구체적인 근거 요약"}'
         
+        # 🚨 [해결 완료] 이제 파이썬이 상단에 미리 선언된 함수를 순차적으로 완벽하게 읽어옵니다.
         ai_res = analyze_official_blog_with_gemini(current_gemini_key, role, just_titles, fmt)
         
         if not ai_res:
@@ -539,13 +544,12 @@ else:
             "reasoning": ai_res.get("reasoning")
         })
 
-    # 🎨 [UI 출력 구역] 수집된 결과를 바탕으로 프리미엄 카드 레이아웃 생성
+    # 🎨 [UI 출력 구역]
     if analysis_results:
         st.markdown("#### 📈 공식 블로그 주력 상품 실시간 분석 리포트")
         
         for res in analysis_results:
             with st.container(border=True):
-                # 배경색상에 맞춘 글씨색 반전 최적화 로직
                 text_color = "#111111" if res['hex'] == "#FFCC00" else "#ffffff"
                 
                 header_html = f"""
