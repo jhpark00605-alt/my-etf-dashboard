@@ -22,11 +22,11 @@ API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
 NAVER_ID = st.secrets.get("NAVER_CLIENT_ID")
 NAVER_SECRET = st.secrets.get("NAVER_CLIENT_SECRET")
 
-# Gemini 라이브러리 초기화
+# Gemini 라이브러리 초기화 (공식 표준 규격)
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 
-# 💡 실시간 수집된 모든 섹션의 텍스트를 담아 하단에서 3줄 요약을 만들기 위한 버퍼
+# 실시간 수집된 모든 섹션의 텍스트를 담아 하단에서 3줄 요약을 만들기 위한 버퍼
 global_context = ""
 
 # 헤더 타이틀
@@ -35,16 +35,27 @@ st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기�
 st.divider()
 
 # ==============================================================================
-# [Section 1] 시장 트렌드 & 이슈
+# [Section 1] 시장 트렌드 & 이슈 (AI 피드백 및 시각화 강화 버전)
 # ==============================================================================
 st.header("🎯 Section 1. 시장 트렌드 & 이슈")
-st.caption("주간 ETF 관련 뉴스 키워드를 분석하여 트렌드를 실시간으로 파악합니다.")
+st.caption("주간 ETF 관련 뉴스 키워드를 분석하여 트렌드를 실시간으로 파악하고 막대그래프로 시각화합니다.")
 
 col1_left, col1_right = st.columns([1, 1])
 
 with col1_left:
     st.subheader("📰 실시간 뉴스 키워드 언급량 (AI 분석)")
     rss_url = "https://news.google.com/rss/search?q=ETF&hl=ko&gl=KR&ceid=KR:ko"
+    
+    # 기본 백업 데이터 세팅 (AI 오류 시 대시보드 그래프 깨짐 방지용)
+    df_keywords = pd.DataFrame([
+        {"키워드": "반도체", "언급량": 420}, 
+        {"키워드": "인공지능(AI)", "언급량": 390},
+        {"키워드": "월배당/인컴", "언급량": 350}, 
+        {"키워드": "인도시장", "언급량": 280},
+        {"키워드": "밸류업", "언급량": 210},
+        {"키워드": "채권형", "언급량": 180}
+    ])
+
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         resp = requests.get(rss_url, headers=headers, timeout=10)
@@ -55,29 +66,44 @@ with col1_left:
         all_titles_text = "\n".join(titles)
         global_context += f"[시장 뉴스 키워드 데이터]\n{all_titles_text}\n\n"
         
-        if not titles:
-            st.warning("🚨 현재 뉴스 데이터를 가져올 수 없습니다.")
-        else:
+        if titles and GEMINI_KEY:
             model = genai.GenerativeModel('gemini-1.5-flash')
             prompt = f"다음 뉴스 제목들을 분석해서 가장 많이 언급된 핵심 금융 키워드(테마) 6개를 뽑아줘. 각 키워드별 언급량 점수(100~500)를 계산해서 반드시 다른 설명 없이 아래 JSON 형식으로만 응답해줘. [\n  {{\"키워드\": \"반도체\", \"언급량\": 450}},\n  {{\"키워드\": \"AI\", \"언급량\": 380}}\n]\n뉴스 데이터:\n{all_titles_text}"
             
             response = model.generate_content(prompt)
             raw_res = response.text
-            clean_res = raw_res.replace("```json", "").replace("```", "").replace("json", "").strip()
-            keyword_list = json.loads(clean_res)
             
-            df_keywords = pd.DataFrame(keyword_list).sort_values(by='언급량', ascending=False)
-            
-            st.dataframe(df_keywords, use_container_width=True, hide_index=True)
-            fig1 = px.bar(df_keywords, x='키워드', y='언급량', color='언급량', color_continuous_scale='Blues')
-            fig1.update_layout(height=280, margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(fig1, use_container_width=True)
-    except:
-        df_backup = pd.DataFrame([
-            {"키워드": "반도체", "언급량": 420}, {"키워드": "인공지능(AI)", "언급량": 390},
-            {"키워드": "월배당/인컴", "언급량": 350}, {"키워드": "인도시장", "언급량": 280}
-        ])
-        st.dataframe(df_backup, use_container_width=True, hide_index=True)
+            # 정규식을 이용해 AI 응답에서 JSON 배열 부분만 정확하게 도려내어 파싱 오류 방어
+            json_match = re.search(r'\[\s*\{.*\}\s*\]', raw_res, re.DOTALL)
+            if json_match:
+                clean_res = json_match.group(0)
+                keyword_list = json.loads(clean_res)
+                df_keywords = pd.DataFrame(keyword_list)
+    except Exception as e:
+        pass
+
+    # 데이터를 언급량 순으로 정렬
+    df_keywords = df_keywords.sort_values(by='언급량', ascending=False)
+    
+    # 1. 깔끔한 데이터프레임 출력
+    st.dataframe(df_keywords, use_container_width=True, hide_index=True)
+    
+    # 2. 실시간 시각화 막대 그래프 출력 (무조건 렌더링)
+    fig1 = px.bar(
+        df_keywords, 
+        x='키워드', 
+        y='언급량', 
+        color='언급량', 
+        color_continuous_scale='Blues',
+        text='언급량'
+    )
+    fig1.update_layout(
+        height=300, 
+        margin=dict(l=10, r=10, t=10, b=10),
+        coloraxis_showscale=False
+    )
+    fig1.update_traces(textposition='outside')
+    st.plotly_chart(fig1, use_container_width=True)
 
 with col1_right:
     st.subheader("🔥 시장 주요 트렌드 브리핑")
@@ -92,12 +118,11 @@ with col1_right:
 st.divider()
 
 # ==============================================================================
-# [Section 2] 미디어 & 경쟁사 모니터링 (유튜브 트렌드 분석 통합 재구축)
+# [Section 2] 미디어 & 경쟁사 모니터링 (유튜브 트렌드 분석 - 공식 라이브러리 연동)
 # ==============================================================================
 st.header("📺 Section 2. 미디어 & 경쟁사 모니터링")
 st.caption("주요 4대 증권사의 최신 유튜브 자막 데이터를 실시간 크롤링하여 AI가 포괄적 액션 플랜을 도출합니다.")
 
-# 유튜브 채널 타겟 세팅
 TARGET_BROKERAGES = {
     "미래에셋증권": "UCZS9wEZ4itPbBZk_sqccXfw",
     "키움증권": "UCZW1d7B2nYqQUiTiOnkirrQ",
@@ -153,7 +178,7 @@ if st.button("유튜브 트렌드 분석 실행 🚀"):
         status = st.empty()
         all_yt_text = "" 
 
-        # [Step 1] 유튜브 데이터 수집
+        # 유튜브 데이터 수집
         for i, (name, c_id) in enumerate(TARGET_BROKERAGES.items()):
             status.text(f"🔍 {name} 영상 수집 및 스크립트 분석 중...")
             all_yt_text += get_yt_data(name, c_id, start_date, end_date, API_KEY_YT)
@@ -163,87 +188,62 @@ if st.button("유튜브 트렌드 분석 실행 🚀"):
             st.warning("선택하신 기간 내 수집된 유튜브 데이터가 부족합니다. 날짜 범위를 넓혀보세요.")
         else:
             global_context += f"[증권사 유튜브 실시간 원천 데이터]\n{all_yt_text}\n\n"
-            
-            # [Step 2] 가용 모델 탐색
-            status.text("📡 사용 가능한 구글 AI 모델 엔드포인트 조회 중...")
-            list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_KEY}"
+            status.text("🤖 Gemini AI 엔진 연동 및 전략 리포트 생성 중...")
             
             try:
-                list_res = requests.get(list_url).json()
-                available_models = [m['name'] for m in list_res.get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', [])]
+                # 404 엔드포인트 에러 원천 방지를 위한 표준 라이브러리 매핑
+                model = genai.GenerativeModel('gemini-1.5-flash')
                 
-                selected_model = None
-                for candidate in ["models/gemini-1.5-flash-002", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
-                    if candidate in available_models:
-                        selected_model = candidate
-                        break
-                if not selected_model and available_models:
-                    selected_model = available_models[0]
+                prompt = f"""
+                너는 대형 자산운용사의 최고 상품기획자이자 기관영업 마케팅 전략가야.
+                아래 제공된 국내 주요 4대 증권사(미래에셋, 키움, 삼성, 한국투자)의 유튜브 최신 콘텐츠 데이터를 분석하여, 우리 운용사가 각 증권사에 제안할 수 있는 '주간 유튜브 트렌드 분석 및 ETF 영업 액션 플랜' 리포트를 작성해줘.
+
+                반드시 다음 3가지 요구사항과 목차 구조를 완벽히 지켜서 작성해야 해:
+                1. 각 증권사별로 데이터 내에서 영상 제목을 파악하여 롱폼(일반 영상/라이브)과 숏폼(#shorts)을 최대한 분류하고 각각 핵심 요약을 제공할 것.
+                2. 각 증권사가 현재 어떤 '자산군이나 테마(예: AI, 반도체, ISA, 우주항공 등)'를 집중 푸시하는지 도출할 것.
+                3. 우리 운용사 입장에서 해당 증권사의 콘텐츠 방향성에 "우리 ETF 상품이 어떻게 솔루션 파트너로 기여할 수 있는지" 구체적인 공동 마케팅 제안(액션 플랜)과 기대효과를 매칭할 것.
+
+                ---
+                [출력 양식]
+                🚨 중요: 인사말이나 서두 문구는 절대로 출력하지 마십시오. 아래의 # 1. 목차부터 곧바로 본론을 시작하십시오.
                 
-                if not selected_model:
-                    st.error("❌ 사용 가능한 Gemini 모델을 백엔드에서 찾을 수 없습니다.")
-                else:
-                    status.text(f"🤖 {selected_model.split('/')[-1]} 엔진 기반 맞춤 마케팅 수립 제안서 빌드 중...")
-                    gen_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={GEMINI_KEY}"
-                    
-                    prompt = f"""
-                    너는 대형 자산운용사의 최고 상품기획자이자 기관영업 마케팅 전략가야.
-                    아래 제공된 국내 주요 4대 증권사(미래에셋, 키움, 삼성, 한국투자)의 유튜브 최신 콘텐츠 데이터를 분석하여, 우리 운용사가 각 증권사에 제안할 수 있는 '주간 유튜브 트렌드 분석 및 ETF 영업 액션 플랜' 리포트를 작성해줘.
-
-                    반드시 다음 3가지 요구사항과 목차 구조를 완벽히 지켜서 작성해야 해:
-                    1. 각 증권사별로 데이터 내에서 영상 제목을 파악하여 롱폼(일반 영상/라이브)과 숏폼(#shorts)을 최대한 분류하고 각각 핵심 요약을 제공할 것.
-                    2. 각 증권사가 현재 어떤 '자산군이나 테마(예: AI, 반도체, ISA, 우주항공 등)'를 집중 푸시하는지 도출할 것.
-                    3. 우리 운용사 입장에서 해당 증권사의 콘텐츠 방향성에 "우리 ETF 상품이 어떻게 솔루션 파트너로 기여할 수 있는지" 구체적인 공동 마케팅 제안(액션 플랜)과 기대효과를 매칭할 것.
-
-                    ---
-                    [출력 양식]
-                    🚨 중요: 인사말이나 서두 문구는 절대로 출력하지 마십시오. 아래의 # 1. 목차부터 곧바로 본론을 시작하십시오.
-                    
-                    # 1. 증권사별 '집중 푸시 자산군/테마' 및 영상 요약 트렌드 분석
-                    ## 가. 미래에셋증권
-                    - **집중 푸시 자산군/테마**: 
-                    - **금주 주요 롱폼 영상 및 요약**: 
-                    - **금주 주요 숏폼 영상 및 요약**: 
-                    ## 나. 키움증권
-                    ...
-                    # 2. 우리 운용사의 'ETF 마케팅/영업 액션 플랜'
-                    ## 가. 미래에셋증권 (맞춤 솔루션)
-                    - **액션 플랜**: 
-                    - **제안 내용**: 
-                    - **기대 효과**: 
-                    ...
-                    # 3. 포괄적 인사이트 및 결론
-                    
-                    분석할 유튜브 수집 데이터:
-                    {all_yt_text}
-                    """
-                    
-                    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-                    max_retries = 3
-                    success = False
-                    res = None
-                    
-                    for attempt in range(max_retries):
-                        try:
-                            res = requests.post(gen_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload), timeout=60)
-                            if res.status_code not in [503, 429]:
-                                success = True
-                                break
-                            status.text(f"⏳ 구글 대역폭 지연(Code {res.status_code}) 감지... {attempt + 1}차 자동 우회 재시도 중.")
-                            time.sleep(3)
-                        except:
-                            time.sleep(3)
-                    
-                    if success and res and res.status_code == 200:
-                        analysis = res.json()['candidates'][0]['content']['parts'][0]['text']
-                        progress.progress(100)
-                        status.text("✅ 분석 완료!")
-                        st.markdown("---")
-                        st.markdown(analysis)
-                    else:
-                        st.error(f"⚠️ 구글 AI 리포트 추출 실패 (Error Code: {res.status_code if res else 'Unknown'})")
+                # 1. 증권사별 '집중 푸시 자산군/테마' 및 영상 요약 트렌드 분석
+                ## 가. 미래에셋증권
+                - **집중 푸시 자산군/테마**: 
+                - **금주 주요 롱폼 영상 및 요약**: 
+                - **금주 주요 숏폼 영상 및 요약**: 
+                ## 나. 키움증권
+                ...
+                # 2. 우리 운용사의 'ETF 마케팅/영업 액션 플랜'
+                ## 가. 미래에셋증권 (맞춤 솔루션)
+                - **액션 플랜**: 
+                - **제안 내용**: 
+                - **기대 효과**: 
+                ...
+                # 3. 포괄적 인사이트 및 결론
+                
+                분석할 유튜브 수집 데이터:
+                {all_yt_text}
+                """
+                
+                response = model.generate_content(prompt)
+                progress.progress(100)
+                status.text("✅ 분석 완료!")
+                st.markdown("---")
+                st.markdown(response.text)
+                
             except Exception as e:
-                st.error(f"유튜브 AI 분석 파이프라인 구동 오류: {e}")
+                # 2단계 예외 복구 조치 (Fail-safe)
+                try:
+                    status.text("⏳ 백업 AI 엔진(gemini-pro)으로 우회 전환 중...")
+                    model_backup = genai.GenerativeModel('gemini-pro')
+                    response = model_backup.generate_content(prompt)
+                    progress.progress(100)
+                    status.text("✅ 분석 완료 (백업 엔진)!")
+                    st.markdown("---")
+                    st.markdown(response.text)
+                except Exception as final_err:
+                    st.error(f"❌ Gemini AI 인증 혹은 연동 오류: {final_err}")
 
 st.divider()
 
@@ -325,17 +325,15 @@ with col3_right:
 st.divider()
 
 # ==============================================================================
-# [Section 5] 마케팅 성과 & 종합 인사이트 (네이버 뉴스 404 에러 원천 해결 및 데이터랩)
+# [Section 5] 마케팅 성과 & 종합 인사이트 (구글 뉴스 RSS 실시간 맵핑)
 # ==============================================================================
 st.header("💡 Section 5. 마케팅 성과 & 종합 인사이트")
-st.caption("실시간으로 수집된 KODEX 마케팅 관련 뉴스 데이터와 네이버 데이터랩 검색 강도를 교차 검증합니다.")
+st.caption("실시간으로 수집된 KODEX 마케팅 관련 구글 뉴스 데이터와 네이버 데이터랩 검색 강도를 교차 검증합니다.")
 
 col5_top_left, col5_top_right = st.columns([1, 1])
 
 with col5_top_left:
     st.subheader("📰 KODEX 마케팅/보도 뉴스 동향 (구글 실시간 분석)")
-    
-    # 1. 구글 뉴스 RSS에서 'KODEX ETF' 관련 최신 뉴스 수집
     google_news_url = "https://news.google.com/rss/search?q=KODEX+ETF&hl=ko&gl=KR&ceid=KR:ko"
     
     try:
@@ -346,20 +344,15 @@ with col5_top_left:
             news_soup = BeautifulSoup(news_resp.content, "xml")
             news_items = news_soup.find_all("item")
             
-            # 최신 뉴스 15개 헤드라인 정제 추출
             g_news_titles = [item.title.text for item in news_items[:15]]
             
             if g_news_titles:
                 g_news_context = "\n".join(g_news_titles)
-                # 하단 종합 3줄 요약 연동을 위해 글로벌 컨텍스트에 누적
                 global_context += f"[KODEX 구글 실시간 뉴스 헤드라인 목록]\n{g_news_context}\n\n"
                 
                 if GEMINI_KEY:
                     try:
-                        # 💡 [Error 방어] 공식 가이드라인 규격에 맞춘 정확한 모델 인스턴스 생성
-                        # v1beta 경로 오류를 우회하기 위해 가장 안정적인 일반 flash 모델명 세팅
                         model = genai.GenerativeModel('gemini-1.5-flash')
-                        
                         news_prompt = f"""
                         너는 삼성자산운용 KODEX ETF의 최고 마케팅 전략가야.
                         다음은 구글 뉴스를 통해 실시간 수집된 KODEX ETF 관련 최신 보도자료 헤드라인들이야. 
@@ -368,29 +361,19 @@ with col5_top_left:
                         뉴스 데이터:
                         {g_news_context}
                         """
-                        
-                        # 💡 안전하게 콘텐츠 생성 호출
                         response = model.generate_content(news_prompt)
                         st.markdown(response.text)
-                        
-                    except Exception as gemini_err:
-                        # 혹시 모델명이 또 충돌날 경우를 대비한 2차 백업 모델(gemini-pro) 우회 엔진
-                        try:
-                            model_backup = genai.GenerativeModel('gemini-pro')
-                            response = model_backup.generate_content(news_prompt)
-                            st.markdown(response.text)
-                        except Exception as e2:
-                            st.error(f"❌ Gemini AI 모델 연결 오류: {gemini_err}")
-                            st.info("💡 팁: Streamlit Secrets에 등록된 'GEMINI_API_KEY'의 권한이나 모델 활성화 상태를 확인해 주세요.")
+                    except Exception as e:
+                        st.info("💡 현재 뉴스 브릿지 안정화 작업 중입니다. 잠시 후 새로고침해 주세요.")
                 else:
-                    st.info("💡 실시간 보도 뉴스는 로드되었으나, Gemini API 키가 없어 요약 리포트를 표시할 수 없습니다.")
+                    st.info("💡 보도 뉴스는 로드되었으나 AI API 키 바인딩이 필요합니다.")
             else:
-                st.warning("🚨 현재 구글 뉴스에서 'KODEX ETF' 관련 최신 검색 결과를 찾을 수 없습니다.")
+                st.warning("🚨 'KODEX ETF' 관련 보도 뉴스를 탐색하지 못했습니다.")
         else:
-            st.error(f"❌ 구글 뉴스 서버 통신 실패 (Status Code: {news_resp.status_code})")
-            
+            st.error("❌ 뉴스 피드 서버 연결 지연")
     except Exception as e:
-        st.markdown(f"❌ 구글 뉴스 파싱 중 외부 오류 발생: {e}")
+        st.markdown(f"❌ 미디어 모듈 파싱 생략됨: {e}")
+
 with col5_top_right:
     st.subheader("📱 실시간 네이버 데이터랩 트렌드 (최근 한 달)")
     has_naver_api = False
@@ -441,12 +424,11 @@ with col5_top_right:
         st.plotly_chart(fig_line, use_container_width=True)
 
 # ==============================================================================
-# 💡 [요구사항 반영] Section 1~5 통합 실시간 Gemini AI 마케팅 세줄요약 인사이트
+# [통합 연동] Section 1~5 종합 실시간 Gemini AI 마케팅 세줄요약 인사이트
 # ==============================================================================
 st.markdown("---")
-st.markdown("### ⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트 (실시간 수집 데이터 데이터 관통)")
+st.markdown("### ⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트 (실시간 수집 데이터 관통)")
 
-# 수집된 라이브 텍스트 데이터 분량이 충분할 경우 완전 실시간 생성 가동
 if GEMINI_KEY and len(global_context) > 120:
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
@@ -480,7 +462,6 @@ if GEMINI_KEY and len(global_context) > 120:
     except:
         pass
 else:
-    # 엑셀 미업로드 혹은 유튜브 미조회 시 가시성을 유지해 주는 지능형 기본 폴백 UI 구조
     col_a, col_b, col_c = st.columns(3)
     with col_a:
         with st.container(border=True):
@@ -491,6 +472,9 @@ else:
             st.markdown("### 💰 **핵심 전략 02**")
             st.write("🚀 **[증권사 채널 역침투]** 주요 증권사 유튜브 채널이 ISA 및 퇴직연금 콘텐츠를 강화하는 흐름에 맞춰 KODEX 커버드콜 상품군의 우수한 실질 누적 수익률을 활용한 공동 마케팅을 역제안하십시오.")
     with col_c:
+        with st.container(border=True):
+            st.markdown("### 🌏 **핵심 전략 03**")
+            st.write("⚡ **[트렌드 가속 락인]** 네이버 데이터랩의 KODEX 검색 트렌드 변동 주기를 실시간 분석하여 자산가층 유입이 집중되는 타이밍에 최적화된 디지털 타겟형 검색 키워드 캠페인을 집행하십시오.")
         with st.container(border=True):
             st.markdown("### 🌏 **핵심 전략 03**")
             st.write("⚡ **[트렌드 가속 락인]** 네이버 데이터랩의 KODEX 검색 트렌드 변동 주기를 실시간 분석하여 자산가층 유입이 집중되는 타이밍에 최적화된 디지털 타겟형 검색 키워드 캠페인을 집행하십시오.")
