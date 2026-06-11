@@ -385,118 +385,117 @@ with st.container(border=True):
     # 🌟 [위치 조정 완료] Part C: 실시간 블로그 마케팅 트렌드 분석 (OpenAI 연동 최하단 배치)
     # --------------------------------------------------------------------------
     st.markdown("<br><hr>", unsafe_allow_html=True)
-    st.markdown("#### 📝 실시간 네이버 블로그 마케팅 트렌드")
-    st.caption("블로그 검색창을 실시간 크롤링하여 소비자가 인지하는 브랜드 키워드, 상품명, 투자 테마 및 핵심 메시지를 도출합니다.")
-    
-    current_openai_key = globals().get("openai_key") or st.session_state.get("openai_key")
-    
-    if not current_openai_key:
-        st.warning("⚠️ 블로그 실시간 AI 분석 기능을 사용하려면 왼쪽 사이드바 혹은 설정에 OpenAI API Key가 입력되어야 합니다.")
-    else:
-        blog_tab1, blog_tab2, blog_tab3 = st.tabs([
-            "🌐 1. 전체 ETF 시장 트렌드", 
-            "🏢 2. 4대 브랜드 인식 비교", 
-            "📢 3. 운용사 공식 블로그 추적"
-        ])
+st.markdown("#### 📝 실시간 네이버 블로그 마케팅 트렌드")
+st.caption("네이버 블로그 데이터를 실시간 크롤링하여 소비자가 인지하는 브랜드 키워드, 상품명, 투자 테마 및 핵심 메시지를 자동으로 도출합니다.")
 
-        # Tab 1: 전체 블로그 시장 트렌드
-        with blog_tab1:
-            st.markdown("##### 🌐 전체 블로그 시장 ETF 트렌드 현황")
-            if st.button("🚀 전체 시장 실시간 분석 시작", key="sec2_btn_blog1"):
-                with st.spinner("네이버 데이터 수집 및 OpenAI 분석 중..."):
-                    raw_data = get_blog_data("국내 ETF 추천")
-                    just_titles = [b['title'] for b in raw_data]
-                    
-                    role = "당신은 국내 금융투자 시장의 트렌드를 분석하는 커뮤니티 모니터링 전문가입니다."
-                    fmt = '{"overview": "전체 분위기 요약 (3줄 이내)", "keywords": ["키워드1", "키워드2", "키워드3"], "themes": "주요 투자 테마 및 이유"}'
-                    
-                    ai_res = analyze_blog_with_openai(current_openai_key, role, just_titles, fmt)
-                    
-                    if ai_res:
-                        col1, col2 = st.columns([2, 1])
-                        with col1:
-                            st.markdown("**📝 AI 시장 현황 요약**")
-                            st.info(ai_res.get("overview"))
-                            st.markdown("**💡 주목받는 투자 테마**")
-                            st.success(ai_res.get("themes"))
-                        with col2:
-                            st.markdown("**🔥 핵심 키워드**")
-                            for kw in ai_res.get("keywords", []):
-                                st.markdown(f"- `{kw}`")
-                        
-                        st.markdown("---")
-                        st.markdown("🔗 **분석 근거 자료 (실제 네이버 블로그 출처)**")
-                        for i, item in enumerate(raw_data):
-                            st.markdown(f"{i+1}. [{item['title']}]({item['link']})")
+current_openai_key = globals().get("openai_key") or st.session_state.get("openai_key")
 
-        # Tab 2: 4대 브랜드별 마케팅 키워드/상품명/테마 추출
-        with blog_tab2:
-            st.markdown("##### 🏢 4대 브랜드별 실시간 소비자 인식 및 마케팅 비교")
-            if st.button("🚀 4대 브랜드 실시간 비교 시작", key="sec2_btn_blog2"):
-                brands = ["KODEX ETF", "TIGER ETF", "RISE ETF", "ACE ETF"]
-                brand_results = {}
-                brand_raw_links = {}
-                
-                with st.spinner("4대 브랜드 블로그 데이터를 수집하고 분석하는 중..."):
-                    for b in brands:
-                        raw_data = get_blog_data(b)
-                        brand_raw_links[b] = raw_data
-                        just_titles = [item['title'] for item in raw_data]
-                        
-                        role = f"당신은 {b} 브랜드의 마케팅 평판을 분석하는 전략가입니다."
-                        fmt = '{"product": "가장 많이 언급되는 구체적인 상품명 하나", "theme": "주요 투자 테마", "message": "블로그들이 전파하는 핵심 메시지"}'
-                        
-                        ai_res = analyze_blog_with_openai(current_openai_key, role, just_titles, fmt)
-                        if ai_res:
-                            brand_results[b] = ai_res
-                
-                if brand_results:
-                    b_cols = st.columns(4)
-                    for idx, b in enumerate(brands):
-                        with b_cols[idx]:
-                            st.markdown(f"##### 📊 {b.split()[0]}")
-                            res = brand_results.get(b, {})
-                            st.markdown(f"**📌 핵심 상품명**\n`{res.get('product')}`")
-                            st.markdown(f"**💡 투자 테마**\n{res.get('theme')}")
-                            st.markdown(f"**💬 핵심 메시지**\n*{res.get('message')}*")
-                            
-                            with st.expander("🔗 실제 블로그 근거 보기"):
-                                for item in brand_raw_links.get(b, []):
-                                    st.markdown(f"-[{item['title'][:15]}...]({item['link']})")
+if not current_openai_key:
+    st.warning("⚠️ 블로그 실시간 AI 분석 기능을 사용하려면 왼쪽 사이드바 혹은 설정에 OpenAI API Key가 입력되어야 합니다.")
+else:
+    blog_tab1, blog_tab2, blog_tab3 = st.tabs([
+        "🌐 1. 전체 ETF 시장 트렌드", 
+        "🏢 2. 4대 브랜드 인식 비교", 
+        "📢 3. 운용사 공식 블로그 추적"
+    ])
 
-        # Tab 3: 운용사 공식 블로그 Push 상품 추적
-        with blog_tab3:
-            st.markdown("##### 📢 자산운용사 공식 블로그 마케팅 모니터링")
-            if st.button("🚀 공식 블로그 실시간 모니터링 시작", key="sec2_btn_blog3"):
-                companies = {
-                    "삼성자산운용": "KODEX",
-                    "미래에셋자산운용": "TIGER",
-                    "KB자산운용": "RISE",
-                    "한국투자신탁운용": "ACE"
-                }
-                table_rows = []
+    # Tab 1: 전체 블로그 시장 트렌드 (자동 실행)
+    with blog_tab1:
+        st.markdown("##### 🌐 전체 블로그 시장 ETF 트렌드 현황")
+        raw_data = get_blog_data("국내 ETF 추천")
+        just_titles = [b['title'] for b in raw_data]
+        
+        if just_titles:
+            role = "당신은 국내 금융투자 시장의 트렌드를 분석하는 커뮤니티 모니터링 전문가입니다."
+            fmt = '{"overview": "전체 분위기 요약 (3줄 이내)", "keywords": ["키워드1", "키워드2", "키워드3"], "themes": "주요 투자 테마 및 이유"}'
+            
+            ai_res = analyze_blog_with_openai(current_openai_key, role, just_titles, fmt)
+            
+            if ai_res:
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.markdown("**📝 AI 시장 현황 요약**")
+                    st.info(ai_res.get("overview"))
+                    st.markdown("**💡 주목받는 투자 테마**")
+                    st.success(ai_res.get("themes"))
+                with col2:
+                    st.markdown("**🔥 핵심 키워드**")
+                    for kw in ai_res.get("keywords", []):
+                        st.markdown(f"- `{kw}`")
                 
-                with st.spinner("4대 운용사 공식 블로그 검색 결과를 분석 중..."):
-                    for com, brand in companies.items():
-                        raw_data = get_blog_data(keyword="", is_official=True, company_name=com)
-                        just_titles = [item['title'] for item in raw_data]
-                        
-                        role = f"당신은 {com} 공식 마케팅 분석가입니다."
-                        fmt = '{"focused_product": "운용사가 밀고 있는 구체적인 ETF 상품명", "marketing_theme": "마케팅 중심 테마", "key_copy": "강조하는 핵심 캐치프레이즈나 논리"}'
-                        
-                        ai_res = analyze_blog_with_openai(current_openai_key, role, just_titles, fmt)
-                        if ai_res:
-                            table_rows.append({
-                                "운용사 (브랜드)": f"{com} ({brand})",
-                                "진짜 밀고 있는 상품": ai_res.get("focused_product"),
-                                "마케팅 테마": ai_res.get("marketing_theme"),
-                                "핵심 카피 (메시지)": ai_res.get("key_copy")
-                            })
+                st.markdown("---")
+                st.markdown("🔗 **분석 근거 자료 (실제 네이버 블로그 출처)**")
+                for i, item in enumerate(raw_data):
+                    st.markdown(f"{i+1}. [{item['title']}]({item['link']})")
+        else:
+            st.warning("실시간 블로그 데이터를 가져오지 못했습니다.")
+
+    # Tab 2: 4대 브랜드별 마케팅 키워드/상품명/테마 추출 (자동 실행)
+    with blog_tab2:
+        st.markdown("##### 🏢 4대 브랜드별 실시간 소비자 인식 및 마케팅 비교")
+        brands = ["KODEX ETF", "TIGER ETF", "RISE ETF", "ACE ETF"]
+        brand_results = {}
+        brand_raw_links = {}
+        
+        for b in brands:
+            raw_data = get_blog_data(b)
+            brand_raw_links[b] = raw_data
+            just_titles = [item['title'] for item in raw_data]
+            
+            if just_titles:
+                role = f"당신은 {b} 브랜드의 마케팅 평판을 분석하는 전략가입니다."
+                fmt = '{"product": "가장 많이 언급되는 구체적인 상품명 하나", "theme": "주요 투자 테마", "message": "블로그들이 전파하는 핵심 메시지"}'
                 
-                if table_rows:
-                    st.markdown("##### 📈 공식 블로그 Push 상품 실시간 분석 표")
-                    df = pd.DataFrame(table_rows)
-                    st.dataframe(df, use_container_width=True, hide_index=True)
+                ai_res = analyze_blog_with_openai(current_openai_key, role, just_titles, fmt)
+                if ai_res:
+                    brand_results[b] = ai_res
+        
+        if brand_results:
+            b_cols = st.columns(4)
+            for idx, b in enumerate(brands):
+                with b_cols[idx]:
+                    st.markdown(f"##### 📊 {b.split()[0]}")
+                    res = brand_results.get(b, {})
+                    st.markdown(f"**📌 핵심 상품명**\n`{res.get('product')}`")
+                    st.markdown(f"**💡 투자 테마**\n{res.get('theme')}")
+                    st.markdown(f"**💬 핵심 메시지**\n*{res.get('message')}*")
+                    
+                    with st.expander("🔗 실제 블로그 근거 보기"):
+                        for item in brand_raw_links.get(b, []):
+                            st.markdown(f"-[{item['title'][:15]}...]({item['link']})")
+
+    # Tab 3: 운용사 공식 블로그 Push 상품 추적 (자동 실행)
+    with blog_tab3:
+        st.markdown("##### 📢 자산운용사 공식 블로그 마케팅 모니터링")
+        companies = {
+            "삼성자산운용": "KODEX",
+            "미래에셋자산운용": "TIGER",
+            "KB자산운용": "RISE",
+            "한국투자신탁운용": "ACE"
+        }
+        table_rows = []
+        
+        for com, brand in companies.items():
+            raw_data = get_blog_data(keyword="", is_official=True, company_name=com)
+            just_titles = [item['title'] for item in raw_data]
+            
+            if just_titles:
+                role = f"당신은 {com} 공식 마케팅 분석가입니다."
+                fmt = '{"focused_product": "운용사가 밀고 있는 구체적인 ETF 상품명", "marketing_theme": "마케팅 중심 테마", "key_copy": "강조하는 핵심 캐치프레이즈나 논리"}'
+                
+                ai_res = analyze_blog_with_openai(current_openai_key, role, just_titles, fmt)
+                if ai_res:
+                    table_rows.append({
+                        "운용사 (브랜드)": f"{com} ({brand})",
+                        "진짜 밀고 있는 상품": ai_res.get("focused_product"),
+                        "마케팅 테마": ai_res.get("marketing_theme"),
+                        "핵심 카피 (메시지)": ai_res.get("key_copy")
+                    })
+        
+        if table_rows:
+            st.markdown("##### 📈 공식 블로그 Push 상품 실시간 분석 표")
+            df = pd.DataFrame(table_rows)
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
