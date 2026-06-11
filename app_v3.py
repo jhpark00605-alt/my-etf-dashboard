@@ -240,13 +240,12 @@ with st.container(border=True):
         st.session_state["yt_report_fixed"] = fallback_yt_report
 
 # ==============================================================================
-# Part B: 주요 운용사별 ETF 이슈 모니터링 (💡 버튼 없이 자동 실행 및 4색 박스)
+# Part B: 주요 운용사별 ETF 이슈 모니터링 (💡 아이콘 제거 및 박스 내부 렌더링 완벽 교정)
 # ==============================================================================
 st.markdown("---")
 st.subheader("🏢 주요 운용사별 ETF 이슈 모니터링")
 st.caption("대시보드 로드 시 구글 뉴스에서 각 운용사별 ETF 최신 뉴스를 실시간으로 수집하고 AI가 핵심 이슈를 요약합니다.")
 
-# 필요한 라이브러리 상단 자동 로드
 import requests
 from bs4 import BeautifulSoup
 import json
@@ -262,14 +261,12 @@ BRANDS = {
 }
 
 GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
-
-# 데이터 수집 진행 상황을 보여줄 자리 마련
 status = st.empty()
 
 all_brand_news = {}
 backup_display_data = {}
 
-# 1. 💡 [자동 실행] 대시보드 진입 시 각 운용사 뉴스 RSS 크롤링 즉시 시작
+# 1. 뉴스 데이터 실시간 수집 및 백업 데이터 구축
 try:
     for brand, query in BRANDS.items():
         encoded_query = urllib.parse.quote(query)
@@ -291,7 +288,6 @@ try:
 except Exception as e:
     pass
 
-# 예외 상황 및 데이터 공백 시 방어용 껍데기 구축
 for brand in BRANDS.keys():
     if brand not in all_brand_news:
         all_brand_news[brand] = "뉴스 수집 불가"
@@ -301,7 +297,7 @@ for brand in BRANDS.keys():
 summary_data = {}
 ai_success = False
 
-# 2. 💡 Gemini AI 요약 자동 가동
+# 2. Gemini AI 요약 처리
 if GEMINI_KEY:
     try:
         genai.configure(api_key=GEMINI_KEY)
@@ -338,60 +334,58 @@ if GEMINI_KEY:
     except Exception:
         ai_success = False
 
-# AI가 막히면 정제된 실제 최신 뉴스 제목 2개로 즉시 대체 우회
 if not ai_success or not summary_data:
     summary_data = backup_display_data
     status.info("💡 구글 AI API 제한으로 인해 '실시간 뉴스 동향 안전 모드'로 가동되어 최신 뉴스를 원문 그대로 출력합니다.")
 else:
-    status.empty() # 정상 작동 시 상태 메시지창을 깔끔하게 비웁니다.
+    status.empty()
 
-# 3. 💡 상시 노출형 4열 컬러 커스텀 박스 렌더링
+# 3. 💡 [구조 교정] 기사 내용이 박스 안으로 완벽히 들어가도록 단일 HTML 덩어리로 조립하여 출력
 col_a, col_b, col_c, col_d = st.columns(4)
 
 # 🟦 KODEX - 파란색 박스
 with col_a:
-    st.markdown(
-        '<div style="border: 2px solid #0D6EFD; padding: 15px; border-radius: 10px; background-color: rgba(13, 110, 253, 0.03); min-height: 220px;">'
-        '<h4 style="color: #0D6EFD; margin-top:0; margin-bottom:10px;">🔵 KODEX (삼성)</h4>', 
-        unsafe_allow_html=True
-    )
+    kodex_html = """
+    <div style="border: 2px solid #0D6EFD; padding: 15px; border-radius: 10px; background-color: rgba(13, 110, 253, 0.03); min-height: 250px;">
+        <h4 style="color: #0D6EFD; margin-top:0; margin-bottom:15px; font-weight: bold;">KODEX (삼성)</h4>
+    """
     for issue in summary_data.get("KODEX", ["데이터 없음"]):
-        st.markdown(f"<div style='font-size:13.5px; margin-bottom:6px; line-height:1.4;'>• {issue}</div>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+        kodex_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
+    kodex_html += "</div>"
+    st.markdown(kodex_html, unsafe_allow_html=True)
         
 # 🟧 TIGER - 주황색 박스
 with col_b:
-    st.markdown(
-        '<div style="border: 2px solid #FD7E14; padding: 15px; border-radius: 10px; background-color: rgba(253, 126, 20, 0.03); min-height: 220px;">'
-        '<h4 style="color: #FD7E14; margin-top:0; margin-bottom:10px;">🟠 TIGER (미래에셋)</h4>', 
-        unsafe_allow_html=True
-    )
+    tiger_html = """
+    <div style="border: 2px solid #FD7E14; padding: 15px; border-radius: 10px; background-color: rgba(253, 126, 20, 0.03); min-height: 250px;">
+        <h4 style="color: #FD7E14; margin-top:0; margin-bottom:15px; font-weight: bold;">TIGER (미래에셋)</h4>
+    """
     for issue in summary_data.get("TIGER", ["데이터 없음"]):
-        st.markdown(f"<div style='font-size:13.5px; margin-bottom:6px; line-height:1.4;'>• {issue}</div>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+        tiger_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
+    tiger_html += "</div>"
+    st.markdown(tiger_html, unsafe_allow_html=True)
         
 # 🟨 RISE - 노란색 박스
 with col_c:
-    st.markdown(
-        '<div style="border: 2px solid #FFC107; padding: 15px; border-radius: 10px; background-color: rgba(255, 193, 7, 0.03); min-height: 220px;">'
-        '<h4 style="color: #FFC107; margin-top:0; margin-bottom:10px;">🟡 RISE (KB)</h4>', 
-        unsafe_allow_html=True
-    )
+    rise_html = """
+    <div style="border: 2px solid #FFC107; padding: 15px; border-radius: 10px; background-color: rgba(255, 193, 7, 0.03); min-height: 250px;">
+        <h4 style="color: #FFC107; margin-top:0; margin-bottom:15px; font-weight: bold;">RISE (KB)</h4>
+    """
     for issue in summary_data.get("RISE", ["데이터 없음"]):
-        st.markdown(f"<div style='font-size:13.5px; margin-bottom:6px; line-height:1.4;'>• {issue}</div>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+        rise_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
+    rise_html += "</div>"
+    st.markdown(rise_html, unsafe_allow_html=True)
         
 # 🟩 ACE - 초록색 박스
 with col_d:
-    st.markdown(
-        '<div style="border: 2px solid #198754; padding: 15px; border-radius: 10px; background-color: rgba(25, 135, 84, 0.03); min-height: 220px;">'
-        '<h4 style="color: #198754; margin-top:0; margin-bottom:10px;">🟢 ACE (한국투자)</h4>', 
-        unsafe_allow_html=True
-    )
+    ace_html = """
+    <div style="border: 2px solid #198754; padding: 15px; border-radius: 10px; background-color: rgba(25, 135, 84, 0.03); min-height: 250px;">
+        <h4 style="color: #198754; margin-top:0; margin-bottom:15px; font-weight: bold;">ACE (한국투자)</h4>
+    """
     for issue in summary_data.get("ACE", ["데이터 없음"]):
-        st.markdown(f"<div style='font-size:13.5px; margin-bottom:6px; line-height:1.4;'>• {issue}</div>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
+        ace_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
+    ace_html += "</div>"
+    st.markdown(ace_html, unsafe_allow_html=True)
 # ==============================================================================
 # [Section 3] 투자자 데이터 분석
 # ==============================================================================
