@@ -607,81 +607,74 @@ else:
             st.markdown("<br>", unsafe_allow_html=True)
             
 # ==============================================================================
-# [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할)
+# # [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할 - 100% 와이드 버전)
 # ==============================================================================
 with st.container(border=True):
     st.header("👥 Section 3. 투자자 데이터 분석")
     st.caption("엑셀 파일을 끌어다 놓으면 확인 버튼 없이 실시간 AUM과 교차 검증된 투자자별 순매수 강도가 즉시 업데이트됩니다.")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    col3_left, col3_right = st.columns([2, 1])
-
-    with col3_left:
-        st.subheader("📊 주차별 순매수 강도 분석 결과")
-        uploaded_file = st.file_uploader("ETF 순매수 데이터 엑셀 파일을 업로드해주세요", type=["xlsx"], key="sec3_uploader")
-        
-        if uploaded_file is not None:
-            try:
-                xls = pd.ExcelFile(uploaded_file)
-                weeks = [s for s in xls.sheet_names if s != '참고사항']
-                
-                sub_c1, sub_c2, sub_c3 = st.columns(3)
-                with sub_c1: prev_week = st.selectbox("1주차 (전주)", weeks, index=0)
-                with sub_c2: curr_week = st.selectbox("2주차 (금주)", weeks, index=min(1, len(weeks)-1))
-                with sub_c3: target_investor = st.selectbox("분석 타겟", ['개인', '기관', '외국인', '투신'], index=0)
-                
-                df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
-                df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
-                
-                df_prev = df_prev[(df_prev['종목명'] != '전체') & (df_prev['종목명'].notna())]
-                df_curr = df_curr[(df_curr['종목명'] != '전체') & (df_curr['종목명'].notna())]
-                
-                naver_url = "https://finance.naver.com/api/sise/etfItemList.nhn"
-                req = urllib.request.Request(naver_url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req) as response:
-                    res_json = json.loads(response.read().decode('cp949', errors='ignore'))
-                    etf_items = res_json.get('result', {}).get('etfItemList', [])
-                
-                naver_data = []
-                for item in etf_items:
-                    naver_data.append({
-                        '💡매칭키': re.sub(r'[^가-힣A-Za-z0-9]', '', str(item.get('itemname',''))).upper(),
-                        '자산': float(item.get('amount', 0)) if item.get('amount') else 800.0
-                    })
-                df_naver = pd.DataFrame(naver_data).drop_duplicates(subset=['💡매칭키'])
-                
-                df_curr['💡매칭키'] = df_curr['종목명'].astype(str).apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
-                df_curr[target_investor] = pd.to_numeric(df_curr[target_investor].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                
-                m_df = pd.merge(df_curr, df_naver, on='💡매칭키', how='inner')
-                m_df['정제순매수(억원)'] = m_df[target_investor] / 100000.0
-                m_df['매수강도'] = (m_df['정제순매수(억원)'] / m_df['자산']) * 100
-                
-                res_df = m_df.sort_values(by='매수강도', ascending=False).head(15)
-                
-                top_bought_etfs = ", ".join(res_df['종목명'].head(5).tolist())
-                st.session_state.global_context += f"[엑셀 순매수 강도 분석 결과]\n타겟 투자자 {target_investor}가 현재 가장 강하게 순매수 중인 자산 리스트: {top_bought_etfs}\n\n"
-                
-                fig = px.bar(res_df, x='종목명', y='매수강도', color='매수강도', color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15")
-                fig.update_layout(height=350)
-                st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(res_df[['종목명', '자산', '정제순매수(억원)', '매수강도']], use_container_width=True, hide_index=True)
-            except Exception as e:
-                st.error(f"데이터 연산 처리 중 에러 발생: {e}")
-        else:
-            st.info("💡 위 데이터 드롭 영역에 엑셀 파일을 업로드해 주시면 순매수 강도 그래프가 자동으로 빌드됩니다.")
-
-    with col3_right:
-        st.subheader("👶 연령대별 자금 유입 구성비")
-        with st.container(border=True):
-            st.markdown("""
-            * **2030 세대**: `KODEX AI반도체TOP2플러스` 등 기술 성장 테마 자산 선호도 급증.
-            * **4050 세대**: `KODEX 200타겟위클리커버드콜` 등 안정적 인컴 현금흐름 추구.
-            """)
-            age_pie = pd.DataFrame({"테마별": ["성장형 테마", "인컴/배당형", "시장지수추종", "안전자산"], "비중": [40, 35, 15, 10]})
-            fig_p = px.pie(age_pie, values="비중", names="테마별", hole=0.4, color_discrete_sequence=px.colors.sequential.YlGnBu)
-            fig_p.update_layout(height=260, margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(fig_p, use_container_width=True)
+    # 🗑️ 기존 col3_left, col3_right 분할을 삭제하고 화면을 단일(Full-width) 구조로 넓게 씁니다.
+    st.subheader("📊 주차별 순매수 강도 분석 결과")
+    uploaded_file = st.file_uploader("ETF 순매수 데이터 엑셀 파일을 업로드해주세요", type=["xlsx"], key="sec3_uploader")
+    
+    if uploaded_file is not None:
+        try:
+            xls = pd.ExcelFile(uploaded_file)
+            weeks = [s for s in xls.sheet_names if s != '참고사항']
+            
+            # 셀렉트 박스 필터 영역
+            sub_c1, sub_c2, sub_c3 = st.columns(3)
+            with sub_c1: prev_week = st.selectbox("1주차 (전주)", weeks, index=0)
+            with sub_c2: curr_week = st.selectbox("2주차 (금주)", weeks, index=min(1, len(weeks)-1))
+            with sub_c3: target_investor = st.selectbox("분석 타겟", ['개인', '기관', '외국인', '투신'], index=0)
+            
+            df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
+            df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
+            
+            df_prev = df_prev[(df_prev['종목명'] != '전체') & (df_prev['종목명'].notna())]
+            df_curr = df_curr[(df_curr['종목명'] != '전체') & (df_curr['종목명'].notna())]
+            
+            naver_url = "https://finance.naver.com/api/sise/etfItemList.nhn"
+            req = urllib.request.Request(naver_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req) as response:
+                res_json = json.loads(response.read().decode('cp949', errors='ignore'))
+                etf_items = res_json.get('result', {}).get('etfItemList', [])
+            
+            naver_data = []
+            for item in etf_items:
+                naver_data.append({
+                    '💡매칭키': re.sub(r'[^가-힣A-Za-z0-9]', '', str(item.get('itemname',''))).upper(),
+                    '자산': float(item.get('amount', 0)) if item.get('amount') else 800.0
+                })
+            df_naver = pd.DataFrame(naver_data).drop_duplicates(subset=['💡매칭키'])
+            
+            df_curr['💡매칭키'] = df_curr['종목명'].astype(str).apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
+            df_curr[target_investor] = pd.to_numeric(df_curr[target_investor].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            
+            m_df = pd.merge(df_curr, df_naver, on='💡매칭키', how='inner')
+            m_df['정제순매수(억원)'] = m_df[target_investor] / 100000.0
+            m_df['매수강도'] = (m_df['정제순매수(억원)'] / m_df['자산']) * 100
+            
+            res_df = m_df.sort_values(by='매수강도', ascending=False).head(15)
+            
+            top_bought_etfs = ", ".join(res_df['종목명'].head(5).tolist())
+            
+            if "global_context" not in st.session_state:
+                st.session_state.global_context = ""
+            st.session_state.global_context += f"[엑셀 순매수 강도 분석 결과]\n타겟 투자자 {target_investor}가 현재 가장 강하게 순매수 중인 자산 리스트: {top_bought_etfs}\n\n"
+            
+            # 가로 전체를 활용하여 더 크고 가독성 좋게 시각화 차트를 그립니다.
+            fig = px.bar(res_df, x='종목명', y='매수강도', color='매수강도', color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 리포트")
+            fig.update_layout(height=400, margin=dict(t=50, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.dataframe(res_df[['종목명', '자산', '정제순매수(억원)', '매수강도']], use_container_width=True, hide_index=True)
+            
+        except Exception as e:
+            st.error(f"데이터 연산 처리 중 에러 발생: {e}")
+    else:
+        st.info("💡 위 데이터 드롭 영역에 엑셀 파일을 업로드해 주시면 순매수 강도 그래프가 자동으로 빌드됩니다.")
 
 st.divider()
 
