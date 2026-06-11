@@ -333,39 +333,47 @@ st.caption("실시간으로 수집된 KODEX 마케팅 관련 뉴스 데이터와
 col5_top_left, col5_top_right = st.columns([1, 1])
 
 with col5_top_left:
-    st.subheader("📰 KODEX 마케팅/보도 뉴스 동향 (AI 실시간 분석)")
-    if NAVER_ID and NAVER_SECRET:
-        try:
-            # 💡 404 오류 완벽 방어 규격 수정: 쿼리는 명확하게 인코딩 처리하고, 허용되지 않는 옵션 배제
-            encNewsText = urllib.parse.quote("KODEX ETF")
-            # 네이버 공식 가이드 규격에 맞춰 소문자 파라미터 조합 준수
-            news_api_url = f"https://openapi.naver.com/v1/search/news.json?query={encNewsText}&display=15&sort=sim"
+    st.subheader("📰 KODEX 마케팅/보도 뉴스 동향 (구글 실시간 분석)")
+    
+    # 구글 뉴스 RSS에서 'KODEX ETF' 관련 최신 뉴스 수집
+    google_news_url = "https://news.google.com/rss/search?q=KODEX+ETF&hl=ko&gl=KR&ceid=KR:ko"
+    
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        news_resp = requests.get(google_news_url, headers=headers, timeout=10)
+        
+        if news_resp.status_code == 200:
+            news_soup = BeautifulSoup(news_resp.content, "xml")
+            news_items = news_soup.find_all("item")
             
-            news_req = urllib.request.Request(news_api_url)
-            news_req.add_header("X-Naver-Client-Id", NAVER_ID)
-            news_req.add_header("X-Naver-Client-Secret", NAVER_SECRET)
-            news_resp = urllib.request.urlopen(news_req, timeout=5)
+            # 최신 뉴스 15개 헤드라인 정제 추출
+            g_news_titles = [item.title.text for item in news_items[:15]]
             
-            if news_resp.getcode() == 200:
-                news_data = json.loads(news_resp.read().decode('utf-8'))
-                news_items = news_data.get('items', [])
+            if g_news_titles:
+                g_news_context = "\n".join(g_news_titles)
+                # 하단 종합 3줄 요약에 데이터를 보태기 위해 글로벌 컨텍스트에 누적
+                global_context += f"[KODEX 구글 실시간 뉴스 헤드라인 목록]\n{g_news_context}\n\n"
                 
-                cleaner = re.compile('<.*?>|&quot;|&amp;')
-                news_titles = [re.sub(cleaner, '', it.get('title', '')) for it in news_items]
-                
-                if news_titles and GEMINI_KEY:
-                    news_context = "\n".join(news_titles)
-                    global_context += f"[KODEX 실시간 뉴스 헤드라인 기사 목록]\n{news_context}\n\n"
+                if GEMINI_KEY:
                     model = genai.GenerativeModel('gemini-1.5-flash')
-                    news_prompt = f"다음은 삼성자산운용 KODEX ETF 관련 최신 뉴스 헤드라인들이야. 현재 KODEX가 언론을 통해 집중적으로 홍보하고 있는 마케팅 방향성이나 신규 출시 테마 상품군이 무엇인지 분석해서 요약 리포트를 깔끔하게 작성해줘.\n\n뉴스 데이터:\n{news_context}"
+                    news_prompt = f"""
+                    다음은 구글 뉴스를 통해 실시간 수집된 삼성자산운용 KODEX ETF 관련 최신 보도자료 헤드라인들이야. 
+                    현재 KODEX가 언론을 통해 집중적으로 홍보하고 있는 마케팅 방향성이나 신규 출시 테마 상품군이 무엇인지 요약 리포트를 가독성 좋게 작성해줘.
+                    
+                    뉴스 데이터:
+                    {g_news_context}
+                    """
                     news_report = model.generate_content(news_prompt).text
                     st.markdown(news_report)
                 else:
-                    st.info("💡 실시간 보도 정보를 로드했으나 요약 에이전트 브릿지 연결을 확인 중입니다.")
-        except Exception as e:
-            st.markdown(f"❌ 뉴스 서버 통신 오류 제어됨: {e} (Client-Id 설정을 확인하세요)")
-    else:
-        st.warning("⚠️ 네이버 API Key가 등록되지 않아 실시간 뉴스 크롤링 브리핑을 표시할 수 없습니다.")
+                    st.info("💡 실시간 보도 뉴스는 로드되었으나, Gemini API 키가 없어 요약 리포트를 표시할 수 없습니다.")
+            else:
+                st.warning("🚨 현재 구글 뉴스에서 'KODEX ETF' 관련 최신 검색 결과를 찾을 수 없습니다.")
+        else:
+            st.error(f"❌ 구글 뉴스 서버 통신 실패 (Status Code: {news_resp.status_code})")
+            
+    except Exception as e:
+        st.markdown(f"❌ 구글 뉴스 파싱 중 오류 발생: {e}")
 
 with col5_top_right:
     st.subheader("📱 실시간 네이버 데이터랩 트렌드 (최근 한 달)")
