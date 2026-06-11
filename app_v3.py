@@ -563,7 +563,7 @@ def render_section_4():
             col_th1, col_th2 = st.columns([3, 2])
             
             with col_th1:
-                # [💡 ValueError 해결]: 대문자 "Coolwarm"을 소문자 "coolwarm"으로 변경하고 리스트 형태 텍스트 맵핑
+                # 안전한 리스트 기반 텍스트 생성
                 theme_text = [f"{x:+.2f}%" if pd.notna(x) else "" for x in df_theme["주간수익률(%)"]]
                 
                 fig_theme = px.bar(
@@ -571,7 +571,7 @@ def render_section_4():
                     x="테마명",
                     y="주간수익률(%)",
                     color="주간수익률(%)",
-                    color_continuous_scale="coolwarm",  # 소문자로 안전하게 수정
+                    color_continuous_scale="RdBu_r",  # [💡 수정]: Plotly 표준 양방향 컬러맵 적용
                     text=theme_text,
                     template="plotly_white"
                 )
