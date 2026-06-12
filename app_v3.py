@@ -1694,7 +1694,7 @@ with st.container(border=True):
             pass
 
         # 대시보드 로컬 호스트 타겟 주소
-        target_dashboard_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app/"
+        target_dashboard_url = "http://localhost:8501"
         
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -1803,4 +1803,20 @@ with st.container(border=True):
     if st.button("📸 현재 에이전트 화면 스캔 및 PDF 컴파일 시작", use_container_width=True):
         with st.spinner("레이아웃 비율을 데스크톱 모드로 고정하고 전체 리포트 화면을 스캔하여 PDF를 생성 중입니다..."):
             try:
-                captured_pdf
+                captured_pdf_data = capture_current_dashboard_to_pdf()
+                
+                if captured_pdf_data:
+                    from datetime import datetime
+                    st.download_button(
+                        label="📥 캡처 스냅숏 PDF 다운로드",
+                        data=captured_pdf_data,
+                        file_name=f"KODEX_Dashboard_Fixed_Layout_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key="dashboard_screenshot_pdf_download_v11"
+                    )
+                    st.success("🎉 레이아웃 정렬이 완벽하게 고정된 깔끔한 대시보드 PDF가 발행되었습니다!")
+                else:
+                    st.error("화면 바이너리를 스냅숏 버퍼로 생성하는 데 실패했습니다.")
+            except Exception as e:
+                st.error(f"❌ 캡처 엔진 가동 중 오류 발생: {e}")
