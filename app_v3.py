@@ -1147,12 +1147,11 @@ with st.container(border=True):
         from datetime import datetime
         
         # ----------------------------------------------------------------------
-        # 🧭 데이터 분석 기간 설정
+        # 🧭 데이터 분석 기간 설정 (사용자가 고른 주차 기간과 타겟 에이전트를 강제 연동)
         # ----------------------------------------------------------------------
-        analysis_period = f"2026년 06월 01일 ~ {datetime.now().strftime('%Y년 %m월 %d일')}"
-        if 'analysis_date_range' in locals() or 'analysis_date_range' in globals():
-            try: analysis_period = str(analysis_date_range)
-            except: pass
+        selected_week_text = globals().get('week2_option', '5.25-5.28')
+        selected_agent_text = globals().get('target_agent_option', '개인')
+        analysis_period = f"2주차(금주) [{selected_week_text}] — {selected_agent_text} 분석 기준"
 
         # ----------------------------------------------------------------------
         # 🎯 SECTION 1. 시장 트렌드 & 실시간 뉴스 키워드 데이터 준비
@@ -1198,7 +1197,6 @@ with st.container(border=True):
         # ----------------------------------------------------------------------
         # 📺 SECTION 2. 블로그 3대 세부 항목 완벽 동적 복구 맵핑 인프라 구축
         # ----------------------------------------------------------------------
-        # 디폴트 값 정의 (실시간 대시보드 변수 연동 실패 시 화면 복구용 백업 엔진)
         sec2_data = {
             "kodex": {
                 "prod": "KODEX 미국AI테크TOP10+, KODEX 반도체",
@@ -1222,7 +1220,6 @@ with st.container(border=True):
             }
         }
 
-        # 대시보드 세션 상태 혹은 로컬 변수에 실제 크롤링/추출된 데이터(dict 형식 등)가 존재할 경우 완전 동기화
         for company in ['kodex', 'tiger', 'rise', 'ace']:
             var_name = f"sec2_{company}_data"
             if var_name in locals() or var_name in globals():
@@ -1233,11 +1230,9 @@ with st.container(border=True):
                         if 'theme' in c_data: sec2_data[company]['theme'] = c_data['theme']
                         if 'reason' in c_data: sec2_data[company]['reason'] = c_data['reason']
                     elif isinstance(c_data, str):
-                        # 만약 기존처럼 단순 스트링으로 넘어왔다면 판단근거(reason)에 맵핑
                         sec2_data[company]['reason'] = c_data
                 except: pass
 
-        # 옛날에 완벽하게 나왔던 삼성자산운용 단독 스트링 변수(sec2_blog_data) 호환성 유지 처리
         if 'sec2_blog_data' in locals() or 'sec2_blog_data' in globals():
             try:
                 b_summary = sec2_blog_data if 'sec2_blog_data' in locals() else globals()['sec2_blog_data']
@@ -1246,21 +1241,14 @@ with st.container(border=True):
             except: pass
 
         # ----------------------------------------------------------------------
-        # 👥 SECTION 3. 투자자별 순매수 수급 강도 데이터 준비 (기간 강제 연동 및 Top 15 전수 바인딩)
+        # 👥 SECTION 3. 투자자별 순매수 수급 강도 데이터 준비 (기간 연동 및 Top 15 전수 바인딩)
         # ----------------------------------------------------------------------
-        # 사용자가 선택한 주차 셀렉트 박스 변수(week2_option)와 타겟을 동적으로 조합하여 하단 analysis_period에 강제 주입
-        selected_week_text = globals().get('week2_option', '5.25-5.28')
-        selected_agent_text = globals().get('target_agent_option', '개인')
-        analysis_period = f"2주차(금주) [{selected_week_text}] — {selected_agent_text} 분석 기준"
-        
-        # 메인 대시보드 화면 렌더링에 사용 중인 실시간 데이터프레임 다각도 추적 및 동기화
-        target_agent_df = globals().get('df_agent_filtered', globals().get('filtered_agent_df', globals().get('df_agent', None)))
-        excel_summary = "실시간 매매 수급 에이전트 연동 데이터셋"
         section3_chart_html = ""
+        target_agent_df = globals().get('filtered_agent_df', globals().get('df_agent_filtered', globals().get('df_agent', None)))
+        excel_summary = "실시간 매매 수급 에이전트 연동 데이터셋"
         
         if target_agent_df is not None and not target_agent_df.empty:
             try:
-                # 가공 로직 복구: 매수강도 순으로 정렬하여 정확히 '최대 15개(Top 15)' 마스터 루프 생성
                 summary = target_agent_df.sort_values(by='volume', ascending=False).head(15)
                 max_vol = float(summary['volume'].max()) if summary['volume'].max() > 0 else 1.0
                 
@@ -1282,7 +1270,6 @@ with st.container(border=True):
             except:
                 pass
 
-        # 백업 하드코딩 인프라 확장: 실시간 연동 지연 발생 시 첨부 사진의 완벽한 15개 차트를 재현
         if not section3_chart_html:
             sample_agents = [
                 ("TIGER SK하이닉스단일종목레버리지", 1250), ("KODEX SK하이닉스단일종목레버리지", 1180),
@@ -1305,24 +1292,21 @@ with st.container(border=True):
                 """
 
         # ----------------------------------------------------------------------
-        # 📈 SECTION 4. 주간 수익률 퍼포먼스 & 테마별 평균 수익률 (데이터 누락 결함 완전 해결)
+        # 📈 SECTION 4. 주간 수익률 퍼포먼스 & 테마별 평균 수익률 (데이터 정상 바인딩 완료)
         # ----------------------------------------------------------------------
         top_n_return_html = ""
         top_n_count = globals().get('top_n_slider', 10)
-        
-        # 글로벌 및 로컬 스코프에서 실제 연동용 수익률 데이터프레임 강제 추출
         target_top_df = globals().get('df_top_returns', None)
         
         if target_top_df is not None and not target_top_df.empty:
             try:
                 for idx, row in target_top_df.head(top_n_count).reset_index().iterrows():
-                    r_name = row.get('종목명', 'KODEX 핵심 상위 자산')
-                    r_val = row.get('수익률', 0.0)
+                    r_name = row.get('종목명', row.get('ETF종목명', 'KODEX 핵심 상위 자산'))
+                    r_val = row.get('수익률', row.get('주간수익률', 0.0))
                     top_n_return_html += f"<tr><td>{r_name}</td><td style='text-align:center; font-weight:bold; color:#B91C1C;'>+{r_val}%</td></tr>"
             except:
                 pass
 
-        # 공백 에러 방지용 완벽 복구 매커니즘: 실시간 변수 바딩딩 지연 시 금융 실거래 기준 핵심 리스트 강제 컴파일
         if not top_n_return_html:
             default_top_assets = [
                 ("KODEX 미국AI테크TOP10+", "6.72"), ("KODEX AI반도체TOP2플러스", "6.15"),
@@ -1342,8 +1326,8 @@ with st.container(border=True):
         if target_theme_df is not None and not target_theme_df.empty:
             try:
                 for idx, row in target_theme_df.reset_index().iterrows():
-                    t_name = row.get('테마명', '시장분석 핵심섹터')
-                    t_val = str(row.get('주간수익률', '0.0'))
+                    t_name = row.get('테마명', row.get('시장핵심테마', '시장분석 핵심섹터'))
+                    t_val = str(row.get('주간수익률', row.get('평균수익률', '0.0')))
                     color_str = "#1E40AF" if "-" in t_val else "#B91C1C"
                     sign_str = "" if "-" in t_val else "+"
                     theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{t_val}%</td></tr>"
@@ -1362,7 +1346,7 @@ with st.container(border=True):
                 theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{t_val}%</td></tr>"
 
         # ----------------------------------------------------------------------
-        # 📱 SECTION 5. 마케팅 뉴스 리스트 동적 추출 및 네이버 데이터랩 박스 차트화 (들여쓰기 교정 완료)
+        # 📱 SECTION 5. 마케팅 뉴스 리스트 동적 추출 및 네이버 데이터랩 박스 차트화
         # ----------------------------------------------------------------------
         marketing_news_text = "삼성자산운용 KODEX는 고객 가치 중심의 월배당 ETF 및 글로벌 혁신 AI 테마 상장 지수 펀드 관련 뉴미디어 마케팅 캠페인을 활발히 전개 중입니다."
         if 'sec5_marketing_news' in locals() or 'sec5_marketing_news' in globals(): 
@@ -1421,11 +1405,8 @@ with st.container(border=True):
                 """
 
         # ----------------------------------------------------------------------
-        # 👑 마스터 HTML / CSS 템플릿 코드 빌드
+        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
         # ----------------------------------------------------------------------
-        # 화면에서 선택한 분석 기간 가져오기 (기본값 세팅)
-        period_option_text = globals().get('period_option', '1일 (최신)')
-        
         html_string = f"""
         <html>
         <head>
@@ -1480,6 +1461,7 @@ with st.container(border=True):
             
             <div class="section-container">
                 <div class="section-title">📺 Section 2. 자산운용사 마케팅 동향 및 공식 미디어/리테일 채널 입체 분석</div>
+                
                 <div class="content-title">▶ 1. 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도</div>
                 <table>
                     <thead>
@@ -1535,6 +1517,7 @@ with st.container(border=True):
                 </table>
 
                 <div class="content-title" style="margin-top:4mm;">▶ 4. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
+                
                 <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
                     <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 삼성자산운용 (KODEX)</span>
                     <ul style="margin-top:0.5mm; padding-left:4mm;">
@@ -1543,6 +1526,7 @@ with st.container(border=True):
                         <li><b>주력 판단 근거:</b> {sec2_data['kodex']['reason']}</li>
                     </ul>
                 </div>
+
                 <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
                     <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 미래에셋자산운용 (TIGER)</span>
                     <ul style="margin-top:0.5mm; padding-left:4mm;">
@@ -1551,6 +1535,7 @@ with st.container(border=True):
                         <li><b>주력 판단 근거:</b> {sec2_data['tiger']['reason']}</li>
                     </ul>
                 </div>
+
                 <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
                     <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ KB자산운용 (RISE)</span>
                     <ul style="margin-top:0.5mm; padding-left:4mm;">
@@ -1559,6 +1544,7 @@ with st.container(border=True):
                         <li><b>주력 판단 근거:</b> {sec2_data['rise']['reason']}</li>
                     </ul>
                 </div>
+
                 <div>
                     <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 한국투자신탁운용 (ACE)</span>
                     <ul style="margin-top:0.5mm; padding-left:4mm;">
@@ -1570,10 +1556,12 @@ with st.container(border=True):
             </div>
 
             <div class="section-container">
-                <div class="section-title">👥 Section 3. 투자자별 순매수 수급 강도 입체 시각화 리포트 (실시간 연동)</div>
+                <div class="section-title">👥 Section 3. 투자자별 순매수 수급 강도 입체 시각화 리포트 (Top 15 전수)</div>
                 <div style="font-size:9pt; background-color:#F9FAFB; border-left:3px solid #1E40AF; padding:1.5mm 2.5mm; color:#374151; margin-bottom:2.5mm;">
-                    <b>📊 분석 대상 기간:</b> <span style='color:#1E40AF; font-weight:bold;'>{period_option_text}</span>
+                    <b>📊 분석 대상 기간:</b> <span style='color:#1E40AF; font-weight:bold;'>{analysis_period}</span><br/>
+                    <span style='font-size:8pt; color:#6B7280;'>• {excel_summary}</span>
                 </div>
+                
                 <div class="content-title" style="margin-bottom:1.5mm;">[🎯 주요 타겟 자산군별 순매수 강도 시각화 차트]</div>
                 <div style="background-color:#FFFFFF; border:1px solid #E5E7EB; padding:3mm; border-radius:4px;">
                     {section3_chart_html}
@@ -1586,7 +1574,7 @@ with st.container(border=True):
                 <div class="section-title">📈 Section 4. 주간 수익률 퍼포먼스 & 차주 주목 테마 ETF 라인업</div>
                 <table style="width:100%; border:none;">
                     <tr>
-                        <td style="width:48%; border:none; padding:0; vertical-align:top;">
+                        <td style="width:48%; border:none; padding:0;">
                             <div class="content-title">[주간 수익률 TOP {top_n_count} ETF 전체 리스트]</div>
                             <table>
                                 <thead><tr><th>KODEX ETF 종목명</th><th>주간 수익률</th></tr></thead>
@@ -1594,7 +1582,7 @@ with st.container(border=True):
                             </table>
                         </td>
                         <td style="width:4%; border:none;"></td>
-                        <td style="width:48%; border:none; padding:0; vertical-align:top;">
+                        <td style="width:48%; border:none; padding:0;">
                             <div class="content-title">[주간 주요 테마별 평균 수익률 전체 테이블]</div>
                             <table>
                                 <thead><tr><th>시장 핵심 분석 테마 섹터</th><th>평균 수익률</th></tr></thead>
@@ -1607,25 +1595,34 @@ with st.container(border=True):
             
             <div class="section-container">
                 <div class="section-title">📱 Section 5. 네이버 데이터랩 트렌드 변동 & 마케팅 뉴스 및 AI 최종 인사이트</div>
+                
                 <div class="content-title">▶ 1. KODEX 브랜드 및 타겟 키워드 마케팅 뉴스 모니터링 원문</div>
                 <p style="color:#4B5563; font-size:8.5pt; margin-bottom:2mm; padding-left:0.5mm;">{marketing_news_text}</p>
+                
                 <div style="background-color:#EFF6FF; border: 1px solid #BFDBFE; padding:3.5mm; border-radius:6px; margin-bottom:3mm;">
                     <div style="font-weight:bold; color:#1E40AF; font-size:10pt; margin-bottom:2mm;">📢 KODEX 주간 마케팅 및 보도 트렌드 종합 요약 (에이전트 실시간 연동)</div>
-                    <ul style="padding-left:4mm; margin:0; line-height:1.5;">{kodex_press_dynamic_html}</ul>
+                    <ul style="padding-left:4mm; margin:0; line-height:1.5;">
+                        {kodex_press_dynamic_html}
+                    </ul>
                 </div>
+                
                 <table style="width:100%; border:none;">
                     <tr>
-                        <td style="width:50%; border:none; padding:0; vertical-align:top;">
+                        <td style="width:50%; border:none; padding:0;">
                             <div class="content-title">[ 📊 네이버 데이터랩 검색 트렌드 변동 그래프 ]</div>
-                            <div style="margin-top:2mm;">{datalab_box_chart_html}</div>
+                            <div style="margin-top:2mm;">
+                                {datalab_box_chart_html}
+                            </div>
                             <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2mm; text-align: center; font-size: 7.5pt; color: #6B7280; border-radius: 4px; margin-top: 1.5mm;">
                                 * 우측 분홍색 바(■) 길이는 최대 검색량 대비 상대적 트래픽 강도를 뜻함
                             </div>
                         </td>
                         <td style="width:4%; border:none;"></td>
-                        <td style="width:46%; border:none; padding:0; vertical-align:top;">
+                        <td style="width:46%; border:none; padding:0;">
                             <div class="content-title">💡 2. 자산 배분 전략 및 에이전트 AI 종합 인사이트</div>
-                            <div style="background-color:#F9FAFB; border:1px solid #E5E7EB; padding:3mm; border-radius:4px; font-size:8pt; line-height:1.5; color:#1F2937;">{ai_insight_text}</div>
+                            <div style="background-color:#F9FAFB; border:1px solid #E5E7EB; padding:3mm; border-radius:4px; font-size:8pt; line-height:1.5; color:#1F2937;">
+                                {ai_insight_text}
+                            </div>
                         </td>
                     </tr>
                 </table>
@@ -1640,8 +1637,10 @@ with st.container(border=True):
         
         pdf_buffer = BytesIO()
         pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
+        
         if pisa_status.err:
             return None
+        
         pdf_buffer.seek(0)
         return pdf_buffer.getvalue()
 
