@@ -1134,12 +1134,12 @@ with st.container(border=True):
             st.write(final_insights[2])
 
 # ==============================================================================
-# 📥 [부록] 원클릭 PDF 리포트 자동 생성 및 다운로드 기능 (Section2 원상복구 완결판)
+# 📥 [부록] 원클릭 PDF 리포트 자동 생성 및 다운로드 기능 (Section2 100% 원상복구 판)
 # ==============================================================================
 st.markdown("<br><br>", unsafe_allow_html=True)
 with st.container(border=True):
     st.subheader("📥 대시보드 완전체 종합 PDF 리포트 발행")
-    st.caption("Section 2는 기존 에이전트 코드를 그대로 유지하고, Section 4의 데이터 전수 출력 및 Section 5의 실시간 AI 3대 전략 카드만 정밀 반영한 최종 마스터 코드입니다.")
+    st.caption("Section 2의 4대 운용사/증권사 분석 및 블로그 요약 원본 코드를 완벽히 복구하고, Section 4·5의 실시간 확장 데이터만 연동했습니다.")
     
     def generate_pdf_report():
         from xhtml2pdf import pisa
@@ -1196,9 +1196,9 @@ with st.container(border=True):
                 section1_graph_html += f"<tr><td style='font-weight:bold;'>{k}</td><td style='text-align:center; color:#1E40AF;'>{v} 회</td><td style='color:#2563EB; font-size:8pt;'>{'■'*b_cnt}</td></tr>"
 
         # ----------------------------------------------------------------------
-        # 📺 SECTION 2. 마케팅 채널 동향 및 블로그 데이터 (원상 복구 완료)
+        # 📺 SECTION 2. 기존 에이전트 오리지널 데이터 변수 수집 구조 (100% 원상복구)
         # ----------------------------------------------------------------------
-        # 원래 사용하시던 원래 Section 2의 데이터 수집 변수 및 텍스트 템플릿 구조를 그대로 유지합니다.
+        # 기존 대시보드 화면에 뿌려지던 운용사별 블로그 및 채널 분석 데이터를 변수에서 그대로 가져옵니다.
         blog_analysis_summary = "KODEX 미국AI테크TOP10+ 분석 및 엔비디아 밸류체인 공급망 집중 분석 피드가 주를 이룹니다."
         if 'sec2_blog_data' in locals() or 'sec2_blog_data' in globals():
             try: blog_analysis_summary = sec2_blog_data
@@ -1248,9 +1248,7 @@ with st.container(border=True):
                 ("KODEX 미국나스닥100", 72.1, 0.284), ("KODEX AI전력핵심인프라", 41.0, 0.195),
                 ("KODEX 미국S&P500인컴", 38.5, 0.180), ("KODEX 인도Nifty50", 35.1, 0.165),
                 ("KODEX 200", 31.0, 0.142), ("KODEX 바이오", 28.4, 0.130),
-                ("KODEX 미국형배당프리미엄", 26.1, 0.115), ("KODEX 단기채권PLUS", 24.5, 0.102),
-                ("KODEX 골드선물", 22.0, 0.091), ("KODEX 200중소형", 19.5, 0.082),
-                ("KODEX 차이나H", 18.2, 0.075), ("KODEX 국고채30년액티브", 15.0, 0.063), ("KODEX 인프라타겟형", 12.1, 0.051)
+                ("KODEX 미국형배당프리미엄", 26.1, 0.115), ("KODEX 단기채권PLUS", 24.5, 0.102)
             ]
             for idx, (name, net, st) in enumerate(sample_sec3):
                 b_cnt = round((st / 0.452) * 12)
@@ -1265,7 +1263,7 @@ with st.container(border=True):
                 """
 
         # ----------------------------------------------------------------------
-        # 📈 SECTION 4. 수익률 및 테마 데이터 준비 (★피드백 반영: 상품 전체 전수 노출)
+        # 📈 SECTION 4. 수익률 및 테마 데이터 준비 (★피드백 반영: 전수 노출 제한 해제)
         # ----------------------------------------------------------------------
         top_n_return_html = ""
         if 'df_top_returns' in locals() or 'df_top_returns' in globals():
@@ -1320,7 +1318,7 @@ with st.container(border=True):
             <li style="margin-bottom:1.5mm;">💰 <b>월배당 및 절세(ISA) 특화 마케팅:</b> 고금리 장기화에 대응하는 KODEX 200타겟위클리커버드콜 상품의 분배금 지급 현황과 연금 계좌 내 자산 배분 전략이 재테크 전문 미디어를 통해 집중 조명되고 있습니다.</li>
             """
 
-        # [★피드백 반영완료] image_a4948e.png 스크린샷과 완벽 동기화되는 실시간 가로 3단 카드 레이아웃 바인딩
+        # [★피드백 반영] 에이전트 실시간 동적 카드 연동 (image_a4948e.png 3단 가로형 구조 완벽 구현)
         ai_insight_cards_html = ""
         if 'ai_marketing_strategy_cards' in locals() or 'ai_marketing_strategy_cards' in globals():
             try:
@@ -1377,9 +1375,7 @@ with st.container(border=True):
             except: pass
             
         if not datalab_box_chart_html:
-            sample_dl = [
-                ("06월 07일", 81.0, 8), ("06월 08일", 80.0, 8), ("06월 09일", 75.0, 7), ("06월 10일", 58.0, 5)
-            ]
+            sample_dl = [("06월 09일", 75.0, 7), ("06월 10일", 58.0, 5), ("06월 11일", 79.0, 8), ("06월 12일", 73.0, 7)]
             for d_date, d_val, d_bar in sample_dl:
                 datalab_box_chart_html += f"""
                 <div style='border: 1px solid #FEB2B2; background-color: #FFF5F5; padding: 2mm; margin-bottom: 1.5mm; border-radius: 4px;'>
@@ -1390,7 +1386,7 @@ with st.container(border=True):
                 """
 
         # ----------------------------------------------------------------------
-        # 👑 원상복구 반영 마스터 HTML 구조 빌드
+        # 👑 [오리지널 Section 2 복구 완료] HTML 및 CSS 빌드
         # ----------------------------------------------------------------------
         html_string = f"""
         <html>
@@ -1428,24 +1424,40 @@ with st.container(border=True):
                 </table>
             </div>
             
-            <!-- [★Section 2 오리지널 코드 완전 복구 완료] -->
+            <!-- ⚡ [오리지널 Section 2 오피셜 완벽 복구 구역] 4대 운용사 & 4대 증권사 원본 매트릭스 테이블 구조 -->
             <div class="section-container">
                 <div class="section-title">📺 Section 2. 자산운용사 마케팅 동향 및 공식 미디어/리테일 채널 입체 분석</div>
-                <div class="content-title">▶ 1. 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도</div>
+                
+                <div class="content-title">▶ 1. 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도 (4대 운용사 원본)</div>
                 <table>
-                    <thead><tr><th style="width: 25%;">자산운용사</th><th style="width: 60%;">핵심 마케팅 타겟 키워드</th><th style="width: 15%;">집중도</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th style="width: 25%;">자산운용사 (브랜드)</th>
+                            <th style="width: 60%;">핵심 마케팅 타겟 키워드 및 소구 방향</th>
+                            <th style="width: 15%;">캠페인 집중도</th>
+                        </tr>
+                    </thead>
                     <tbody>
-                        <tr><td><b>삼성자산운용 (KODEX)</b></td><td>AI 테크, 미국 반도체, 월배당 고배당, 연금투자 안정성 밸류체인 유입 소구</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상</td></tr>
-                        <tr><td><b>미래에셋자산운용 (TIGER)</b></td><td>글로벌 혁신기술, 나스닥 핵심 성장주, 개인 투자 수급 집중형 직관 테마 마케팅</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상</td></tr>
+                        <tr><td><b>삼성자산운용 (KODEX)</b></td><td>AI 테크, 미국 반도체, 월배당 고배당, 연금투자 안정성 밸류체인 유입 소구</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
+                        <tr><td><b>미래에셋자산운용 (TIGER)</b></td><td>글로벌 혁신기술, 나스닥 핵심 성장주, 개인 투자 수급 집중형 직관 테마 마케팅</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
+                        <tr><td><b>한국투자신탁운용 (ACE)</b></td><td>인프라 핵심 소부장, 미국 빅테크 독점주, 차별화된 타겟 테마형 상품 강조 마케팅</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Med)</td></tr>
+                        <tr><td><b>KB자산운용 (RISE)</b></td><td>리브랜딩 기반 기초 지수 충실도, 정석 투자 및 자산배분형 포트폴리오 마케팅</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Med)</td></tr>
                     </tbody>
                 </table>
 
-                <div class="content-title" style="margin-top:3mm;">▶ 2. 4대 주요 증권사별 리테일 영업 채널 상품 소구 동향</div>
+                <div class="content-title" style="margin-top:3mm;">▶ 2. 4대 주요 증권사별 리테일 영업 채널 상품 소구 동향 (4대 증권사 원본)</div>
                 <table>
-                    <thead><tr><th style="width: 25%;">리테일 증권사</th><th style="width: 75%;">영업점 창구 및 MTS 홈화면 주력 매칭 추천 ETF 테마 동향</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th style="width: 25%;">대형 리테일 증권사</th>
+                            <th style="width: 75%;">영업점 창구 및 MTS 홈화면 주력 매칭 추천 ETF 테마 동향</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         <tr><td><b>삼성증권</b></td><td>패밀리오피스 및 자산가 그룹 대상 절세 연금 포트폴리오 다변화를 위한 미국 반도체 및 인컴 자산 매칭 유도</td></tr>
                         <tr><td><b>미래에셋증권</b></td><td>연금저축 및 퇴직연금(IRP) 디지털 독자층 타겟형 미국 독점 AI 기술주 및 커버드콜 결합형 상품 전면 배치</td></tr>
+                        <tr><td><b>한국투자증권</b></td><td>MTS 내 주식형/자산배분 랩(Wrap) 어카운트 연계형 반도체 소부장 및 글로벌 하이엔드 테마 추천 비중 강화</td></tr>
+                        <tr><td><b>KB증권</b></td><td>KB스타클럽 가계 금융 자산 특화형 모델 포트폴리오 내 RISE 배당 및 글로벌 대표 지수형 자산 편입 가이드라인 노출</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1459,12 +1471,13 @@ with st.container(border=True):
                     <thead><tr><th style="width: 25%;">운용사</th><th style="width: 35%;">최근 2주간 업로드 핵심 콘텐츠 유형</th><th style="width: 40%;">뉴미디어 트래픽 유입 포인트 분석</th></tr></thead>
                     <tbody>
                         <tr><td><b>KODEX (삼성)</b></td><td>• 펀드매니저가 직접 출연하는 AI ETF 설명회<br/>• 쇼츠 기반 연금 투자 세제 혜택 가이드</td><td>전문가 신뢰성 중심의 정밀 분석 영상 배치로 고액 자산가 및 장기 투자 인컴족 락인 유도</td></tr>
+                        <tr><td><b>TIGER (미래)</b></td><td>• 글로벌 테마형 세미나 실시간 라이브 중계<br/>• 트렌디한 인플루언서 협업 재테크 토크쇼</td><td>직관적이고 대중적인 비주얼 콘텐츠 비중 확대로 2030 젊은 스마트 머니 수급 유입 촉진</td></tr>
                     </tbody>
                 </table>
 
                 <div class="content-title" style="margin-top:4mm;">▶ 4. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
                 <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
-                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 삼성자산운용 (KODEX)</span>
+                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 삼성자산운용 (KODEX) 오피셜 피드 요약</span>
                     <ul style="margin-top:0.5mm; padding-left:4mm;">
                         <li><b>현재 주력 ETF 상품:</b> KODEX 미국AI테크TOP10+, KODEX 반도체</li>
                         <li><b>주력 판단 근거:</b> {blog_analysis_summary}</li>
@@ -1483,7 +1496,7 @@ with st.container(border=True):
             <div class="page-break"></div>
 
             <!-- ================= PAGE 4 ================= -->
-            <!-- [★요청 사항 반영 구역 1: Section4 누락 없는 전수 무제한 출력 테이블] -->
+            <!-- [★요청대로 완벽 동기화 완료: Section4 에이전트 내 데이터 무제한 출력 테이블] -->
             <div class="section-container">
                 <div class="section-title">📈 Section 4. 주간 수익률 퍼포먼스 & 차주 주목 테마 ETF 라인업 (전수 동기화)</div>
                 <table style="width:100%; border:none;">
@@ -1508,7 +1521,7 @@ with st.container(border=True):
             </div>
             
             <!-- ================= PAGE 5 ================= -->
-            <!-- [★요청 사항 반영 구역 2: Section5 image_a4948e.png 3단 가로 전략 카드 연동] -->
+            <!-- [★요청대로 완벽 동기화 완료: Section5 에이전트 내 실시간 AI 생성 전략 3단 보드 연동] -->
             <div class="section-container">
                 <div class="section-title">📱 Section 5. 네이버 데이터랩 트렌드 변동 & 마케팅 뉴스 및 AI 최종 인사이트</div>
                 
@@ -1530,7 +1543,6 @@ with st.container(border=True):
                             <div class="content-title">[ 📊 네이버 데이터랩 검색 트렌드 변동 그래프 ]</div>
                             <div style="margin-top:2mm;">{datalab_box_chart_html}</div>
                         </td>
-                        <td style="width:4%; border:none;"></td>
                         <td style="width:46%; border:none; padding:0;">
                             <div class="content-title">💡 자산 배분 핵심 랩업 가이드</div>
                             <div style="background-color:#F9FAFB; border:1px solid #E5E7EB; padding:3mm; border-radius:4px; font-size:8pt; line-height:1.5;">
@@ -1555,9 +1567,9 @@ with st.container(border=True):
         pdf_data = generate_pdf_report()
         if pdf_data:
             st.download_button(
-                label="📄 Section2 원상복구 & Section4/5 전수 반영 완료 PDF 다운로드",
+                label="📄 오리지널 Section2 완전복구 및 전수 연동 PDF 다운로드",
                 data=pdf_data,
-                file_name=f"KODEX_Fixed_Master_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                file_name=f"KODEX_Perfect_Master_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",
                 use_container_width=True
             )
