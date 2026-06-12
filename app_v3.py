@@ -1686,10 +1686,16 @@ with st.container(border=True):
         from playwright.sync_api import sync_playwright
         import time
         from io import BytesIO
+        import os # 👈 시스템 명령어 실행을 위해 추가
         
-        # 1. 현재 대시보드가 구동 중인 URL 타겟팅
-        # 일반적인 Streamlit 로컬 기본 주소 세팅이며, 필요시 변경 가능
-        target_dashboard_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app/"
+        # [★핵심 해결책] 리눅스 서버 환경에 브라우저가 없을 경우, 파이썬이 직접 다운로드 명령을 내림
+        try:
+            os.system("playwright install chromium")
+        except Exception as e:
+            pass
+
+        # 로컬 테스트 및 배포 서버 환경 주소 (기본 포트 8501 설정)
+        target_dashboard_url = "http://localhost:8501"
         
         with sync_playwright() as p:
             # 백그라운드에서 실행할 가상 크롬 브라우저 인스턴스 론칭
