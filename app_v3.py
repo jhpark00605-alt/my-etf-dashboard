@@ -1245,99 +1245,215 @@ with st.container(border=True):
                     sec2_data['kodex']['reason'] = b_summary
             except: pass
 
-        # ----------------------------------------------------------------------
-        # 👥 SECTION 3. 투자자 순매수 데이터 준비 (Top 15 유지)
-        # ----------------------------------------------------------------------
-        target_res_df = None
-        for df_name in ['res_df', 'df_investor_result', 'final_res_df']:
-            if df_name in locals(): target_res_df = locals()[df_name]
-            elif df_name in globals(): target_res_df = globals()[df_name]
-            if target_res_df is not None: break
+        # ==============================================================================
+# SECTION 3: 에이전트 매매 동향 및 기간별 분석 (분석기간 PDF 완벽 실시간 연동)
+# ==============================================================================
+st.header("Section 3: 에이전트 매매 동향 및 실시간 기간 분석")
 
-        excel_summary = f"분석 기간({analysis_period}) 동안 수집된 투자자 수급 데이터 연동 완료 (상위 15개 자산군 전수 반영)"
-        section3_chart_html = ""
-        
-        if target_res_df is not None and not target_res_df.empty:
-            try:
-                col_name = '종목명' if '종목명' in target_res_df.columns else target_res_df.columns[0]
-                col_strength = '매수강도' if '매수강도' in target_res_df.columns else (target_res_df.columns[2] if len(target_res_df.columns)>2 else None)
-                col_net = '정제순매수(억원)' if '정제순매수(억원)' in target_res_df.columns else (target_res_df.columns[1] if len(target_res_df.columns)>1 else None)
-                
-                max_st = float(target_res_df[col_strength].max()) if col_strength and target_res_df[col_strength].max() > 0 else 1.0
-                
-                for idx, row in target_res_df.head(15).iterrows():
-                    item_name = row[col_name]
-                    net_val = float(row[col_net]) if col_net else 0.0
-                    st_val = float(row[col_strength]) if col_strength else 0.0
-                    
-                    blocks = max(1, round((st_val / max_st) * 12))
-                    bar_display = "■" * blocks
-                    
-                    section3_chart_html += f"""
-                    <div style='margin-bottom:1.5mm; border-bottom:1px dashed #F3F4F6; padding-bottom:1mm;'>
-                        <div style='font-weight:bold; color:#1F2937; font-size:8.5pt;'>{idx+1}. {item_name} <span style='font-weight:normal; color:#6B7280; font-size:7.5pt;'>(순매수: {net_val:,.1f}억)</span></div>
-                        <div style='margin-top:0.5mm;'>
-                            <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:55px;'>강도 {st_val:.3f}%</span>
-                            <span style='color:#3B82F6; font-size:8pt;'>{bar_display}</span>
-                        </div>
-                    </div>
-                    """
-            except Exception as e:
-                excel_summary = f"엑셀 데이터 구조 파싱 중 경미한 지연이 있습니다. (에러: {e})"
-                
-        if not section3_chart_html:
-            excel_summary = f"현재 대시보드 메모리 바인딩 대기 중입니다. [기본 예시 분석 기간: {analysis_period}]"
-            sample_sec3 = [
-                ("KODEX 미국AI테크TOP10+", 124.5, 0.452), ("KODEX 반도체", 85.2, 0.315), 
-                ("KODEX 미국나스닥100", 72.1, 0.284), ("KODEX AI전력핵심인프라", 41.0, 0.195),
-                ("KODEX 미국S&P500인컴", 38.5, 0.180), ("KODEX 인도Nifty50", 35.1, 0.165),
-                ("KODEX 200", 31.0, 0.142), ("KODEX 바이오", 28.4, 0.130)
-            ]
-            for idx, (name, net, st) in enumerate(sample_sec3):
-                b_cnt = round((st / 0.452) * 12)
+# 1. 실시간 기간 설정 UI
+period_option = st.selectbox(
+    "분석 기간을 선택하세요:",
+    ["1일 (최신)", "1주일", "1개월", "3개월", "6개월"],
+    key="section3_period_select"
+)
+
+# [데이터 필터링 로직] 선택한 기간에 맞게 실시간 데이터 필터링
+current_time = datetime.now()
+if period_option == "1일 (최신)":
+    start_date = current_time - timedelta(days=1)
+elif period_option == "1주일":
+    start_date = current_time - timedelta(weeks=1)
+elif period_option == "1개월":
+    start_date = current_time - timedelta(days=30)
+elif period_option == "3개월":
+    start_date = current_time - timedelta(days=90)
+else:
+    start_date = current_time - timedelta(days=180)
+
+# 에이전트 데이터에서 기간 필터링 적용 (실시간 갱신되는 데이터프레임 변동 반영)
+filtered_agent_df = df_agent[df_agent['date'] >= start_date].reset_index(drop=True)
+
+# 2. 순매수 강도 그래프 시각화 (실시간 반영)
+st.subheader(f"📊 에이전트별 순매수 강도 ({period_option} 기준)")
+if not filtered_agent_df.empty:
+    net_buying = filtered_agent_df.groupby('agent')['volume'].sum().reset_index()
+    fig = px.bar(
+        net_buying, 
+        x='agent', 
+        y='volume', 
+        title=f"에이전트별 누적 순매수 ({period_option})",
+        labels={'agent': '에이전트', 'volume': '순매수량'},
+        color='volume',
+        color_continuous_scale=px.colors.sequential.Viridis
+    )
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("선택한 기간 내에 에이전트 매매 데이터가 존재하지 않습니다.")
+
+
+# ==============================================================================
+# SECTION 4: 주간 수익률 Top N (최대 50개 동적 변동) 및 테마별 평균 수익률
+# ==============================================================================
+st.header("Section 4: 주간 시장 데이터 분석")
+
+# 1. 사용자가 화면에서 TOP 몇 개의 상품을 볼지 설정하는 N값 변수 (최대 50개)
+top_n_slider = st.slider("조회할 수익률 상위 상품 개수(N)를 설정하세요:", min_value=5, max_value=50, value=10, step=5)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader(f"🏆 주간 수익률 Top {top_n_slider} 종목")
+    if 'df_top_returns' in locals() or 'df_top_returns' in globals():
+        # 사용자가 슬라이더로 설정한 top_n_slider 개수만큼 실시간 슬라이싱하여 화면에 표시
+        display_top_df = df_top_returns.head(top_n_slider).reset_index(drop=True)
+        st.dataframe(display_top_df, use_container_width=True)
+    else:
+        st.warning("주간 수익률 데이터(df_top_returns)가 로드되지 않았습니다.")
+
+with col2:
+    st.subheader("📁 주간 주요 테마별 평균 수익률 (전체)")
+    if 'df_theme_returns' in locals() or 'df_theme_returns' in globals():
+        # 하드코딩 없이 에이전트에 들어온 테마 전체를 화면에 표시
+        st.dataframe(df_theme_returns.reset_index(drop=True), use_container_width=True)
+    else:
+        st.warning("주간 테마 데이터(df_theme_returns)가 로드되지 않았습니다.")
+
+
+# ==============================================================================
+# 📥 [통합 PDF 발행 엔진] 사용자가 선택한 기간, Top N개, 테마 전수 실시간 렌더링
+# ==============================================================================
+st.markdown("<br>", unsafe_allow_html=True)
+st.subheader("📋 실시간 PDF 통합 분석 보고서 발행")
+
+def generate_pdf_report(agent_data, period_name, top_n_count):
+    from xhtml2pdf import pisa
+    from io import BytesIO
+    
+    # --------------------------------------------------------------------------
+    # 1. [수정 완료] Section 4 - 주간 수익률 Top N 동적 HTML 빌드 (6개 제한 해제)
+    # --------------------------------------------------------------------------
+    top_n_return_html = ""
+    if 'df_top_returns' in locals() or 'df_top_returns' in globals():
+        try:
+            # 사용자가 에이전트 화면에서 설정한 top_n_count 개수만큼 정확히 PDF에 주입
+            for idx, row in df_top_returns.head(top_n_count).iterrows():
+                top_n_return_html += f"<tr><td>{row['종목명']}</td><td style='text-align:center; font-weight:bold; color:#B91C1C;'>+{row['수익률']}%</td></tr>"
+        except Exception as e:
+            top_n_return_html = f"<tr><td colspan='2'>데이터 파싱 에러: {e}</td></tr>"
+            
+    # --------------------------------------------------------------------------
+    # 2. [수정 완료] Section 4 - 테마별 평균 수익률 전체 테이블 HTML 빌드 (4개 제한 해제)
+    # --------------------------------------------------------------------------
+    theme_return_html = ""
+    if 'df_theme_returns' in locals() or 'df_theme_returns' in globals():
+        try:
+            # 개수 제한 없이 에이전트에 존재하는 모든 테마 행(Row)을 전수 순회하여 HTML화
+            for idx, row in df_theme_returns.iterrows():
+                t_val = str(row['주간수익률'])
+                color_str = "#B91C1C" if "-" not in t_val else "#1E40AF"
+                theme_return_html += f"<tr><td>{row['테마명']}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{t_val}%</td></tr>"
+        except Exception as e:
+            theme_return_html = f"<tr><td colspan='2'>데이터 파싱 에러: {e}</td></tr>"
+
+    # --------------------------------------------------------------------------
+    # 3. Section 3 - 순매수 강도 리스트 HTML 빌드 (선택된 기간 동적 반영)
+    # --------------------------------------------------------------------------
+    section3_chart_html = ""
+    if not agent_data.empty:
+        try:
+            summary = agent_data.groupby('agent')['volume'].sum().reset_index()
+            max_vol = float(summary['volume'].max()) if summary['volume'].max() > 0 else 1.0
+            for idx, row in summary.iterrows():
+                blocks = max(1, round((float(row['volume']) / max_vol) * 12))
+                bar_display = "■" * blocks
                 section3_chart_html += f"""
                 <div style='margin-bottom:1.5mm; border-bottom:1px dashed #F3F4F6; padding-bottom:1mm;'>
-                    <div style='font-weight:bold; color:#1F2937; font-size:8.5pt;'>{idx+1}. {name} <span style='font-weight:normal; color:#6B7280; font-size:7.5pt;'>(순매수: {net}억)</span></div>
+                    <div style='font-weight:bold; color:#1F2937; font-size:8.5pt;'>{idx+1}. {row['agent']}</div>
                     <div style='margin-top:0.5mm;'>
-                        <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:55px;'>강도 {st}%</span>
-                        <span style='color:#3B82F6; font-size:8pt;'>{"■"*b_cnt}</span>
+                        <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:65px;'>순매수: {row['volume']:,}</span>
+                        <span style='color:#3B82F6; font-size:8pt;'>{bar_display}</span>
                     </div>
                 </div>
                 """
+        except:
+            pass
 
-        # ----------------------------------------------------------------------
-        # 📈 SECTION 4. 수익률 데이터 준비
-        # ----------------------------------------------------------------------
-        top_n_return_html = ""
-        if 'df_top_returns' in locals() or 'df_top_returns' in globals():
-            try:
-                for idx, row in df_top_returns.head(10).iterrows():
-                    top_n_return_html += f"<tr><td>{row['종목명']}</td><td style='text-align:center; font-weight:bold; color:#B91C1C;'>+{row['수익률']}%</td></tr>"
-            except:
-                pass
-        if not top_n_return_html:
-            sample_top10 = [
-                ("KODEX 미국AI테크TOP10+", "4.82"), ("KODEX 반도체", "3.15"), ("KODEX 미국나스닥100", "2.91"),
-                ("KODEX 미국S&P500", "1.85"), ("KODEX 이노베이션", "1.72"), ("KODEX AI전력핵심인프라", "1.65")
-            ]
-            for name, val in sample_top10:
-                top_n_return_html += f"<tr><td>{name}</td><td style='text-align:center; color:#B91C1C; font-weight:bold;'>+{val}%</td></tr>"
+    # [HTML/CSS 마스터 템플릿 코드]
+    html_string = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
+            @page {{ size: a4; margin: 11mm; }}
+            body {{ font-family: "Nanum Gothic", sans-serif; color: #333333; font-size: 9pt; }}
+            .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; }}
+            .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
+            .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; font-size: 9.5pt; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; }}
+            th {{ background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; text-align: center; border: 1px solid #E5E7EB; }}
+            td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; }}
+        </style>
+    </head>
+    <body>
+        <div style='text-align:center; font-size:16pt; font-weight:bold; color:#1E3A8A; margin-bottom:4mm;'>📊 KODEX ETF 실시간 변동 반영 맞춤형 리포트</div>
+        
+        <!-- Section 3 구역 -->
+        <div class="section-container">
+            <div class="section-title">👥 Section 3. 에이전트별 순매수 수급 강도 리스트</div>
+            <div style="font-size:8.5pt; color:#4B5563; margin-bottom:2mm;">• <b>선택된 분석 기간:</b> {period_name} (해당 기간의 실시간 매매 데이터만 필터링 완료)</div>
+            {section3_chart_html}
+        </div>
+        
+        <!-- Section 4 구역 (★요청하신 동적 데이터 전수 출력부) -->
+        <div class="section-container">
+            <div class="section-title">📈 Section 4. 주간 수익률 및 주요 테마별 퍼포먼스</div>
+            
+            <table style="width:100%; border:none;">
+                <tr>
+                    <td style="width:48%; border:none; padding:0; vertical-align:top;">
+                        <div class="content-title">[🏆 주간 수익률 TOP {top_n_count} 상품 리스트]</div>
+                        <table>
+                            <thead><tr><th>KODEX ETF 종목명</th><th>주간 수익률</th></tr></thead>
+                            <tbody>{top_n_return_html}</tbody>
+                        </table>
+                    </td>
+                    <td style="width:4%; border:none;"></td>
+                    <td style="width:48%; border:none; padding:0; vertical-align:top;">
+                        <div class="content-title">[📁 주간 주요 테마별 평균 수익률 전체 테이블]</div>
+                        <table>
+                            <thead><tr><th>시장 핵심 분석 테마 섹터</th><th>평균 수익률</th></tr></thead>
+                            <tbody>{theme_return_html}</tbody>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </div>
+        
+        <div style="text-align:center; font-size:7.5pt; color:#9CA3AF; margin-top:5mm; border-top:1px solid #E5E7EB; padding-top:1.5mm;">
+            발행기준일시: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 본 보고서는 에이전트 화면 설정과 100% 동기화되어 실시간 생성되었습니다.
+        </div>
+    </body>
+    </html>
+    """
+    
+    pdf_buffer = BytesIO()
+    pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
+    pdf_buffer.seek(0)
+    return pdf_buffer.getvalue()
 
-        theme_return_html = ""
-        if 'df_theme_returns' in locals() or 'df_theme_returns' in globals():
-            try:
-                for idx, row in df_theme_returns.iterrows():
-                    theme_return_html += f"<tr><td>{row['테마명']}</td><td style='text-align:center; font-weight:bold;'>{row['주간수익률']}%</td></tr>"
-            except:
-                pass
-        if not theme_return_html:
-            sample_themes = [
-                ("AI 및 반도체 소부장 대형주", "+4.12"), ("미국 대형 기술주 및 빅테크", "+2.98"), 
-                ("바이오 및 헬스케어 혁신 테마", "+1.55"), ("밸류업 금융 고배당 세션", "+1.20")
-            ]
-            for t_name, t_val in sample_themes:
-                color_str = "#B91C1C" if float(t_val) > 0 else "#1E40AF"
-                theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{t_val}%</td></tr>"
+# PDF 다운로드 버튼 실행 (현재 화면상의 filtered_agent_df, 선택된 기간 텍스트, 슬라이더 N값을 그대로 주입)
+try:
+    final_pdf = generate_pdf_report(filtered_agent_df, period_option, top_n_slider)
+    st.download_button(
+        label=f"📥 현재 설정(기간: {period_option} / TOP: {top_n_slider}개) 기준 PDF 다운로드",
+        data=final_pdf,
+        file_name=f"KODEX_Custom_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
+        mime="application/pdf",
+        key="section4_dynamic_pdf"
+    )
+except Exception as e:
+    st.error(f"PDF 생성용 실시간 변수 바인딩 중 대기: {e}")
 
         # ----------------------------------------------------------------------
         # 📱 SECTION 5. 마케팅 뉴스 리스트 동적 추출 및 네이버 데이터랩 박스 차트화
