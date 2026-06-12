@@ -1671,15 +1671,13 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
 
 # ==============================================================================
-# 🖥️ [추가 부록] 에이전트 대시보드 화면 그대로 스크린샷 캡처 및 PDF 저장 기능
+# 🖥️ [최종 완결본] 에이전트 대시보드 화면 그대로 스크린샷 캡처 및 PDF 저장 기능
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
     st.subheader("🖥️ 대시보드 화면 그대로 스냅숏 PDF 발행")
-    st.caption("현재 브라우저에 렌더링된 차트, 레이아웃, 표 UI 전체를 사진 찍듯 그대로 PDF로 박제합니다.")
+    st.caption("현재 브라우저에 렌더링된 차트, 레이아웃, 표 UI 전체를 깨짐과 겹침 없이 그대로 PDF로 박제합니다.")
     
-    # 로컬 테스트 및 배포 서버 환경 주소 (기본 포트 8501 설정)
-    # 클라우드 배포 시에는 실제 도메인 주소로 변경하여 활용 가능합니다.
     st.info("💡 본 기능은 서버 백그라운드에서 가상 브라우저(Headless Chrome)를 구동하여 화면을 스캔합니다.")
     
     def capture_current_dashboard_to_pdf():
@@ -1689,48 +1687,46 @@ with st.container(border=True):
         import subprocess
         import sys
         
-        # [🔥 해결책] os.system 대신 백그라운드 프로세스를 완벽히 동기화하여 브라우저 강제 설치
+        # 리눅스 가상 서버 환경 내 브라우저 의존성 패키지 동기화 강제 집행
         try:
-            # 주 브라우저와 리눅스 필수 시스템 의존성 파일까지 전수 다운로드 강제 집행
             subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-        except Exception as e:
+        except:
             pass
 
-        # Streamlit Cloud 내부에서 자기 자신을 참조할 수 있는 최적의 포트 주소 다각도 서칭
+        # 대시보드 로컬 호스트 타겟 주소
         target_dashboard_url = "http://localhost:8501"
         
         with sync_playwright() as p:
-            # 백그라운드 가상 브라우저 실행
-            # 실행 파일 누락 오류를 원천 차단하기 위해 헤드리스 셸 가동 가이드 명시
             browser = p.chromium.launch(
                 headless=True,
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             
-            # 컨텍스트 생성 시 A4 비율에 맞춰 브라우저 가상 뷰포트 크기 최적화 (차트 찌그러짐 방지)
-            context = browser.new_context(viewport={"width": 1280, "height": 1600})
+            # [🔥 해결책 1] 뷰포트 높이를 충분히 크게 늘려서 컴포넌트 간 뭉침/겹침 현상 초동 차단
+            context = browser.new_context(viewport={"width": 1300, "height": 3000})
             page = context.new_page()
             
-            # 대시보드 주소 접속 및 네트워크 안정화 대기
+            # 대시보드 주소 접속 및 네트워크 로딩 대기
             page.goto(target_dashboard_url, wait_until="networkidle", timeout=60000)
             
-            # 모든 Plotly 동적 웹 그래픽 플롯이 안착할 때까지 4초 대기
-            time.sleep(4)
+            # 대시보드 내부의 동적 스크립트와 Plotly 차트가 완전히 안착할 때까지 5초 충분히 대기
+            time.sleep(5)
             
-            # 스크롤을 맨 아래까지 내렸다가 올려서 모든 레이지 로딩 엘리먼트 강제 활성화
+            # 레이지 로딩 엘리먼트 깨짐 방지를 위해 가상 스크롤 롤링 트래킹
             try:
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(1)
+                time.sleep(1.5)
                 page.evaluate("window.scrollTo(0, 0);")
                 time.sleep(0.5)
             except:
                 pass
             
-            # 현재 렌더링된 화면 전체 배경 스타일을 입혀 PDF 바이너리로 최종 추출
+            # [🔥 해결책 2] full_page=True 옵션을 주어 Streamlit의 스크롤 구역 전체를 겹침 없이 유연하게 인쇄
             pdf_bytes = page.pdf(
                 format="A4",
                 print_background=True,
-                margin={"top": "10mm", "bottom": "10mm", "left": "10mm", "right": "10mm"}
+                full_page=True, # 👈 텍스트 겹침 현상을 해결하는 핵심 옵션
+                margin={"top": "15mm", "bottom": "15mm", "left": "15mm", "right": "15mm"}
             )
             
             context.close()
@@ -1744,17 +1740,17 @@ with st.container(border=True):
                 captured_pdf_data = capture_current_dashboard_to_pdf()
                 
                 if captured_pdf_data:
+                    from datetime import datetime
                     st.download_button(
                         label="📥 캡처 스냅숏 PDF 다운로드",
                         data=captured_pdf_data,
                         file_name=f"KODEX_Dashboard_Screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
-                        key="dashboard_screenshot_pdf_download"
+                        key="dashboard_screenshot_pdf_download_v4"
                     )
                     st.success("🎉 현재 대시보드 화면이 성공적으로 PDF로 변환되었습니다!")
                 else:
                     st.error("화면 바이너리를 스냅숏 버퍼로 생성하는 데 실패했습니다.")
             except Exception as e:
                 st.error(f"❌ 캡처 엔진 가동 중 오류 발생: {e}")
-                st.caption("주의: 이 기능을 사용하려면 서버 터미널 환경에 'pip install playwright' 및 'playwright install'이 선행 설치되어 있어야 합니다.")
