@@ -1669,9 +1669,8 @@ with st.container(border=True):
             st.error("통합 PDF 리포트 바이너리를 바인딩하는 과정에서 구조적 에러가 발생했습니다.")
     except Exception as e:
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
-
 # ==============================================================================
-# 🖥️ [레이아웃 고정 & 전장 출력본] 반응형 붕괴를 막고 Section 5까지 출력하는 코드
+# 🖥️ [최종 레이아웃 싱크 고정본] 뭉개짐과 1페이지 단절 현상을 완벽히 패치한 코드
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
@@ -1683,7 +1682,6 @@ with st.container(border=True):
     def capture_current_dashboard_to_pdf():
         from playwright.sync_api import sync_playwright
         import time
-        from io import BytesIO
         import subprocess
         import sys
         
@@ -1694,16 +1692,18 @@ with st.container(border=True):
             pass
 
         # 대시보드 로컬 호스트 타겟 주소
-        target_dashboard_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app/"
+        target_dashboard_url = "http://localhost:8501"
         
         with sync_playwright() as p:
+            # 브라우저 구동 시 인쇄 크기 왜곡을 막기 위해 가로세로 해상도를 애초에 거대하게 실행
             browser = p.chromium.launch(
                 headless=True,
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             
-            # 가상 모니터를 넓은 Full HD 해상도로 고정
-            context = browser.new_context(viewport={"width": 1600, "height": 1200})
+            # [🔥 핵심 해결책 1] 초기 화면 크기를 가로 1500px, 세로 5000px로 극단적으로 길게 설정
+            # 이렇게 하면 Streamlit이 처음부터 모바일이 아닌 'PC 화면' 모드로 모든 섹션을 아래로 길게 로딩합니다.
+            context = browser.new_context(viewport={"width": 1500, "height": 5000})
             page = context.new_page()
             
             # 모니터 화면 스타일 강제 복제
@@ -1712,72 +1712,74 @@ with st.container(border=True):
             # 대시보드 접속 및 네트워크 안정화 대기
             page.goto(target_dashboard_url, wait_until="networkidle", timeout=60000)
             
-            # 모든 데이터 및 Plotly 그래픽 플롯이 안착할 때까지 6초 대기
-            time.sleep(6)
-            
-            # 데이터 로딩(레이지 로딩) 누락 방지를 위해 아래로 전체 스크롤 이동
+            # [🔥 핵심 해결책 2] 스크롤바가 있는 메인 컨테이너를 타겟팅하여 위아래로 천천히 흔들어 
+            # Section 5까지 동적 차트들이 메모리에 완전히 안착하도록 가이드
             try:
                 page.evaluate("""
-                    const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
-                    mainContainer.scrollTo(0, 99999);
+                    () => {
+                        const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
+                        // 아래로 찔끔찔끔 내리면서 스크롤 로딩 트리거 가동
+                        for (let i = 0; i < 5; i++) {
+                            setTimeout(() => { mainContainer.scrollTo(0, i * 1000); }, i * 300);
+                        }
+                    }
                 """)
-                time.sleep(1.5)
+                time.sleep(2.5) # 스크롤이 내려가는 물리적인 시간 부여
+                
                 page.evaluate("""
-                    const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
-                    mainContainer.scrollTo(0, 0);
+                    () => {
+                        const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
+                        mainContainer.scrollTo(0, 0);
+                    }
                 """)
-                time.sleep(0.5)
+                time.sleep(1)
             except:
                 pass
 
-            # [🔥 해결책 1] 인쇄 직전 강제 스타일 시트(CSS) 주입하여 가로 레이아웃 고정 및 하단 박스 숨김
+            # 모든 데이터 및 Plotly 그래픽 플롯이 렌더링 연산을 완전히 마칠 때까지 5초 추가 대기
+            time.sleep(5)
+
+            # [🔥 핵심 해결책 3] 인쇄용 강제 스타일 시트(CSS)를 주입하여 반응형 너비 비율을 하드코딩으로 박제
             try:
                 page.evaluate("""
                     () => {
                         const style = document.createElement('style');
                         style.innerHTML = `
-                            /* 1. 하단 PDF 발행 관련 테두리 상자 2개 투명화 및 높이 삭제 */
+                            /* 1. 하단 PDF 발행 관련 테두리 상자 2개 무조건 숨김 */
                             [data-testid="stVerticalBlockBorderContainer"]:has(button[key*="pdf"]),
                             [data-testid="stVerticalBlockBorderContainer"]:has(button[key*="screenshot"]),
                             div:has(h3:contains("대시보드 화면 그대로 스냅숏")),
                             div:has(h3:contains("대시보드 완전체 종합")) {
                                 display: none !important;
                                 height: 0px !important;
-                                margin: 0px !important;
-                                padding: 0px !important;
                             }
                             
-                            /* 2. 인쇄 드라이버가 마음대로 모바일 해상도로 줄이지 못하게 강제 고정 */
-                            @media print {
-                                html, body, .stApp, [data-testid="stAppViewContainer"] {
-                                    width: 1500px !important;
-                                    height: auto !important;
-                                    overflow: visible !important;
-                                }
-                                [data-testid="stMainBlockContainer"] {
-                                    width: 1500px !important;
-                                    max-width: 1500px !important;
-                                    min-width: 1500px !important;
-                                    padding-left: 3rem !important;
-                                    padding-right: 3rem !important;
-                                    height: auto !important;
-                                    overflow: visible !important;
-                                }
-                                /* 내부 컬럼 겹침 방지 */
-                                [data-testid="stHorizontalBlock"] {
-                                    width: 100% !important;
-                                    display: flex !important;
-                                    flex-direction: row !important;
-                                    flex-wrap: nowrap !important;
-                                }
-                                [data-testid="column"] {
-                                    min-width: 0 !important;
-                                }
+                            /* 2. 대시보드 스크롤을 무력화하여 끊김 없이 아래로 길게 출력되도록 유도 */
+                            html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMainBlockContainer"] {
+                                height: auto !important;
+                                overflow: visible !important;
+                                max-height: none !important;
+                            }
+                            
+                            /* 3. 인쇄 시 너비가 쪼그라들면서 컴포넌트가 겹치는 현상 차단 */
+                            [data-testid="stMainBlockContainer"] {
+                                width: 1400px !important;
+                                max-width: 1400px !important;
+                                min-width: 1400px !important;
+                                padding: 2rem !important;
+                            }
+                            
+                            /* 4. 가로 배치(Columns) 레이아웃 강제 사수 */
+                            [data-testid="stHorizontalBlock"] {
+                                display: flex !important;
+                                flex-direction: row !important;
+                                flex-wrap: nowrap !important;
+                                width: 100% !important;
                             }
                         `;
                         document.head.appendChild(style);
                         
-                        // 하단 박스들을 기존 방식(텍스트 매칭)으로도 중복 보완 숨김 처리
+                        // 하단 2개 컨테이너를 확실하게 2차 차단
                         const containers = document.querySelectorAll('[data-testid="stVerticalBlockBorderContainer"]');
                         for (let i = containers.length - 1; i >= 0; i--) {
                             const text = containers[i].textContent || "";
@@ -1791,19 +1793,19 @@ with st.container(border=True):
             except:
                 pass
             
-            # [🔥 해결책 2] 전체 본문의 높이를 정확히 재측정하여 뷰포트 스케일 싱크 일치
+            # 스크롤이 완전히 풀린 본문의 실제 전체 높이를 동적으로 측정하여 최종 모니터 크기 조절
             try:
-                full_height = page.evaluate("() => document.documentElement.scrollHeight || document.body.scrollHeight")
-                page.set_viewport_size({"width": 1600, "height": max(full_height, 2500)})
-                time.sleep(1)
+                full_height = page.evaluate("() => Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)")
+                page.set_viewport_size({"width": 1500, "height": max(full_height, 3500)})
+                time.sleep(1.5) # 연산 싱크 대기
             except:
                 pass
             
-            # [🔥 해결책 3] 인쇄 엔진이 웹의 스타일 크기를 그대로 계승하도록 가이드라인 부여
+            # 최종 PDF 인쇄 추출 (A4 사이즈 안에 1400px 가로 디자인을 그대로 안착시킴)
             pdf_bytes = page.pdf(
                 format="A4",
                 print_background=True,
-                prefer_css_page_size=False, # 👈 false로 두어 A4 비율에 강제 맞춤 해제
+                prefer_css_page_size=True, # 👈 다시 True로 복귀하여 강제 분할 매핑 가동
                 margin={"top": "15mm", "bottom": "15mm", "left": "15mm", "right": "15mm"}
             )
             
@@ -1815,7 +1817,6 @@ with st.container(border=True):
     if st.button("📸 현재 에이전트 화면 스캔 및 PDF 컴파일 시작", use_container_width=True):
         with st.spinner("레이아웃 비율을 데스크톱 모드로 고정하고 전체 리포트 화면을 스캔하여 PDF를 생성 중입니다..."):
             try:
-                # 안전하게 데이터 파싱 실행
                 captured_pdf_data = capture_current_dashboard_to_pdf()
                 
                 if captured_pdf_data:
@@ -1823,10 +1824,10 @@ with st.container(border=True):
                     st.download_button(
                         label="📥 캡처 스냅숏 PDF 다운로드",
                         data=captured_pdf_data,
-                        file_name=f"KODEX_Dashboard_Perfect_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        file_name=f"KODEX_Dashboard_Fixed_Final_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
-                        key="dashboard_screenshot_pdf_download_v12"
+                        key="dashboard_screenshot_pdf_download_v13"
                     )
                     st.success("🎉 레이아웃 정렬이 완벽하게 고정된 깔끔한 대시보드 PDF가 발행되었습니다!")
                 else:
