@@ -1671,7 +1671,7 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
 
 # ==============================================================================
-# 🖥️ [최종 수정본] 최상위 부모 삭제 버그를 방지하고 타겟 박스만 정확히 숨기는 코드
+# 🖥️ [최종 레이아웃 교정본] 겹침 현상 및 빈 화면 버그를 완벽히 해결한 캡처 코드
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
@@ -1694,7 +1694,7 @@ with st.container(border=True):
             pass
 
         # 대시보드 로컬 호스트 타겟 주소
-        target_dashboard_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app/"
+        target_dashboard_url = "http://localhost:8501"
         
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -1702,55 +1702,48 @@ with st.container(border=True):
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             
-            # 임시 기본 뷰포트 생성
-            context = browser.new_context(viewport={"width": 1300, "height": 1200})
+            # [🔥 해결책 1] 표준 데스크톱 Full HD 해상도로 가상 모니터 고정 (Streamlit 레이아웃 깨짐 방지)
+            context = browser.new_context(viewport={"width": 1920, "height": 1080})
             page = context.new_page()
+            
+            # [🔥 해결책 2] 프린트용 흑백 스타일이 아닌, 화면에 보이는 화려한 컬러 CSS 스타일 그대로 복제 지정
+            page.emulate_media(media="screen")
             
             # 대시보드 주소 접속 및 네트워크 로딩 대기
             page.goto(target_dashboard_url, wait_until="networkidle", timeout=60000)
             
-            # 대시보드 내부의 동적 스크립트와 차트 안착 대기
-            time.sleep(5)
+            # 대시보드 내부의 동적 스크립트와 차트가 완전히 렌더링될 때까지 6초 충분히 대기
+            time.sleep(6)
             
-            # [🔥 버그 완벽 수정] 최상위 div가 날아가지 않도록 구체적인 텍스트 노드 엘리먼트만 타겟팅
+            # [🔥 해결책 3] 뷰포트 크기를 건드리지 않고, 자바스크립트로 하단 버튼 박스 2개만 콕 집어서 투명화 처리
             try:
                 page.evaluate("""
                     () => {
-                        // 제목으로 쓰인 모든 h3 태그와 div 내부 텍스트 노드를 서칭
-                        const elements = document.querySelectorAll('h3, div');
+                        // 페이지 안의 모든 테두리 박스 컨테이너를 수집
+                        const containers = document.querySelectorAll('[data-testid="stVerticalBlockBorderContainer"]');
                         
-                        elements.forEach(el => {
-                            // 자식 엘리먼트가 너무 많은 거대 div 박스는 탐색에서 제외 (최상위 박스 제거 방지)
-                            if (el.children.length > 5) return; 
-                            
-                            // 1. 첫 번째 PDF 박스 타겟팅 및 숨김
-                            if (el.textContent && el.textContent.trim() === '대시보드 완전체 종합 PDF 리포트 발행') {
-                                const box = el.closest('[data-testid="stVerticalBlockBorderContainer"]') || el.closest('.stVerticalBlock');
-                                if (box) { box.style.setProperty('display', 'none', 'important'); }
+                        // 뒤에서부터 탐색하여 텍스트 매칭 검사 (최상위 부모 삭제 버그 방지)
+                        for (let i = containers.length - 1; i >= 0; i--) {
+                            const text = containers[i].textContent || "";
+                            if (text.includes("대시보드 완전체 종합 PDF 리포트 발행") || text.includes("대시보드 화면 그대로 스냅숏 PDF 발행")) {
+                                // 요소를 아예 삭제하지 않고 자리를 유지한 채 숨겨서 레이아웃 붕괴를 막음
+                                containers[i].style.visibility = 'hidden';
+                                containers[i].style.height = '0px';
+                                containers[i].style.overflow = 'hidden';
+                                containers[i].style.margin = '0px';
+                                containers[i].style.padding = '0px';
                             }
-                            
-                            // 2. 두 번째 스냅숏 박스 타겟팅 및 숨김
-                            if (el.textContent && el.textContent.trim() === '대시보드 화면 그대로 스냅숏 PDF 발행') {
-                                const box = el.closest('[data-testid="stVerticalBlockBorderContainer"]') || el.closest('.stVerticalBlock');
-                                if (box) { box.style.setProperty('display', 'none', 'important'); }
-                            }
-                        });
+                        }
                     }
                 """)
-                time.sleep(1) # 스타일 적용 안착 대기
-            except:
-                pass
-            
-            # 자바스크립트로 하단 구역이 제외된 실제 대시보드의 전체 길이를 재측정하여 뷰포트 확장
-            try:
-                full_height = page.evaluate("() => document.documentElement.scrollHeight || document.body.scrollHeight")
-                page.set_viewport_size({"width": 1300, "height": max(full_height, 2000)})
                 time.sleep(1)
             except:
                 pass
             
-            # 레이지 로딩 활성화를 위한 가상 스크롤 롤링
+            # 데이터 로딩(레이지 로딩) 누락 방지를 위한 부드러운 가상 스크롤 다운/업
             try:
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
+                time.sleep(0.5)
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(1)
                 page.evaluate("window.scrollTo(0, 0);")
@@ -1758,11 +1751,13 @@ with st.container(border=True):
             except:
                 pass
             
-            # 최종 PDF 추출
+            # [🔥 핵심 해결책 4] 브라우저 자체의 인쇄 엔진에게 웹 해상도 규격을 우선하라고 옵션 부여 (prefer_css_page_size)
+            # full_page나 무리한 height 조정 대신 인쇄 엔진이 자연스럽게 페이지를 분할하도록 유도
             pdf_bytes = page.pdf(
                 format="A4",
                 print_background=True,
-                margin={"top": "15mm", "bottom": "15mm", "left": "15mm", "right": "15mm"}
+                prefer_css_page_size=True, 
+                margin={"top": "10mm", "bottom": "10mm", "left": "10mm", "right": "10mm"}
             )
             
             context.close()
@@ -1780,12 +1775,12 @@ with st.container(border=True):
                     st.download_button(
                         label="📥 캡처 스냅숏 PDF 다운로드",
                         data=captured_pdf_data,
-                        file_name=f"KODEX_Dashboard_Clean_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        file_name=f"KODEX_Dashboard_Fixed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
-                        key="dashboard_screenshot_pdf_download_v8"
+                        key="dashboard_screenshot_pdf_download_v9"
                     )
-                    st.success("🎉 하단 버튼 섹션들이 제외된 깔끔한 대시보드 PDF가 발행되었습니다!")
+                    st.success("🎉 레이아웃 겹침이 해결된 깔끔한 대시보드 PDF가 발행되었습니다!")
                 else:
                     st.error("화면 바이너리를 스냅숏 버퍼로 생성하는 데 실패했습니다.")
             except Exception as e:
