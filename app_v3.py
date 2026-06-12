@@ -682,10 +682,10 @@ st.divider()
 # ⚙️ FUNETF API 설정 (기존 설정 유지)
 # ============================================================
 COOKIES = {
-    "WMONID":      "5ukC3oVssmx",
-    "JSESSIONID":  "DDD39C40D6D45D6FD3E915BF2C7468E3",
-    "remember-me": "TjNsRkMwVjhLZnU5ZUlCalMzRGpudyUzRCUzRDp2eGtERWtYR3JkeU4zUm9oYkxxTHV3JTNEJTNE",
-    "userId":      "536987",
+    "WMONID":      "NB8thrQAzZk",
+    "JSESSIONID":  "0B56A9753B465139C79DC9D6235BA096",
+    "remember-me": "TzVIaDljOUJoaXh5SlZBRmNtRU5GUSUzRCUzRDpIZjZXT21zJTJGbVA0UjJaVFZteVd1c2clM0QlM0Q",
+    "userId":      "535390",
 }
 BASE = "https://www.funetf.co.kr/api/product/etf"
 HEADERS = {
