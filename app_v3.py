@@ -1671,7 +1671,7 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
 
 # ==============================================================================
-# 🖥️ [최종 완결본] 에이전트 대시보드 화면 그대로 스크린샷 캡처 및 PDF 저장 기능
+# 🖥️ [오류 완벽 수정본] 에이전트 대시보드 화면 그대로 스크린샷 캡처 및 PDF 저장 기능
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
@@ -1702,8 +1702,8 @@ with st.container(border=True):
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             
-            # [🔥 해결책 1] 뷰포트 높이를 충분히 크게 늘려서 컴포넌트 간 뭉침/겹침 현상 초동 차단
-            context = browser.new_context(viewport={"width": 1300, "height": 3000})
+            # 임시로 기본 뷰포트 크기 생성
+            context = browser.new_context(viewport={"width": 1300, "height": 1200})
             page = context.new_page()
             
             # 대시보드 주소 접속 및 네트워크 로딩 대기
@@ -1712,20 +1712,29 @@ with st.container(border=True):
             # 대시보드 내부의 동적 스크립트와 Plotly 차트가 완전히 안착할 때까지 5초 충분히 대기
             time.sleep(5)
             
-            # 레이지 로딩 엘리먼트 깨짐 방지를 위해 가상 스크롤 롤링 트래킹
+            # [🔥 핵심 해결책] full_page 인자 대신 자바스크립트로 실제 대시보드의 전체 길이를 측정하여 뷰포트 확장
+            try:
+                # 웹페이지 본문의 실제 스크롤 높이(Height) 측정
+                full_height = page.evaluate("() => document.documentElement.scrollHeight || document.body.scrollHeight")
+                # 알아낸 실제 높이에 맞춰 브라우저 화면 크기를 강제로 길게 늘림 (겹침 현상 원천 차단)
+                page.set_viewport_size({"width": 1300, "height": max(full_height, 2500)})
+                time.sleep(1)
+            except:
+                pass
+            
+            # 레이지 로딩 엘리먼트 활성화를 위한 가상 스크롤 롤링
             try:
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(1.5)
+                time.sleep(1)
                 page.evaluate("window.scrollTo(0, 0);")
                 time.sleep(0.5)
             except:
                 pass
             
-            # [🔥 해결책 2] full_page=True 옵션을 주어 Streamlit의 스크롤 구역 전체를 겹침 없이 유연하게 인쇄
+            # 에러를 유발하던 full_page=True 인자를 제거하고, 조정된 뷰포트 바탕으로 안전하게 PDF 추출
             pdf_bytes = page.pdf(
                 format="A4",
                 print_background=True,
-                full_page=True, # 👈 텍스트 겹침 현상을 해결하는 핵심 옵션
                 margin={"top": "15mm", "bottom": "15mm", "left": "15mm", "right": "15mm"}
             )
             
@@ -1747,10 +1756,12 @@ with st.container(border=True):
                         file_name=f"KODEX_Dashboard_Screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
-                        key="dashboard_screenshot_pdf_download_v4"
+                        key="dashboard_screenshot_pdf_download_v5"
                     )
                     st.success("🎉 현재 대시보드 화면이 성공적으로 PDF로 변환되었습니다!")
                 else:
                     st.error("화면 바이너리를 스냅숏 버퍼로 생성하는 데 실패했습니다.")
+            except Exception as e:
+                st.error(f"❌ 캡처 엔진 가동 중 오류 발생: {e}")
             except Exception as e:
                 st.error(f"❌ 캡처 엔진 가동 중 오류 발생: {e}")
