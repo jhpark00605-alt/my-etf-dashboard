@@ -1676,10 +1676,10 @@ with st.container(border=True):
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
-    st.subheader("🖥️ 대시보드 화면 그대로 스냅숏 PDF 발행")
-    st.caption("현재 브라우저에 렌더링된 차트와 표 UI 전체를 깨짐, 겹침, 그리고 하단 버튼 구역 없이 깔끔하게 PDF로 박제합니다.")
+    st.subheader("🖥️ 대시보드 화면 스냅샷 PDF 발행")
+    st.caption("현재 브라우저에 렌더링된 차트와 표 UI 전체를 PDF로 전환합니다.")
     
-    st.info("💡 본 기능은 하단의 기능성 버튼 박스들을 자동으로 숨긴 뒤, 화면을 스캔하여 고품질 PDF를 생성합니다.")
+    st.info("💡 본 기능은 화면을 스캔하여 PDF를 생성합니다.")
     
     def capture_current_dashboard_to_pdf():
         from playwright.sync_api import sync_playwright
