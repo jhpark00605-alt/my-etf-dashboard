@@ -1671,7 +1671,7 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
 
 # ==============================================================================
-# 🖥️ [최종 레이아웃 교정본] 가로폭을 강제 고정하여 2단 분할 겹침을 해결한 코드
+# 🖥️ [레이아웃 고정 & 전장 출력본] 반응형 붕괴를 막고 Section 5까지 출력하는 코드
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
@@ -1694,7 +1694,7 @@ with st.container(border=True):
             pass
 
         # 대시보드 로컬 호스트 타겟 주소
-        target_dashboard_url = "http://localhost:8501"
+        target_dashboard_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app/"
         
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -1702,26 +1702,26 @@ with st.container(border=True):
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             
-            # 대형 데스크톱 Full HD 해상도로 컨텍스트 초기화
+            # 가상 모니터를 넓은 Full HD 해상도로 고정
             context = browser.new_context(viewport={"width": 1600, "height": 1200})
             page = context.new_page()
             
-            # 프린팅 모드가 아닌 일반 웹 모드 스타일 에뮬레이션
+            # 모니터 화면 스타일 강제 복제
             page.emulate_media(media="screen")
             
-            # 대시보드 접속 및 로딩 대기
+            # 대시보드 접속 및 네트워크 안정화 대기
             page.goto(target_dashboard_url, wait_until="networkidle", timeout=60000)
             
-            # 모든 차트와 동적 데이터가 완전히 안착할 때까지 6초 대기
+            # 모든 데이터 및 Plotly 그래픽 플롯이 안착할 때까지 6초 대기
             time.sleep(6)
             
-            # 데이터 로딩(레이지 로딩) 누락 방지를 위해 아래로 스크롤링
+            # 데이터 로딩(레이지 로딩) 누락 방지를 위해 아래로 전체 스크롤 이동
             try:
                 page.evaluate("""
                     const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
                     mainContainer.scrollTo(0, 99999);
                 """)
-                time.sleep(1)
+                time.sleep(1.5)
                 page.evaluate("""
                     const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
                     mainContainer.scrollTo(0, 0);
@@ -1730,69 +1730,81 @@ with st.container(border=True):
             except:
                 pass
 
-            # [🔥 해결책 1] 하단의 특정 PDF 발행 버튼 컨테이너 2개 숨기기 (공간을 유지하되 투명하게 만듦)
+            # [🔥 해결책 1] 인쇄 직전 강제 스타일 시트(CSS) 주입하여 가로 레이아웃 고정 및 하단 박스 숨김
             try:
                 page.evaluate("""
                     () => {
+                        const style = document.createElement('style');
+                        style.innerHTML = `
+                            /* 1. 하단 PDF 발행 관련 테두리 상자 2개 투명화 및 높이 삭제 */
+                            [data-testid="stVerticalBlockBorderContainer"]:has(button[key*="pdf"]),
+                            [data-testid="stVerticalBlockBorderContainer"]:has(button[key*="screenshot"]),
+                            div:has(h3:contains("대시보드 화면 그대로 스냅숏")),
+                            div:has(h3:contains("대시보드 완전체 종합")) {
+                                display: none !important;
+                                height: 0px !important;
+                                margin: 0px !important;
+                                padding: 0px !important;
+                            }
+                            
+                            /* 2. 인쇄 드라이버가 마음대로 모바일 해상도로 줄이지 못하게 강제 고정 */
+                            @media print {
+                                html, body, .stApp, [data-testid="stAppViewContainer"] {
+                                    width: 1500px !important;
+                                    height: auto !important;
+                                    overflow: visible !important;
+                                }
+                                [data-testid="stMainBlockContainer"] {
+                                    width: 1500px !important;
+                                    max-width: 1500px !important;
+                                    min-width: 1500px !important;
+                                    padding-left: 3rem !important;
+                                    padding-right: 3rem !important;
+                                    height: auto !important;
+                                    overflow: visible !important;
+                                }
+                                /* 내부 컬럼 겹침 방지 */
+                                [data-testid="stHorizontalBlock"] {
+                                    width: 100% !important;
+                                    display: flex !important;
+                                    flex-direction: row !important;
+                                    flex-wrap: nowrap !important;
+                                }
+                                [data-testid="column"] {
+                                    min-width: 0 !important;
+                                }
+                            }
+                        `;
+                        document.head.appendChild(style);
+                        
+                        // 하단 박스들을 기존 방식(텍스트 매칭)으로도 중복 보완 숨김 처리
                         const containers = document.querySelectorAll('[data-testid="stVerticalBlockBorderContainer"]');
                         for (let i = containers.length - 1; i >= 0; i--) {
                             const text = containers[i].textContent || "";
                             if (text.includes("대시보드 완전체 종합 PDF 리포트 발행") || text.includes("대시보드 화면 그대로 스냅숏 PDF 발행")) {
-                                containers[i].style.setProperty('visibility', 'hidden', 'important');
-                                containers[i].style.setProperty('height', '0px', 'important');
-                                containers[i].style.setProperty('margin', '0px', 'important');
-                                containers[i].style.setProperty('padding', '0px', 'important');
+                                containers[i].style.setProperty('display', 'none', 'important');
                             }
                         }
-                    }
-                """)
-            except:
-                pass
-
-            # [🔥 해결책 2 - 핵심] 가로폭을 강제로 1400px로 묶어 인쇄 시 레이아웃이 쪼그라들거나 겹치는 현상 원천 차단
-            try:
-                page.evaluate("""
-                    () => {
-                        // Streamlit 메인 본문 컨테이너 타겟팅
-                        const mainBlock = document.querySelector('[data-testid="stMainBlockContainer"]');
-                        if (mainBlock) {
-                            // 반응형 레이아웃이 발동하지 못하도록 가로 길이를 고정 크기로 하드코딩 주입
-                            mainBlock.style.setProperty('width', '1400px', 'important');
-                            mainBlock.style.setProperty('max-width', '1400px', 'important');
-                            mainBlock.style.setProperty('min-width', '1400px', 'important');
-                            mainBlock.style.setProperty('padding-left', '2rem', 'important');
-                            mainBlock.style.setProperty('padding-right', '2rem', 'important');
-                        }
-                        
-                        // 대시보드 내부 스크롤바 제한도 함께 해제하여 전체 페이지가 아래로 뻗도록 조치
-                        const selectors = ['.stApp', '[data-testid="stAppViewContainer"]', '#root', 'body', 'html'];
-                        selectors.forEach(selector => {
-                            const el = document.querySelector(selector);
-                            if (el) {
-                                el.style.setProperty('height', 'auto', 'important');
-                                el.style.setProperty('overflow', 'visible', 'important');
-                                el.style.setProperty('max-height', 'none', 'important');
-                            }
-                        });
                     }
                 """)
                 time.sleep(1)
             except:
                 pass
             
-            # 스크롤이 자연스럽게 풀린 본문의 실제 최종 높이를 측정하여 뷰포트 업데이트
+            # [🔥 해결책 2] 전체 본문의 높이를 정확히 재측정하여 뷰포트 스케일 싱크 일치
             try:
                 full_height = page.evaluate("() => document.documentElement.scrollHeight || document.body.scrollHeight")
-                page.set_viewport_size({"width": 1600, "height": max(full_height, 2200)})
+                page.set_viewport_size({"width": 1600, "height": max(full_height, 2500)})
                 time.sleep(1)
             except:
                 pass
             
-            # 최종 PDF 인쇄 추출 (A4 사이즈 안에 1400px 가로 디자인을 그대로 안착시킴)
+            # [🔥 해결책 3] 인쇄 엔진이 웹의 스타일 크기를 그대로 계승하도록 가이드라인 부여
             pdf_bytes = page.pdf(
                 format="A4",
                 print_background=True,
-                margin={"top": "12mm", "bottom": "12mm", "left": "12mm", "right": "12mm"}
+                prefer_css_page_size=False, # 👈 false로 두어 A4 비율에 강제 맞춤 해제
+                margin={"top": "15mm", "bottom": "15mm", "left": "15mm", "right": "15mm"}
             )
             
             context.close()
@@ -1803,6 +1815,7 @@ with st.container(border=True):
     if st.button("📸 현재 에이전트 화면 스캔 및 PDF 컴파일 시작", use_container_width=True):
         with st.spinner("레이아웃 비율을 데스크톱 모드로 고정하고 전체 리포트 화면을 스캔하여 PDF를 생성 중입니다..."):
             try:
+                # 안전하게 데이터 파싱 실행
                 captured_pdf_data = capture_current_dashboard_to_pdf()
                 
                 if captured_pdf_data:
@@ -1810,10 +1823,10 @@ with st.container(border=True):
                     st.download_button(
                         label="📥 캡처 스냅숏 PDF 다운로드",
                         data=captured_pdf_data,
-                        file_name=f"KODEX_Dashboard_Fixed_Layout_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        file_name=f"KODEX_Dashboard_Perfect_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
-                        key="dashboard_screenshot_pdf_download_v11"
+                        key="dashboard_screenshot_pdf_download_v12"
                     )
                     st.success("🎉 레이아웃 정렬이 완벽하게 고정된 깔끔한 대시보드 PDF가 발행되었습니다!")
                 else:
