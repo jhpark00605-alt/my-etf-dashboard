@@ -1245,218 +1245,63 @@ with st.container(border=True):
                     sec2_data['kodex']['reason'] = b_summary
             except: pass
 
-        # ==============================================================================
-# SECTION 3: 에이전트 매매 동향 및 기간별 분석 (분석기간 PDF 완벽 실시간 연동)
-# ==============================================================================
-st.header("Section 3: 에이전트 매매 동향 및 실시간 기간 분석")
-
-# 1. 실시간 기간 설정 UI
-period_option = st.selectbox(
-    "분석 기간을 선택하세요:",
-    ["1일 (최신)", "1주일", "1개월", "3개월", "6개월"],
-    key="section3_period_select"
-)
-
-# [데이터 필터링 로직] 선택한 기간에 맞게 실시간 데이터 필터링
-current_time = datetime.now()
-if period_option == "1일 (최신)":
-    start_date = current_time - timedelta(days=1)
-elif period_option == "1주일":
-    start_date = current_time - timedelta(weeks=1)
-elif period_option == "1개월":
-    start_date = current_time - timedelta(days=30)
-elif period_option == "3개월":
-    start_date = current_time - timedelta(days=90)
-else:
-    start_date = current_time - timedelta(days=180)
-
-# 에이전트 데이터에서 기간 필터링 적용 (실시간 갱신되는 데이터프레임 변동 반영)
-filtered_agent_df = df_agent[df_agent['date'] >= start_date].reset_index(drop=True)
-
-# 2. 순매수 강도 그래프 시각화 (실시간 반영)
-st.subheader(f"📊 에이전트별 순매수 강도 ({period_option} 기준)")
-if not filtered_agent_df.empty:
-    net_buying = filtered_agent_df.groupby('agent')['volume'].sum().reset_index()
-    fig = px.bar(
-        net_buying, 
-        x='agent', 
-        y='volume', 
-        title=f"에이전트별 누적 순매수 ({period_option})",
-        labels={'agent': '에이전트', 'volume': '순매수량'},
-        color='volume',
-        color_continuous_scale=px.colors.sequential.Viridis
-    )
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("선택한 기간 내에 에이전트 매매 데이터가 존재하지 않습니다.")
-
-
-# ==============================================================================
-# SECTION 4: 주간 수익률 Top N (최대 50개 동적 변동) 및 테마별 평균 수익률
-# ==============================================================================
-st.header("Section 4: 주간 시장 데이터 분석")
-
-# 1. 사용자가 화면에서 TOP 몇 개의 상품을 볼지 설정하는 N값 변수 (최대 50개)
-top_n_slider = st.slider("조회할 수익률 상위 상품 개수(N)를 설정하세요:", min_value=5, max_value=50, value=10, step=5)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader(f"🏆 주간 수익률 Top {top_n_slider} 종목")
-    if 'df_top_returns' in locals() or 'df_top_returns' in globals():
-        # 사용자가 슬라이더로 설정한 top_n_slider 개수만큼 실시간 슬라이싱하여 화면에 표시
-        display_top_df = df_top_returns.head(top_n_slider).reset_index(drop=True)
-        st.dataframe(display_top_df, use_container_width=True)
-    else:
-        st.warning("주간 수익률 데이터(df_top_returns)가 로드되지 않았습니다.")
-
-with col2:
-    st.subheader("📁 주간 주요 테마별 평균 수익률 (전체)")
-    if 'df_theme_returns' in locals() or 'df_theme_returns' in globals():
-        # 하드코딩 없이 에이전트에 들어온 테마 전체를 화면에 표시
-        st.dataframe(df_theme_returns.reset_index(drop=True), use_container_width=True)
-    else:
-        st.warning("주간 테마 데이터(df_theme_returns)가 로드되지 않았습니다.")
-
-
-# ==============================================================================
-# 📥 [통합 PDF 발행 엔진] 사용자가 선택한 기간, Top N개, 테마 전수 실시간 렌더링
-# ==============================================================================
-st.markdown("<br>", unsafe_allow_html=True)
-st.subheader("📋 실시간 PDF 통합 분석 보고서 발행")
-
-def generate_pdf_report(agent_data, period_name, top_n_count):
-    from xhtml2pdf import pisa
-    from io import BytesIO
-    
-    # --------------------------------------------------------------------------
-    # 1. [수정 완료] Section 4 - 주간 수익률 Top N 동적 HTML 빌드 (6개 제한 해제)
-    # --------------------------------------------------------------------------
-    top_n_return_html = ""
-    if 'df_top_returns' in locals() or 'df_top_returns' in globals():
-        try:
-            # 사용자가 에이전트 화면에서 설정한 top_n_count 개수만큼 정확히 PDF에 주입
-            for idx, row in df_top_returns.head(top_n_count).iterrows():
-                top_n_return_html += f"<tr><td>{row['종목명']}</td><td style='text-align:center; font-weight:bold; color:#B91C1C;'>+{row['수익률']}%</td></tr>"
-        except Exception as e:
-            top_n_return_html = f"<tr><td colspan='2'>데이터 파싱 에러: {e}</td></tr>"
-            
-    # --------------------------------------------------------------------------
-    # 2. [수정 완료] Section 4 - 테마별 평균 수익률 전체 테이블 HTML 빌드 (4개 제한 해제)
-    # --------------------------------------------------------------------------
-    theme_return_html = ""
-    if 'df_theme_returns' in locals() or 'df_theme_returns' in globals():
-        try:
-            # 개수 제한 없이 에이전트에 존재하는 모든 테마 행(Row)을 전수 순회하여 HTML화
-            for idx, row in df_theme_returns.iterrows():
-                t_val = str(row['주간수익률'])
-                color_str = "#B91C1C" if "-" not in t_val else "#1E40AF"
-                theme_return_html += f"<tr><td>{row['테마명']}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{t_val}%</td></tr>"
-        except Exception as e:
-            theme_return_html = f"<tr><td colspan='2'>데이터 파싱 에러: {e}</td></tr>"
-
-    # --------------------------------------------------------------------------
-    # 3. Section 3 - 순매수 강도 리스트 HTML 빌드 (선택된 기간 동적 반영)
-    # --------------------------------------------------------------------------
-    section3_chart_html = ""
-    if not agent_data.empty:
-        try:
-            summary = agent_data.groupby('agent')['volume'].sum().reset_index()
-            max_vol = float(summary['volume'].max()) if summary['volume'].max() > 0 else 1.0
-            for idx, row in summary.iterrows():
-                blocks = max(1, round((float(row['volume']) / max_vol) * 12))
-                bar_display = "■" * blocks
-                section3_chart_html += f"""
-                <div style='margin-bottom:1.5mm; border-bottom:1px dashed #F3F4F6; padding-bottom:1mm;'>
-                    <div style='font-weight:bold; color:#1F2937; font-size:8.5pt;'>{idx+1}. {row['agent']}</div>
-                    <div style='margin-top:0.5mm;'>
-                        <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:65px;'>순매수: {row['volume']:,}</span>
-                        <span style='color:#3B82F6; font-size:8pt;'>{bar_display}</span>
+        # ----------------------------------------------------------------------
+        # 👥 SECTION 3. 투자자별 순매수 수급 강도 데이터 준비 (함수 내부로 정상 정렬)
+        # ----------------------------------------------------------------------
+        section3_chart_html = ""
+        # filtered_agent_df 변수가 있으면 사용하고, 없으면 df_agent에서 기간 필터링
+        target_agent_df = globals().get('filtered_agent_df', globals().get('df_agent', None))
+        
+        if target_agent_df is not None and not target_agent_df.empty:
+            try:
+                summary = target_agent_df.groupby('agent')['volume'].sum().reset_index()
+                max_vol = float(summary['volume'].max()) if summary['volume'].max() > 0 else 1.0
+                # 하드코딩(Top 6)을 해제하고 화면 설정에 맞춰 최대 50개까지 전수 출력되도록 루프 생성
+                for idx, row in summary.iterrows():
+                    blocks = max(1, round((float(row['volume']) / max_vol) * 12))
+                    bar_display = "■" * blocks
+                    section3_chart_html += f"""
+                    <div style='margin-bottom:1.5mm; border-bottom:1px dashed #F3F4F6; padding-bottom:1mm;'>
+                        <div style='font-weight:bold; color:#1F2937; font-size:8.5pt;'>{idx+1}. {row['agent']}</div>
+                        <div style='margin-top:0.5mm;'>
+                            <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:65px;'>순매수: {row['volume']:,}</span>
+                            <span style='color:#3B82F6; font-size:8pt;'>{bar_display}</span>
+                        </div>
                     </div>
-                </div>
-                """
-        except:
-            pass
-
-    # [HTML/CSS 마스터 템플릿 코드]
-    html_string = f"""
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
-            @page {{ size: a4; margin: 11mm; }}
-            body {{ font-family: "Nanum Gothic", sans-serif; color: #333333; font-size: 9pt; }}
-            .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; }}
-            .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
-            .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; font-size: 9.5pt; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; }}
-            th {{ background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; text-align: center; border: 1px solid #E5E7EB; }}
-            td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; }}
-        </style>
-    </head>
-    <body>
-        <div style='text-align:center; font-size:16pt; font-weight:bold; color:#1E3A8A; margin-bottom:4mm;'>📊 KODEX ETF 실시간 변동 반영 맞춤형 리포트</div>
-        
-        <!-- Section 3 구역 -->
-        <div class="section-container">
-            <div class="section-title">👥 Section 3. 에이전트별 순매수 수급 강도 리스트</div>
-            <div style="font-size:8.5pt; color:#4B5563; margin-bottom:2mm;">• <b>선택된 분석 기간:</b> {period_name} (해당 기간의 실시간 매매 데이터만 필터링 완료)</div>
-            {section3_chart_html}
-        </div>
-        
-        <!-- Section 4 구역 (★요청하신 동적 데이터 전수 출력부) -->
-        <div class="section-container">
-            <div class="section-title">📈 Section 4. 주간 수익률 및 주요 테마별 퍼포먼스</div>
-            
-            <table style="width:100%; border:none;">
-                <tr>
-                    <td style="width:48%; border:none; padding:0; vertical-align:top;">
-                        <div class="content-title">[🏆 주간 수익률 TOP {top_n_count} 상품 리스트]</div>
-                        <table>
-                            <thead><tr><th>KODEX ETF 종목명</th><th>주간 수익률</th></tr></thead>
-                            <tbody>{top_n_return_html}</tbody>
-                        </table>
-                    </td>
-                    <td style="width:4%; border:none;"></td>
-                    <td style="width:48%; border:none; padding:0; vertical-align:top;">
-                        <div class="content-title">[📁 주간 주요 테마별 평균 수익률 전체 테이블]</div>
-                        <table>
-                            <thead><tr><th>시장 핵심 분석 테마 섹터</th><th>평균 수익률</th></tr></thead>
-                            <tbody>{theme_return_html}</tbody>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </div>
-        
-        <div style="text-align:center; font-size:7.5pt; color:#9CA3AF; margin-top:5mm; border-top:1px solid #E5E7EB; padding-top:1.5mm;">
-            발행기준일시: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 본 보고서는 에이전트 화면 설정과 100% 동기화되어 실시간 생성되었습니다.
-        </div>
-    </body>
-    </html>
-    """
-    
-    pdf_buffer = BytesIO()
-    pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
-    pdf_buffer.seek(0)
-    return pdf_buffer.getvalue()
-
-# PDF 다운로드 버튼 실행 (현재 화면상의 filtered_agent_df, 선택된 기간 텍스트, 슬라이더 N값을 그대로 주입)
-try:
-    final_pdf = generate_pdf_report(filtered_agent_df, period_option, top_n_slider)
-    st.download_button(
-        label=f"📥 현재 설정(기간: {period_option} / TOP: {top_n_slider}개) 기준 PDF 다운로드",
-        data=final_pdf,
-        file_name=f"KODEX_Custom_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
-        mime="application/pdf",
-        key="section4_dynamic_pdf"
-    )
-except Exception as e:
-    st.error(f"PDF 생성용 실시간 변수 바인딩 중 대기: {e}")
+                    """
+            except:
+                pass
 
         # ----------------------------------------------------------------------
-        # 📱 SECTION 5. 마케팅 뉴스 리스트 동적 추출 및 네이버 데이터랩 박스 차트화
+        # 📈 SECTION 4. 주간 수익률 Top N & 테마별 평균 수익률 동적 HTML 빌드 (함수 내부로 정상 정렬)
+        # ----------------------------------------------------------------------
+        top_n_return_html = ""
+        # 사용자가 슬라이더로 지정한 N값 가져오기 (기본값 10)
+        top_n_count = globals().get('top_n_slider', 10)
+        
+        if 'df_top_returns' in globals() or 'df_top_returns' in locals():
+            try:
+                # 6개 제한을 해제하고 사용자가 설정한 top_n_count 만큼 정확히 반영
+                target_top_df = globals().get('df_top_returns', df_top_returns)
+                for idx, row in target_top_df.head(top_n_count).iterrows():
+                    top_n_return_html += f"<tr><td>{row['종목명']}</td><td style='text-align:center; font-weight:bold; color:#B91C1C;'>+{row['수익률']}%</td></tr>"
+            except:
+                top_n_return_html = "<tr><td colspan='2'>데이터 로드 대기 중</td></tr>"
+
+        theme_return_html = ""
+        if 'df_theme_returns' in globals() or 'df_theme_returns' in locals():
+            try:
+                # 4개 제한을 해제하고 에이전트에 들어온 테마 전체를 전수 반영
+                target_theme_df = globals().get('df_theme_returns', df_theme_returns)
+                for idx, row in target_theme_df.iterrows():
+                    t_val = str(row['주간수익률'])
+                    color_str = "#B91C1C" if "-" not in t_val else "#1E40AF"
+                    theme_return_html += f"<tr><td>{row['테마명']}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{t_val}%</td></tr>"
+            except:
+                theme_return_html = "<tr><td colspan='2'>데이터 로드 대기 중</td></tr>"
+
+        # ----------------------------------------------------------------------
+        # 📱 SECTION 5. 마케팅 뉴스 리스트 동적 추출 및 네이버 데이터랩 박스 차트화 (들여쓰기 교정 완료)
         # ----------------------------------------------------------------------
         marketing_news_text = "삼성자산운용 KODEX는 고객 가치 중심의 월배당 ETF 및 글로벌 혁신 AI 테마 상장 지수 펀드 관련 뉴미디어 마케팅 캠페인을 활발히 전개 중입니다."
         if 'sec5_marketing_news' in locals() or 'sec5_marketing_news' in globals(): 
@@ -1515,110 +1360,34 @@ except Exception as e:
                 """
 
         # ----------------------------------------------------------------------
-        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
+        # 👑 마스터 HTML / CSS 템플릿 코드 빌드
         # ----------------------------------------------------------------------
+        # 화면에서 선택한 분석 기간 가져오기 (기본값 세팅)
+        period_option_text = globals().get('period_option', '1일 (최신)')
+        
         html_string = f"""
         <html>
         <head>
             <meta charset="utf-8">
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
-                
-                @page {{
-                    size: a4;
-                    margin: 11mm 11mm 11mm 11mm;
-                }}
-                body {{
-                    font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif;
-                    color: #333333;
-                    line-height: 1.4;
-                    font-size: 9pt;
-                }}
-                .header-container {{
-                    border-bottom: 2px solid #1E3A8A;
-                    padding-bottom: 2mm;
-                    margin-bottom: 4mm;
-                }}
-                .doc-title {{
-                    font-size: 18pt;
-                    font-weight: bold;
-                    color: #1E3A8A;
-                    text-align: center;
-                }}
-                .doc-meta {{
-                    text-align: right;
-                    font-size: 8pt;
-                    color: #4B5563;
-                    margin-top: 1mm;
-                }}
-                .section-container {{
-                    margin-bottom: 4mm;
-                    padding: 3.5mm;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 6px;
-                    background-color: #FFFFFF;
-                }}
-                .section-title {{
-                    font-size: 11pt;
-                    font-weight: bold;
-                    color: #1E40AF;
-                    background-color: #EFF6FF;
-                    padding: 1.5mm 2.5mm;
-                    border-left: 4px solid #1E40AF;
-                    margin-bottom: 2.5mm;
-                }}
-                .content-title {{
-                    font-weight: bold;
-                    color: #1F2937;
-                    margin-top: 2.5mm;
-                    margin-bottom: 1mm;
-                    font-size: 9.5pt;
-                }}
+                @page {{ size: a4; margin: 11mm 11mm 11mm 11mm; }}
+                body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }}
+                .header-container {{ border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }}
+                .doc-title {{ font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }}
+                .doc-meta {{ text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }}
+                .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }}
+                .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
+                .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }}
                 .badge-up {{ color: #B91C1C; font-weight: bold; }}
                 .badge-down {{ color: #1E40AF; font-weight: bold; }}
-                
-                table {{
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin-top: 1.5mm;
-                    margin-bottom: 1.5mm;
-                }}
-                th {{
-                    background-color: #1E3A8A;
-                    color: #FFFFFF;
-                    font-weight: bold;
-                    border: 1px solid #E5E7EB;
-                    padding: 1.5mm;
-                    font-size: 8.5pt;
-                    text-align: center;
-                }}
-                td {{
-                    border: 1px solid #E5E7EB;
-                    padding: 1.5mm;
-                    font-size: 8pt;
-                    vertical-align: top;
-                }}
-                ul {{
-                    margin-top: 1mm;
-                    margin-bottom: 1mm;
-                    padding-left: 4mm;
-                }}
-                li {{
-                    margin-bottom: 0.8mm;
-                    font-size: 8pt;
-                    color: #4B5563;
-                }}
-                .page-break {{
-                    page-break-before: always;
-                }}
-                .footer-text {{
-                    text-align: center;
-                    font-size: 7.5pt;
-                    color: #9CA3AF;
-                    margin-top: 5mm;
-                    border-top: 1px solid #E5E7EB;
-                    padding-top: 1.5mm;
-                }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }}
+                th {{ background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }}
+                td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }}
+                ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
+                li {{ margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }}
+                .page-break {{ page-break-before: always; }}
+                .footer-text {{ text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }}
             </style>
         </head>
         <body>
@@ -1650,7 +1419,6 @@ except Exception as e:
             
             <div class="section-container">
                 <div class="section-title">📺 Section 2. 자산운용사 마케팅 동향 및 공식 미디어/리테일 채널 입체 분석</div>
-                
                 <div class="content-title">▶ 1. 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도</div>
                 <table>
                     <thead>
@@ -1706,7 +1474,6 @@ except Exception as e:
                 </table>
 
                 <div class="content-title" style="margin-top:4mm;">▶ 4. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
-                
                 <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
                     <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 삼성자산운용 (KODEX)</span>
                     <ul style="margin-top:0.5mm; padding-left:4mm;">
@@ -1715,7 +1482,6 @@ except Exception as e:
                         <li><b>주력 판단 근거:</b> {sec2_data['kodex']['reason']}</li>
                     </ul>
                 </div>
-
                 <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
                     <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 미래에셋자산운용 (TIGER)</span>
                     <ul style="margin-top:0.5mm; padding-left:4mm;">
@@ -1724,7 +1490,6 @@ except Exception as e:
                         <li><b>주력 판단 근거:</b> {sec2_data['tiger']['reason']}</li>
                     </ul>
                 </div>
-
                 <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
                     <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ KB자산운용 (RISE)</span>
                     <ul style="margin-top:0.5mm; padding-left:4mm;">
@@ -1733,7 +1498,6 @@ except Exception as e:
                         <li><b>주력 판단 근거:</b> {sec2_data['rise']['reason']}</li>
                     </ul>
                 </div>
-
                 <div>
                     <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 한국투자신탁운용 (ACE)</span>
                     <ul style="margin-top:0.5mm; padding-left:4mm;">
@@ -1745,12 +1509,10 @@ except Exception as e:
             </div>
 
             <div class="section-container">
-                <div class="section-title">👥 Section 3. 투자자별 순매수 수급 강도 입체 시각화 리포트 (Top 15 전수)</div>
+                <div class="section-title">👥 Section 3. 투자자별 순매수 수급 강도 입체 시각화 리포트 (실시간 연동)</div>
                 <div style="font-size:9pt; background-color:#F9FAFB; border-left:3px solid #1E40AF; padding:1.5mm 2.5mm; color:#374151; margin-bottom:2.5mm;">
-                    <b>📊 분석 대상 기간:</b> <span style='color:#1E40AF; font-weight:bold;'>{analysis_period}</span><br/>
-                    <span style='font-size:8pt; color:#6B7280;'>• {excel_summary}</span>
+                    <b>📊 분석 대상 기간:</b> <span style='color:#1E40AF; font-weight:bold;'>{period_option_text}</span>
                 </div>
-                
                 <div class="content-title" style="margin-bottom:1.5mm;">[🎯 주요 타겟 자산군별 순매수 강도 시각화 차트]</div>
                 <div style="background-color:#FFFFFF; border:1px solid #E5E7EB; padding:3mm; border-radius:4px;">
                     {section3_chart_html}
@@ -1763,15 +1525,15 @@ except Exception as e:
                 <div class="section-title">📈 Section 4. 주간 수익률 퍼포먼스 & 차주 주목 테마 ETF 라인업</div>
                 <table style="width:100%; border:none;">
                     <tr>
-                        <td style="width:48%; border:none; padding:0;">
-                            <div class="content-title">[주간 수익률 TOP 10 ETF 전체 리스트]</div>
+                        <td style="width:48%; border:none; padding:0; vertical-align:top;">
+                            <div class="content-title">[주간 수익률 TOP {top_n_count} ETF 전체 리스트]</div>
                             <table>
                                 <thead><tr><th>KODEX ETF 종목명</th><th>주간 수익률</th></tr></thead>
                                 <tbody>{top_n_return_html}</tbody>
                             </table>
                         </td>
                         <td style="width:4%; border:none;"></td>
-                        <td style="width:48%; border:none; padding:0;">
+                        <td style="width:48%; border:none; padding:0; vertical-align:top;">
                             <div class="content-title">[주간 주요 테마별 평균 수익률 전체 테이블]</div>
                             <table>
                                 <thead><tr><th>시장 핵심 분석 테마 섹터</th><th>평균 수익률</th></tr></thead>
@@ -1784,34 +1546,25 @@ except Exception as e:
             
             <div class="section-container">
                 <div class="section-title">📱 Section 5. 네이버 데이터랩 트렌드 변동 & 마케팅 뉴스 및 AI 최종 인사이트</div>
-                
                 <div class="content-title">▶ 1. KODEX 브랜드 및 타겟 키워드 마케팅 뉴스 모니터링 원문</div>
                 <p style="color:#4B5563; font-size:8.5pt; margin-bottom:2mm; padding-left:0.5mm;">{marketing_news_text}</p>
-                
                 <div style="background-color:#EFF6FF; border: 1px solid #BFDBFE; padding:3.5mm; border-radius:6px; margin-bottom:3mm;">
                     <div style="font-weight:bold; color:#1E40AF; font-size:10pt; margin-bottom:2mm;">📢 KODEX 주간 마케팅 및 보도 트렌드 종합 요약 (에이전트 실시간 연동)</div>
-                    <ul style="padding-left:4mm; margin:0; line-height:1.5;">
-                        {kodex_press_dynamic_html}
-                    </ul>
+                    <ul style="padding-left:4mm; margin:0; line-height:1.5;">{kodex_press_dynamic_html}</ul>
                 </div>
-                
                 <table style="width:100%; border:none;">
                     <tr>
-                        <td style="width:50%; border:none; padding:0;">
+                        <td style="width:50%; border:none; padding:0; vertical-align:top;">
                             <div class="content-title">[ 📊 네이버 데이터랩 검색 트렌드 변동 그래프 ]</div>
-                            <div style="margin-top:2mm;">
-                                {datalab_box_chart_html}
-                            </div>
+                            <div style="margin-top:2mm;">{datalab_box_chart_html}</div>
                             <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2mm; text-align: center; font-size: 7.5pt; color: #6B7280; border-radius: 4px; margin-top: 1.5mm;">
                                 * 우측 분홍색 바(■) 길이는 최대 검색량 대비 상대적 트래픽 강도를 뜻함
                             </div>
                         </td>
                         <td style="width:4%; border:none;"></td>
-                        <td style="width:46%; border:none; padding:0;">
+                        <td style="width:46%; border:none; padding:0; vertical-align:top;">
                             <div class="content-title">💡 2. 자산 배분 전략 및 에이전트 AI 종합 인사이트</div>
-                            <div style="background-color:#F9FAFB; border:1px solid #E5E7EB; padding:3mm; border-radius:4px; font-size:8pt; line-height:1.5; color:#1F2937;">
-                                {ai_insight_text}
-                            </div>
+                            <div style="background-color:#F9FAFB; border:1px solid #E5E7EB; padding:3mm; border-radius:4px; font-size:8pt; line-height:1.5; color:#1F2937;">{ai_insight_text}</div>
                         </td>
                     </tr>
                 </table>
@@ -1826,10 +1579,8 @@ except Exception as e:
         
         pdf_buffer = BytesIO()
         pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
-        
         if pisa_status.err:
             return None
-        
         pdf_buffer.seek(0)
         return pdf_buffer.getvalue()
 
