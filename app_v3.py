@@ -1671,7 +1671,7 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
 
 # ==============================================================================
-# 🖥️ [최종 완결본] 하단 PDF 발행 컨테이너 2개 제외하고 화면 캡처하는 코드
+# 🖥️ [최종 수정본] 하단 버튼 박스 내부 텍스트를 인식하여 완벽하게 숨기는 코드
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
@@ -1712,20 +1712,30 @@ with st.container(border=True):
             # 대시보드 내부의 동적 스크립트와 차트 안착 대기
             time.sleep(5)
             
-            # [🔥 핵심 해결책] 자바스크립트를 실행하여 맨 아래에 있는 PDF 관련 컨테이너 2개를 찾아서 삭제(숨김)
+            # [🔥 무조건 성공하는 해결책] 내부 글자를 검색하여 해당 버튼 박스(컨테이너) 부모 요소를 찾아 display = 'none' 처리
             try:
                 page.evaluate("""
                     () => {
-                        // Streamlit의 테두리가 있는 컨테이너 요소를 모두 서칭
-                        const containers = document.querySelectorAll('[data-testid="stVerticalBlockBorderContainer"]');
-                        if (containers.length >= 2) {
-                            // 맨 뒤에서 첫 번째(스냅숏 발행)와 두 번째(완전체 종합 PDF 발행) 컨테이너를 화면에서 숨김
-                            containers[containers.length - 1].style.display = 'none';
-                            containers[containers.length - 2].style.display = 'none';
-                        }
+                        // 페이지 내의 모든 div 태그를 가져옵니다.
+                        const divs = document.querySelectorAll('div');
+                        
+                        divs.forEach(div => {
+                            // 1. 첫 번째 PDF 박스의 제목 텍스트가 포함되어 있는지 확인
+                            if (div.textContent && div.textContent.includes('대시보드 완전체 종합 PDF 리포트 발행')) {
+                                // st.container(border=True)의 가장 가까운 상위 박스 요소를 찾아서 숨김
+                                const container = div.closest('[data-testid="stVerticalBlockBorderContainer"]') || div.closest('.stVerticalBlock');
+                                if (container) container.style.display = 'none';
+                            }
+                            
+                            // 2. 두 번째 스냅숏 박스의 제목 텍스트가 포함되어 있는지 확인
+                            if (div.textContent && div.textContent.includes('대시보드 화면 그대로 스냅숏 PDF 발행')) {
+                                const container = div.closest('[data-testid="stVerticalBlockBorderContainer"]') || div.closest('.stVerticalBlock');
+                                if (container) container.style.display = 'none';
+                            }
+                        });
                     }
                 """)
-                time.sleep(0.5) # 스타일 적용 안정화 대기
+                time.sleep(0.5) # 스타일 적용 안착 대기
             except:
                 pass
             
@@ -1771,12 +1781,10 @@ with st.container(border=True):
                         file_name=f"KODEX_Dashboard_Clean_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
-                        key="dashboard_screenshot_pdf_download_v6"
+                        key="dashboard_screenshot_pdf_download_v7"
                     )
                     st.success("🎉 하단 버튼 섹션들이 제외된 깔끔한 대시보드 PDF가 발행되었습니다!")
                 else:
                     st.error("화면 바이너리를 스냅숏 버퍼로 생성하는 데 실패했습니다.")
-            except Exception as e:
-                st.error(f"❌ 캡처 엔진 가동 중 오류 발생: {e}")
             except Exception as e:
                 st.error(f"❌ 캡처 엔진 가동 중 오류 발생: {e}")
