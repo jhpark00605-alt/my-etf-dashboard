@@ -1671,7 +1671,7 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
 
 # ==============================================================================
-# 🖥️ [최종 수정본] 하단 버튼 박스 내부 텍스트를 인식하여 완벽하게 숨기는 코드
+# 🖥️ [최종 수정본] 최상위 부모 삭제 버그를 방지하고 타겟 박스만 정확히 숨기는 코드
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
@@ -1694,7 +1694,7 @@ with st.container(border=True):
             pass
 
         # 대시보드 로컬 호스트 타겟 주소
-        target_dashboard_url = "http://localhost:8501"
+        target_dashboard_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app/"
         
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -1712,37 +1712,39 @@ with st.container(border=True):
             # 대시보드 내부의 동적 스크립트와 차트 안착 대기
             time.sleep(5)
             
-            # [🔥 무조건 성공하는 해결책] 내부 글자를 검색하여 해당 버튼 박스(컨테이너) 부모 요소를 찾아 display = 'none' 처리
+            # [🔥 버그 완벽 수정] 최상위 div가 날아가지 않도록 구체적인 텍스트 노드 엘리먼트만 타겟팅
             try:
                 page.evaluate("""
                     () => {
-                        // 페이지 내의 모든 div 태그를 가져옵니다.
-                        const divs = document.querySelectorAll('div');
+                        // 제목으로 쓰인 모든 h3 태그와 div 내부 텍스트 노드를 서칭
+                        const elements = document.querySelectorAll('h3, div');
                         
-                        divs.forEach(div => {
-                            // 1. 첫 번째 PDF 박스의 제목 텍스트가 포함되어 있는지 확인
-                            if (div.textContent && div.textContent.includes('대시보드 완전체 종합 PDF 리포트 발행')) {
-                                // st.container(border=True)의 가장 가까운 상위 박스 요소를 찾아서 숨김
-                                const container = div.closest('[data-testid="stVerticalBlockBorderContainer"]') || div.closest('.stVerticalBlock');
-                                if (container) container.style.display = 'none';
+                        elements.forEach(el => {
+                            // 자식 엘리먼트가 너무 많은 거대 div 박스는 탐색에서 제외 (최상위 박스 제거 방지)
+                            if (el.children.length > 5) return; 
+                            
+                            // 1. 첫 번째 PDF 박스 타겟팅 및 숨김
+                            if (el.textContent && el.textContent.trim() === '대시보드 완전체 종합 PDF 리포트 발행') {
+                                const box = el.closest('[data-testid="stVerticalBlockBorderContainer"]') || el.closest('.stVerticalBlock');
+                                if (box) { box.style.setProperty('display', 'none', 'important'); }
                             }
                             
-                            // 2. 두 번째 스냅숏 박스의 제목 텍스트가 포함되어 있는지 확인
-                            if (div.textContent && div.textContent.includes('대시보드 화면 그대로 스냅숏 PDF 발행')) {
-                                const container = div.closest('[data-testid="stVerticalBlockBorderContainer"]') || div.closest('.stVerticalBlock');
-                                if (container) container.style.display = 'none';
+                            // 2. 두 번째 스냅숏 박스 타겟팅 및 숨김
+                            if (el.textContent && el.textContent.trim() === '대시보드 화면 그대로 스냅숏 PDF 발행') {
+                                const box = el.closest('[data-testid="stVerticalBlockBorderContainer"]') || el.closest('.stVerticalBlock');
+                                if (box) { box.style.setProperty('display', 'none', 'important'); }
                             }
                         });
                     }
                 """)
-                time.sleep(0.5) # 스타일 적용 안착 대기
+                time.sleep(1) # 스타일 적용 안착 대기
             except:
                 pass
             
             # 자바스크립트로 하단 구역이 제외된 실제 대시보드의 전체 길이를 재측정하여 뷰포트 확장
             try:
                 full_height = page.evaluate("() => document.documentElement.scrollHeight || document.body.scrollHeight")
-                page.set_viewport_size({"width": 1300, "height": max(full_height, 2200)})
+                page.set_viewport_size({"width": 1300, "height": max(full_height, 2000)})
                 time.sleep(1)
             except:
                 pass
@@ -1781,7 +1783,7 @@ with st.container(border=True):
                         file_name=f"KODEX_Dashboard_Clean_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
-                        key="dashboard_screenshot_pdf_download_v7"
+                        key="dashboard_screenshot_pdf_download_v8"
                     )
                     st.success("🎉 하단 버튼 섹션들이 제외된 깔끔한 대시보드 PDF가 발행되었습니다!")
                 else:
