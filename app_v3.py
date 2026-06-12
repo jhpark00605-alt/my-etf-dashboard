@@ -1672,118 +1672,108 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
         
 # ==============================================================================
-# 🖥️ 대시보드 화면 그대로 스냅샷 PDF 발행
+# 🖥️ 대시보드 화면 그대로 스냅샷 PDF 발행 (서버사이드 playwright 방식)
 # ==============================================================================
 
 st.markdown("---")
-st.markdown("## 🖥️ 대시보드 화면 그대로 스냅샷 PDF 발행")
-st.markdown("현재 브라우저에 렌더링된 차트와 표 UI 전체를 깜짐, 겹침, 그리고 하단 버튼 구역 없이 깔끔하게 PDF로 박제합니다.")
-st.info("💡 본 기능은 하단의 'PDF 리포트 발행' 및 '스냅샷 PDF 발행' 박스 2개를 자동으로 숨긴 후 스캔합니다.")
 
-# 버튼 + JS를 한 번에 주입 (iframe 우회)
-st.markdown(
-    """
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+with st.container(border=True):
+    st.markdown("## 🖥️ 대시보드 화면 그대로 스냅샷 PDF 발행")
+    st.markdown("현재 브라우저에 렌더링된 차트와 표 UI 전체를 깔끔하게 PDF로 박제합니다.")
+    st.info("💡 버튼을 누르면 서버에서 현재 대시보드 전체를 캡처하여 PDF로 생성합니다. 30~60초 소요됩니다.")
 
-    <button id="snapshot-btn"
-        onclick="runSnapshot()"
-        style="
-            width:100%; padding:12px; font-size:15px; font-weight:600;
-            background-color:#1E3A5F; color:white; border:none;
-            border-radius:8px; cursor:pointer; margin-top:8px;
-        ">
-        🎞 현재 에이전트 화면 스캔 및 PDF 컴파일 시작
-    </button>
-    <p id="snapshot-status" style="color:gray; font-size:12px; margin-top:6px;"></p>
+    if st.button("🎞 현재 에이전트 화면 스캔 및 PDF 컴파일 시작", use_container_width=True):
+        
+        with st.spinner("🔄 대시보드 전체 캡처 중... (약 30~60초 소요)"):
+            try:
+                from playwright.sync_api import sync_playwright
+                from PIL import Image
+                import io
 
-    <script>
-    async function runSnapshot() {
-        const btn = document.getElementById('snapshot-btn');
-        const status = document.getElementById('snapshot-status');
-        btn.disabled = true;
-        btn.innerText = '⏳ 캡처 준비 중...';
-        status.innerText = '📄 PDF 생성 중... 잠시 기다려주세요.';
+                # 현재 앱 URL 가져오기
+                app_url = st.context.url if hasattr(st, 'context') else "http://localhost:8501"
+                
+                # URL이 없으면 session_state에서 가져오기
+                if not app_url or app_url == "http://localhost:8501":
+                    try:
+                        from streamlit.runtime.scriptrunner import get_script_run_ctx
+                        ctx = get_script_run_ctx()
+                        if ctx:
+                            app_url = f"https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app"
+                    except:
+                        app_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app"
 
-        // html2canvas / jsPDF 라이브러리 로딩 대기
-        await new Promise(r => setTimeout(r, 800));
+                screenshot_bytes = None
 
-        // ── 숨길 대상: 하단 PDF 섹션 2개 (st.container border=True 기준)
-        // Streamlit의 최상위 block-container 하위에서 마지막 2개 stVerticalBlockBorderWrapper를 찾아 숨김
-        const wrappers = document.querySelectorAll('[data-testid="stVerticalBlockBorderWrapper"]');
-        const allBlocks = document.querySelectorAll('[data-testid="stVerticalBlock"]');
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(
+                        headless=True,
+                        args=[
+                            '--no-sandbox',
+                            '--disable-setuid-sandbox',
+                            '--disable-dev-shm-usage',
+                            '--disable-gpu',
+                        ]
+                    )
+                    page = browser.new_page(
+                        viewport={"width": 1600, "height": 900}
+                    )
 
-        // 숨길 요소 수집 (섹션 구분선 포함 마지막 구역)
-        const hiddenEls = [];
+                    # 앱 로드
+                    page.goto(app_url, wait_until="networkidle", timeout=60000)
 
-        // 하단 스냅샷 섹션 전체(구분선 + 헤더 + info + 버튼)를 포함하는 부모를 찾아 숨김
-        // 전략: .main .block-container 직속 자식 중 마지막 2개를 숨김
-        const mainContainer = document.querySelector('.main .block-container');
-        if (mainContainer) {
-            const directChildren = Array.from(mainContainer.children);
-            // 마지막 PDF 발행 섹션 2개에 해당하는 자식들 숨기기
-            // (구분선 기준으로 마지막 8개 자식 요소를 숨김 — 두 섹션 통합)
-            const toHide = directChildren.slice(-8);
-            toHide.forEach(el => {
-                hiddenEls.push({ el, oldDisplay: el.style.display });
-                el.style.display = 'none';
-            });
-        }
+                    # Streamlit 렌더링 완료 대기 (차트/데이터 로딩 시간 포함)
+                    page.wait_for_timeout(8000)
 
-        // 렌더링 안정화 대기
-        await new Promise(r => setTimeout(r, 600));
+                    # 하단 PDF 발행 섹션 2개 숨기기
+                    page.evaluate("""
+                        () => {
+                            // 마지막 stVerticalBlockBorderWrapper 2개 숨기기
+                            const borders = document.querySelectorAll('[data-testid="stVerticalBlockBorderWrapper"]');
+                            const arr = Array.from(borders);
+                            const last2 = arr.slice(-2);
+                            last2.forEach(el => el.style.display = 'none');
+                            
+                            // 구분선(hr)도 마지막 1개 숨기기
+                            const hrs = document.querySelectorAll('hr');
+                            if (hrs.length > 0) hrs[hrs.length - 1].style.display = 'none';
+                        }
+                    """)
 
-        try {
-            const target = document.querySelector('.main .block-container');
-            const canvas = await html2canvas(target, {
-                scale: 2,
-                useCORS: true,
-                allowTaint: true,
-                logging: false,
-                scrollY: 0,
-                windowWidth: document.documentElement.scrollWidth,
-                windowHeight: target.scrollHeight
-            });
+                    # 전체 페이지 높이로 뷰포트 재설정
+                    full_height = page.evaluate("document.body.scrollHeight")
+                    page.set_viewport_size({"width": 1600, "height": full_height})
+                    page.wait_for_timeout(1000)
 
-            // 숨긴 요소 복원
-            hiddenEls.forEach(({ el, oldDisplay }) => {
-                el.style.display = oldDisplay;
-            });
+                    # 전체 페이지 스크린샷
+                    screenshot_bytes = page.screenshot(
+                        full_page=True,
+                        type="png"
+                    )
 
-            // ── PDF 생성
-            const { jsPDF } = window.jspdf;
-            const imgData = canvas.toDataURL('image/png');
+                    browser.close()
 
-            // 캔버스 비율 그대로 PDF 크기 설정 (A4 너비 기준)
-            const pdfWidthMm = 210;
-            const pdfHeightMm = (canvas.height / canvas.width) * pdfWidthMm;
+                if screenshot_bytes:
+                    # PIL로 이미지 → PDF 변환
+                    img = Image.open(io.BytesIO(screenshot_bytes))
+                    img = img.convert("RGB")
 
-            const pdf = new jsPDF({
-                orientation: 'portrait',
-                unit: 'mm',
-                format: [pdfWidthMm, pdfHeightMm]
-            });
+                    pdf_buffer = io.BytesIO()
+                    img.save(pdf_buffer, format="PDF", resolution=150)
+                    pdf_buffer.seek(0)
 
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidthMm, pdfHeightMm);
+                    today = datetime.now().strftime('%Y%m%d')
+                    st.success("✅ PDF 생성 완료! 아래 버튼으로 다운로드하세요.")
+                    st.download_button(
+                        label="📥 스냅샷 PDF 다운로드",
+                        data=pdf_buffer.getvalue(),
+                        file_name=f"KODEX_Dashboard_Snapshot_{today}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
 
-            const today = new Date().toISOString().slice(0, 10);
-            pdf.save('KODEX_Dashboard_Snapshot_' + today + '.pdf');
-
-            btn.disabled = false;
-            btn.innerText = '🎞 현재 에이전트 화면 스캔 및 PDF 컴파일 시작';
-            status.innerText = '✅ PDF 저장 완료!';
-        } catch(err) {
-            // 숨긴 요소 복원 (에러 시에도 복원)
-            hiddenEls.forEach(({ el, oldDisplay }) => {
-                el.style.display = oldDisplay;
-            });
-            btn.disabled = false;
-            btn.innerText = '🎞 현재 에이전트 화면 스캔 및 PDF 컴파일 시작';
-            status.innerText = '❌ 오류 발생: ' + err.message;
-            console.error(err);
-        }
-    }
-    </script>
-    """,
-    unsafe_allow_html=True
-)
+            except ImportError as e:
+                st.error(f"❌ 필요한 라이브러리가 없습니다: {e}")
+                st.code("pip install playwright pillow\npython -m playwright install chromium", language="bash")
+            except Exception as e:
+                st.error(f"❌ 캡처 중 오류 발생: {e}")
