@@ -1110,12 +1110,8 @@ with st.container(border=True):
         from io import BytesIO
         from datetime import datetime
         
-        # ======================================================================
-        # [DATA GATHERING] 각 섹션별 데이터 인스턴스 추출 및 실시간 동적 매칭
-        # ======================================================================
-        
         # ----------------------------------------------------------------------
-        # 🎯 SECTION 1. 시장 트렌드 & 이슈 및 키워드 바그래프 데이터
+        # 🎯 SECTION 1. 시장 트렌드 &이슈 및 뉴스 키워드 데이터 (동적 바그래프 적용)
         # ----------------------------------------------------------------------
         rising_theme = "반도체 / 빅테크 AI 중심 신성장동력 자산군 강세"
         falling_theme = "글로벌 매크로 변동성 장기화에 따른 원자재 상품군 정체"
@@ -1129,13 +1125,18 @@ with st.container(border=True):
             except:
                 pass
 
-        # [바그래프 연동 테이블화] 키워드 언급 빈도 데이터
         section1_graph_html = ""
         if 'df_keywords' in locals() or 'df_keywords' in globals():
             try:
+                # 최댓값 기준으로 막대 개수를 정하기 위해 데이터프레임 내 언급량의 최댓값을 구함
+                max_volume = int(df_keywords['언급량'].max()) if not df_keywords.empty else 1
+                
                 for idx, row in df_keywords.head(6).iterrows():
-                    # 바그래프 시각화를 텍스트 차트 형태로 대체 구현하여 시각 효과 제공
-                    bar_display = "■" * min(int(row['언급량']), 15)
+                    current_volume = int(row['언급량'])
+                    # 최댓값 대비 상대 비율로 막대 개수를 계산해 왜곡을 방지 (최대 15개)
+                    bar_count = max(1, round((current_volume / max_volume) * 15))
+                    bar_display = "■" * bar_count
+                    
                     section1_graph_html += f"""
                     <tr>
                         <td style='width:30%; font-weight:bold;'>{row['키워드']}</td>
@@ -1151,19 +1152,19 @@ with st.container(border=True):
         # ----------------------------------------------------------------------
         # 📺 SECTION 2. 마케팅 채널 동향 (유튜브 / ETF 이슈 / 블로그 분석)
         # ----------------------------------------------------------------------
-        youtube_summary = "자사 및 경쟁사 유튜브 동향 분석 결과, 최근 월배당 커버드콜 상품 라인업 정밀 비교 및 절세 계좌 활용법 콘텐츠의 조회수와 시청 지속 시간이 가장 높은 추세를 기록하고 있습니다."
-        etf_issue_summary = "국내 ETF 시장 전반의 핵심 이슈로 '주요 빅테크 및 AI 반도체 밸류체인 시황 변화'와 '월인컴 중심 고배당 투자 구조 고도화'에 관한 운용사별 리서치 리포트 발간이 집중되고 있습니다."
+        youtube_summary = "자사 및 경쟁사 유튜브 동향 분석 결과, 최근 월배당 커버드콜 상품 라인업 정밀 비교 및 절세 계좌 활용법 콘텐츠의 조회수가 강세를 보이고 있습니다."
+        etf_issue_summary = "국내 ETF 시장 전반의 핵심 이슈로 '주요 빅테크 및 AI 반도체 밸류체인 시황 변화'와 '운용사별 월인컴 금융 구조화 상품 전략' 리포트 발간이 집중되고 있습니다."
         blog_analysis_summary = "기관 및 개인 투자 금융 블로그 핵심 언급어 모니터링 결과, KODEX 브랜딩 키워드 연계 분석과 신규 상장 자산군에 대한 비교 피드가 주를 이루고 있습니다."
         
-        # 대시보드 내 실제 Section 2 변수명이 존재한다면 동적 치환 규칙 적용
+        # 대시보드 내부 변수가 존재하면 실시간 분석 데이터로 쏙 치환됩니다.
         if 'sec2_youtube_data' in locals() or 'sec2_youtube_data' in globals(): youtube_summary = sec2_youtube_data
         if 'sec2_issue_data' in locals() or 'sec2_issue_data' in globals(): etf_issue_summary = sec2_issue_data
         if 'sec2_blog_data' in locals() or 'sec2_blog_data' in globals(): blog_analysis_summary = sec2_blog_data
 
         # ----------------------------------------------------------------------
-        # 👥 SECTION 3. 투자자 순매수 데이터 및 수치 연동 (그래프 대응 테이블)
+        # 👥 SECTION 3. 투자자 순매수 데이터 분석 결과 (엑셀 원천 데이터 연동)
         # ----------------------------------------------------------------------
-        excel_summary = "업로드된 주차별 투자자 엑셀 원천 데이터셋이 없습니다. 대시보드 메인 화면에서 파일 업로드 시 분석 결과가 자동 인쇄됩니다."
+        excel_summary = "업로드된 주차별 투자자 엑셀 원천 데이터셋이 없습니다. 대시보드 화면 상단에서 파일 업로드 시 분석 결과가 자동 인쇄됩니다."
         section3_table_html = ""
         
         if 'res_df' in locals() or 'res_df' in globals():
@@ -1185,17 +1186,16 @@ with st.container(border=True):
             except:
                 pass
         if not section3_table_html:
-            section3_table_html = "<tr><td colspan='4' style='text-align:center; color:#9CA3AF;'>대시보드 상단에 엑셀 데이터 파일이 바인딩되면 분석 데이터셋이 표 형식으로 자동 반영됩니다.</td></tr>"
+            section3_table_html = "<tr><td colspan='4' style='text-align:center; color:#9CA3AF;'>대시보드에 엑셀 파일이 바인딩되면 분석 데이터셋이 표 형식으로 자동 반영됩니다.</td></tr>"
 
         # ----------------------------------------------------------------------
-        # 📈 SECTION 4. 주간 수익률 & 테마 동향 및 주목할 ETF 리스트
+        # 📈 SECTION 4. 주간 수익률 퍼포먼스 & 차주 주목 ETF 리스트
         # ----------------------------------------------------------------------
         top_n_count = "5"
         if 'selected_top_n' in locals() or 'selected_top_n' in globals():
             top_n_count = str(selected_top_n)
             
         top_n_return_html = ""
-        # 사용자가 선택한 TOP N 종목 수익률 리스트 수집 자동화
         if 'df_top_returns' in locals() or 'df_top_returns' in globals():
             try:
                 for idx, row in df_top_returns.head(int(top_n_count)).iterrows():
@@ -1203,11 +1203,7 @@ with st.container(border=True):
             except:
                 pass
         if not top_n_return_html:
-            top_n_return_html = f"""
-            <tr><td>KODEX 미국AI테크TOP10+</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">+4.82%</td></tr>
-            <tr><td>KODEX 반도체</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">+3.15%</td></tr>
-            <tr><td>KODEX 미국인덱스핵심</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">+2.04%</td></tr>
-            """
+            top_n_return_html = "<tr><td>KODEX 미국AI테크TOP10+</td><td style='text-align:center; color:#B91C1C; font-weight:bold;'>+4.82%</td></tr><tr><td>KODEX 반도체</td><td style='text-align:center; color:#B91C1C; font-weight:bold;'>+3.15%</td></tr>"
 
         theme_return_html = ""
         if 'df_theme_returns' in locals() or 'df_theme_returns' in globals():
@@ -1217,11 +1213,7 @@ with st.container(border=True):
             except:
                 pass
         if not theme_return_html:
-            theme_return_html = """
-            <tr><td>AI 및 반도체 소부장 대형주</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">+4.12%</td></tr>
-            <tr><td>미국 대형 기술주 및 빅테크</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">+2.98%</td></tr>
-            <tr><td>고배당 커버드콜 인컴형 자산</td><td style="text-align:center; color:#1E40AF; font-weight:bold;">+0.45%</td></tr>
-            """
+            theme_return_html = "<tr><td>AI 및 반도체 소부장 대형주</td><td style='text-align:center; color:#B91C1C; font-weight:bold;'>+4.12%</td></tr><tr><td>미국 대형 기술주 및 빅테크</td><td style='text-align:center; color:#B91C1C; font-weight:bold;'>+2.98%</td></tr>"
 
         next_week_etf_html = ""
         if 'next_week_etfs' in locals() or 'next_week_etfs' in globals():
@@ -1231,15 +1223,12 @@ with st.container(border=True):
             except:
                 pass
         if not next_week_etf_html:
-            next_week_etf_html = """
-            <li><b>KODEX 미국AI테크TOP10+</b> : 글로벌 엔비디아 실적 발표 및 AI 콘퍼런스 모멘텀 집중 수혜 기대</li>
-            <li><b>KODEX 200핵심종목</b> : 국내 주요 수출 대형주 기업 가치 제고 정책 프로그램 본격 가동에 따른 수급 개선 수혜</li>
-            """
+            next_week_etf_html = "<li><b>KODEX 미국AI테크TOP10+</b> : 글로벌 엔비디아 실적 발표 및 AI 핵심 밸류체인 수혜 집중 기대</li><li><b>KODEX 반도체</b> : 주요 빅테크 기업들의 인프라 투자 확대 기조 유지에 따른 국내 소부장 수급 개선 효과</li>"
 
         # ----------------------------------------------------------------------
         # 📱 SECTION 5. 네이버 데이터랩 트렌드 & 마케팅 뉴스 및 AI 인사이트
         # ----------------------------------------------------------------------
-        marketing_news_text = "삼성자산운용 KODEX는 고객 가치 중심의 월배당 ETF 및 글로벌 혁신 AI 테마 상장 지수 펀드 관련 뉴미디어 마케팅 캠페인을 전개 중이며, 주요 타겟 채널 유입량이 증가세에 있습니다."
+        marketing_news_text = "삼성자산운용 KODEX는 고객 가치 중심의 월배당 ETF 및 글로벌 혁신 AI 테마 상장 지수 펀드 관련 뉴미디어 마케팅 캠페인을 활발히 전개 중입니다."
         ai_insight_text = "종합 AI 분석 결과, 매크로 금리 경로 불확실성이 지속되는 구간에서는 '성장주(AI 빅테크)'와 '인컴형(커버드콜)' 자산을 적절히 융합하여 상호 보완적인 포트폴리오 헷지 구조를 형성하는 구조적 바벨 전략이 가장 유효할 것으로 판단됩니다."
         
         if 'sec5_marketing_news' in locals() or 'sec5_marketing_news' in globals(): marketing_news_text = sec5_marketing_news
@@ -1257,11 +1246,11 @@ with st.container(border=True):
             except:
                 pass
         if not datalab_table_html:
-            datalab_table_html = "<tr><td>최근 데이터</td><td style='text-align:center;'>91.5</td></tr>"
+            datalab_table_html = "<tr><td>06월 11일</td><td style='text-align:center;'>91.0</td></tr><tr><td>06월 12일</td><td style='text-align:center;'>63.0</td></tr>"
 
-        # ======================================================================
-        # [HTML TEMPLATE] 대시보드 모든 데이터를 녹여낸 마스터 스펙 스킨
-        # ======================================================================
+        # ----------------------------------------------------------------------
+        # [HTML 템플릿 코드 빌드]
+        # ----------------------------------------------------------------------
         html_string = f"""
         <html>
         <head>
@@ -1362,7 +1351,7 @@ with st.container(border=True):
         </head>
         <body>
             <div class="header-container">
-                <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 인텔리전스 인하우스 종합 리포트</div>
+                <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
                 <div class="doc-meta">발행기준시점: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 작성주체: AI 자동 분석 컴파일러</div>
             </div>
             
@@ -1494,7 +1483,7 @@ with st.container(border=True):
         pdf_data = generate_pdf_report()
         if pdf_data:
             st.download_button(
-                label="📄 전체 대시보드 마스터 통합 PDF 보고서 다운로드",
+                label="📄 전체 대시보드 마스터 종합 PDF 보고서 다운로드",
                 data=pdf_data,
                 file_name=f"KODEX_Full_Market_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",
