@@ -13,4 +13,5 @@ libxfixes3
 libxrandr2
 libgbm1
 libasound2
-google-chrome-stable
+chromium
+chromium-driver
