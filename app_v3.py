@@ -1691,19 +1691,16 @@ with st.container(border=True):
         
         # 리눅스 가상 서버 환경 내 브라우저 및 시스템 핵심 라이브러리(libglib 등) 강제 집행
         try:
-            # 1. 크로미움 브라우저 설치
             subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-            # 2. [🔥 핵심 추가] 누락된 리눅스 OS 종속성 라이브러리 자체 해결 명령어 가동
             subprocess.run([sys.executable, "-m", "playwright", "install-deps"], check=True)
         except Exception as system_err:
-            # 에러가 나더라도 다음 프로세스로 안전하게 넘어가도록 처리
             print(f"[Playwright OS Deps Install Log]: {system_err}")
 
         # 대시보드 로컬 호스트 타겟 주소
         target_dashboard_url = "http://localhost:8501"
         
         with sync_playwright() as p:
-            # 브라우저 구동 (반응형 레이아웃이 붕괴하지 않도록 가로 폭을 넉넉하게 고정)
+            # 브라우저 구동 (안정적인 데스크톱 가로 폭 확보)
             browser = p.chromium.launch(
                 headless=True,
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
@@ -1716,25 +1713,32 @@ with st.container(border=True):
             # 대시보드 접속 및 네트워크 로딩 대기
             page.goto(target_dashboard_url, wait_until="networkidle", timeout=60000)
             
-            # 차트와 폰트, 동적 데이터들이 완벽하게 로딩될 때까지 6초간 충분히 대기
-            time.sleep(6)
+            # 첫 로딩 후 4초 대기
+            time.sleep(4)
             
-            # 데이터 로딩(레이지 로딩) 누락 방지를 위해 메인 컨테이너 스크롤링 트리거 실행
+            # [🔥 핵심 튜닝] Section 5까지 모든 차트와 텍스트를 확실하게 렌더링하기 위한 순차적 스크롤링
+            # 1000픽셀씩 끊어서 인간이 휠을 내리듯 부드럽게 전 스페이스를 훑고 지나갑니다.
             try:
                 page.evaluate("""
-                    const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
-                    mainContainer.scrollTo(0, 99999);
+                    async () => {
+                        const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
+                        
+                        // 하단으로 1000px씩 총 7번에 걸쳐 나누어 스크롤 이동 (Section 5 끝까지 안착)
+                        for (let h = 0; h <= 7000; h += 1000) {
+                            mainContainer.scrollTo(0, h);
+                            await new Promise(resolve => setTimeout(resolve, 500)); // 0.5초 대기하며 데이터 깨우기
+                        }
+                        
+                        // 모든 섹션 로딩 완료 후 최상단으로 다시 복귀
+                        mainContainer.scrollTo(0, 0);
+                    }
                 """)
-                time.sleep(1.5)
-                page.evaluate("""
-                    const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
-                    mainContainer.scrollTo(0, 0);
-                """)
-                time.sleep(0.5)
+                # 브라우저 스크롤 시나리오가 안전하게 끝날 때까지 5초간 충분히 대기
+                time.sleep(5)
             except:
                 pass
 
-            # [🔥 해결책 1] 하단의 PDF 발행 버튼 관련 컨테이너 박스들 완벽하게 제거(숨김)
+            # 하단의 PDF 발행 버튼 관련 컨테이너 박스들 완벽하게 제거(숨김)
             try:
                 page.evaluate("""
                     () => {
@@ -1751,7 +1755,7 @@ with st.container(border=True):
             except:
                 pass
             
-            # [🔥 해결책 2] Streamlit 내부 스크롤바 가두리 제한을 완전히 풀어 본문을 아래로 길게 늘리기
+            # Streamlit 내부 스크롤바 가두리 제한을 완전히 풀어 본문을 아래로 길게 늘리기
             try:
                 page.evaluate("""
                     () => {
@@ -1765,7 +1769,6 @@ with st.container(border=True):
                             }
                         });
                         
-                        // 상하단 불필요한 공백 살짝 조절
                         const mainBlock = document.querySelector('[data-testid="stMainBlockContainer"]');
                         if (mainBlock) {
                             mainBlock.style.setProperty('padding-top', '2rem', 'important');
@@ -1777,22 +1780,22 @@ with st.container(border=True):
             except:
                 pass
             
-            # 스크롤이 풀린 본문의 실제 최종 높이를 정밀 계산하여 모니터 세로 높이를 동기화
+            # 스크롤이 풀린 본문의 실제 최종 높이를 정밀 계산하여 가상 모니터 해상도 전체 동기화
             try:
                 full_height = page.evaluate("() => Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)")
-                page.set_viewport_size({"width": 1500, "height": max(full_height, 2500)})
-                time.sleep(1.5)
+                # Section 5 밑바닥까지 잘리지 않도록 최소 높이를 5000px 이상으로 안전하게 고정 확보
+                page.set_viewport_size({"width": 1500, "height": max(full_height, 5000)})
+                time.sleep(2)
             except:
                 pass
             
-            # [🔥 해결책 3] full_page=True 스크린샷 바이너리 추출 (레이아웃 원본 그대로 찰칵)
-            # 인쇄 엔진을 거치지 않으므로 자르거나 겹치는 현상이 0% 확율로 발생하지 않습니다.
+            # full_page=True 스크린샷 바이너리 추출
             screenshot_bytes = page.screenshot(full_page=True, type="png")
             
             context.close()
             browser.close()
             
-            # [🔥 해결책 4] 추출된 고해상도 PNG 이미지를 퀄리티 저하 없이 A4 규격의 PDF 문서로 최종 컴파일
+            # 추출된 고해상도 PNG 이미지를 퀄리티 저하 없이 A4 규격의 PDF 문서로 최종 컴파일
             img = Image.open(BytesIO(screenshot_bytes))
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
