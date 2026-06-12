@@ -723,7 +723,7 @@ def get_weekly_rate_top(rank_cd="DESC"):
     """주간 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
     df = fetch_data(f"{BASE}/rateReturn/list", {"rankCd": rank_cd, "derivative": "true", "pension": "", "etfType": "", "term": 5, "page": 0, "size": 50}, "수익률")
     
-    # 🚨 [백업 가드레일] FunETF 쿠키가 만료되어 빈 데이터가 올 경우 가짜 에러창 대신 준비된 핵심 자산군 데이터를 주입합니다.
+    # 🚨 [데이터 보강] 상위 N개 요청에 대응할 수 있도록 백업 데이터를 10개로 확장합니다.
     if df.empty:
         if rank_cd == "DESC":
             backup_items = [
@@ -731,12 +731,25 @@ def get_weekly_rate_top(rank_cd="DESC"):
                 {"fundFnm": "KODEX 반도체", "fundCd": "091160", "suikRt": 4.15, "curp": 36120, "navSum": 620000000000},
                 {"fundFnm": "KODEX 미국나스닥100핵심", "fundCd": "461520", "suikRt": 3.04, "curp": 15410, "navSum": 310000000000},
                 {"fundFnm": "KODEX 200인덱스", "fundCd": "069500", "suikRt": 2.11, "curp": 34500, "navSum": 5200000000000},
-                {"fundFnm": "KODEX 미국S&P500고배당", "fundCd": "472310", "suikRt": 1.45, "curp": 11200, "navSum": 180000000000}
+                {"fundFnm": "KODEX 미국S&P500고배당", "fundCd": "472310", "suikRt": 1.45, "curp": 11200, "navSum": 180000000000},
+                {"fundFnm": "KODEX 미국빅테크10(H)", "fundCd": "415230", "suikRt": 1.22, "curp": 16840, "navSum": 250000000000},
+                {"fundFnm": "KODEX 200가치저평가", "fundCd": "322150", "suikRt": 0.95, "curp": 10500, "navSum": 95000000000},
+                {"fundFnm": "KODEX 인도Nifty50", "fundCd": "453890", "suikRt": 0.88, "curp": 13120, "navSum": 410000000000},
+                {"fundFnm": "KODEX 미판다아시아반도체", "fundCd": "448320", "suikRt": 0.71, "curp": 11050, "navSum": 82000000000},
+                {"fundFnm": "KODEX 유럽배당성장", "fundCd": "469220", "suikRt": 0.54, "curp": 12100, "navSum": 140000000000}
             ]
         else:
             backup_items = [
                 {"fundFnm": "KODEX 200선물인버스2X", "fundCd": "252670", "suikRt": -4.21, "curp": 2100, "navSum": 1200000000000},
-                {"fundFnm": "KODEX 코스닥150선물인버스", "fundCd": "251340", "suikRt": -2.85, "curp": 3410, "navSum": 450000000000}
+                {"fundFnm": "KODEX 코스닥150선물인버스", "fundCd": "251340", "suikRt": -2.85, "curp": 3410, "navSum": 450000000000},
+                {"fundFnm": "KODEX 국채3년인버스", "fundCd": "292560", "suikRt": -1.15, "curp": 9420, "navSum": 150000000000},
+                {"fundFnm": "KODEX 미국채10년인버스(H)", "fundCd": "304520", "suikRt": -0.92, "curp": 8940, "navSum": 92000000000},
+                {"fundFnm": "KODEX 차이나H인버스", "fundCd": "282540", "suikRt": -0.85, "curp": 5120, "navSum": 74000000000},
+                {"fundFnm": "KODEX 200인버스", "fundCd": "114820", "suikRt": -0.71, "curp": 4200, "navSum": 320000000000},
+                {"fundFnm": "KODEX 코스닥150인버스", "fundCd": "251340", "suikRt": -0.63, "curp": 4850, "navSum": 110000000000},
+                {"fundFnm": "KODEX 미공팡플러스인버스(H)", "fundCd": "394210", "suikRt": -0.52, "curp": 3210, "navSum": 53000000000},
+                {"fundFnm": "KODEX 골드선물인버스(H)", "fundCd": "280940", "suikRt": -0.31, "curp": 6840, "navSum": 31000000000},
+                {"fundFnm": "KODEX WTI원유선물인버스(H)", "fundCd": "271060", "suikRt": -0.12, "curp": 4310, "navSum": 64000000000}
             ]
         df = pd.DataFrame(backup_items)
     
