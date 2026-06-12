@@ -1706,8 +1706,8 @@ with st.container(border=True):
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             
-            # 윈도우 크기를 애초에 1500px 데스크톱 규격으로 세팅
-            context = browser.new_context(viewport={"width": 1500, "height": 1200})
+            # 초기 뷰포트 설정 (세로를 애초에 넉넉하게 2000px로 시작)
+            context = browser.new_context(viewport={"width": 1500, "height": 2000})
             page = context.new_page()
             
             # 대시보드 접속 및 네트워크 로딩 대기
@@ -1716,24 +1716,24 @@ with st.container(border=True):
             # 첫 로딩 후 4초 대기
             time.sleep(4)
             
-            # [🔥 핵심 튜닝] Section 5까지 모든 차트와 텍스트를 확실하게 렌더링하기 위한 순차적 스크롤링
-            # 1000픽셀씩 끊어서 인간이 휠을 내리듯 부드럽게 전 스페이스를 훑고 지나갑니다.
+            # [🔥 해결책 1] Section 5 끝자락까지 무조건 도달하도록 스크롤 한계선을 15,000px로 대폭 확장
+            # 1200px씩 뚝뚝 끊어 내리며 숨겨진 Section 4와 5의 동적 데이터와 차트를 완벽하게 깨웁니다.
             try:
                 page.evaluate("""
                     async () => {
                         const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
                         
-                        // 하단으로 1000px씩 총 7번에 걸쳐 나누어 스크롤 이동 (Section 5 끝까지 안착)
-                        for (let h = 0; h <= 7000; h += 1000) {
+                        // 하단 범위를 15,000픽셀까지 늘려 대시보드 맨 밑바닥까지 확실하게 마우스 휠을 내립니다.
+                        for (let h = 0; h <= 15000; h += 1200) {
                             mainContainer.scrollTo(0, h);
-                            await new Promise(resolve => setTimeout(resolve, 500)); // 0.5초 대기하며 데이터 깨우기
+                            await new Promise(resolve => setTimeout(resolve, 400)); // 0.4초간 대기하며 렌더링 트리거
                         }
                         
-                        // 모든 섹션 로딩 완료 후 최상단으로 다시 복귀
+                        // 모든 섹션을 깨운 후 캡처를 위해 다시 최상단으로 복귀
                         mainContainer.scrollTo(0, 0);
                     }
                 """)
-                # 브라우저 스크롤 시나리오가 안전하게 끝날 때까지 5초간 충분히 대기
+                # 브라우저 스크롤 연산이 완전히 완료될 때까지 5초간 충분히 대기
                 time.sleep(5)
             except:
                 pass
@@ -1755,7 +1755,7 @@ with st.container(border=True):
             except:
                 pass
             
-            # Streamlit 내부 스크롤바 가두리 제한을 완전히 풀어 본문을 아래로 길게 늘리기
+            # [🔥 해결책 2] Streamlit 내부의 모든 높이 제한 및 스크롤 가두리 설정을 강제로 찢어버리기
             try:
                 page.evaluate("""
                     () => {
@@ -1780,12 +1780,12 @@ with st.container(border=True):
             except:
                 pass
             
-            # 스크롤이 풀린 본문의 실제 최종 높이를 정밀 계산하여 가상 모니터 해상도 전체 동기화
+            # [🔥 해결책 3] 스크롤바가 풀린 페이지의 '진짜 최종 높이'를 구한 뒤, 제한 없이 강제 적용
+            # Section 5까지 포함된 초대형 페이지를 담기 위해 가상 화면 높이를 최소 9,000px 이상으로 고정 확보합니다.
             try:
                 full_height = page.evaluate("() => Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)")
-                # Section 5 밑바닥까지 잘리지 않도록 최소 높이를 5000px 이상으로 안전하게 고정 확보
-                page.set_viewport_size({"width": 1500, "height": max(full_height, 5000)})
-                time.sleep(2)
+                page.set_viewport_size({"width": 1500, "height": max(full_height, 9000)})
+                time.sleep(2.5)
             except:
                 pass
             
