@@ -1671,7 +1671,7 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
 
 # ==============================================================================
-# 🖥️ [최종 레이아웃 교정본] 겹침 현상 및 빈 화면 버그를 완벽히 해결한 캡처 코드
+# 🖥️ [Streamlit 전용 구조 교정본] 내부 스크롤을 강제로 풀어 겹침/누락을 해결한 코드
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
@@ -1702,37 +1702,79 @@ with st.container(border=True):
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             
-            # [🔥 해결책 1] 표준 데스크톱 Full HD 해상도로 가상 모니터 고정 (Streamlit 레이아웃 깨짐 방지)
-            context = browser.new_context(viewport={"width": 1920, "height": 1080})
+            # 가상 모니터 해상도를 넓게 확보
+            context = browser.new_context(viewport={"width": 1400, "height": 1200})
             page = context.new_page()
             
-            # [🔥 해결책 2] 프린트용 흑백 스타일이 아닌, 화면에 보이는 화려한 컬러 CSS 스타일 그대로 복제 지정
+            # 화면에 보이는 컬러 그대로 인쇄 설정
             page.emulate_media(media="screen")
             
-            # 대시보드 주소 접속 및 네트워크 로딩 대기
+            # 대시보드 접속 및 로딩 대기
             page.goto(target_dashboard_url, wait_until="networkidle", timeout=60000)
             
-            # 대시보드 내부의 동적 스크립트와 차트가 완전히 렌더링될 때까지 6초 충분히 대기
+            # 모든 차트와 동적 데이터가 완전히 렌더링될 때까지 6초 대기
             time.sleep(6)
             
-            # [🔥 해결책 3] 뷰포트 크기를 건드리지 않고, 자바스크립트로 하단 버튼 박스 2개만 콕 집어서 투명화 처리
+            # 데이터 로딩(레이지 로딩) 누락 방지를 위해 아래로 끝까지 스크롤 이동
+            try:
+                page.evaluate("""
+                    const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
+                    mainContainer.scrollTo(0, 99999);
+                """)
+                time.sleep(1.5)
+                page.evaluate("""
+                    const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
+                    mainContainer.scrollTo(0, 0);
+                """)
+                time.sleep(0.5)
+            except:
+                pass
+
+            # [🔥 핵심 해결책 1] 하단의 특정 PDF 발행 버튼 컨테이너 2개 숨기기
             try:
                 page.evaluate("""
                     () => {
-                        // 페이지 안의 모든 테두리 박스 컨테이너를 수집
                         const containers = document.querySelectorAll('[data-testid="stVerticalBlockBorderContainer"]');
-                        
-                        // 뒤에서부터 탐색하여 텍스트 매칭 검사 (최상위 부모 삭제 버그 방지)
                         for (let i = containers.length - 1; i >= 0; i--) {
                             const text = containers[i].textContent || "";
                             if (text.includes("대시보드 완전체 종합 PDF 리포트 발행") || text.includes("대시보드 화면 그대로 스냅숏 PDF 발행")) {
-                                // 요소를 아예 삭제하지 않고 자리를 유지한 채 숨겨서 레이아웃 붕괴를 막음
-                                containers[i].style.visibility = 'hidden';
-                                containers[i].style.height = '0px';
-                                containers[i].style.overflow = 'hidden';
-                                containers[i].style.margin = '0px';
-                                containers[i].style.padding = '0px';
+                                containers[i].style.setProperty('display', 'none', 'important');
                             }
+                        }
+                    }
+                """)
+                time.sleep(0.5)
+            except:
+                pass
+
+            # [🔥 핵심 해결책 2] Streamlit 내부의 갇혀있는 스크롤 높이를 강제로 해제하고 웹 전체로 확장
+            try:
+                page.evaluate("""
+                    () => {
+                        // 1. Streamlit 메인 앱과 본문 감싸는 박스들의 높이 제한(스크롤바)을 강제로 해제
+                        const selectors = [
+                            '.stApp', 
+                            '[data-testid="stAppViewContainer"]', 
+                            '[data-testid="stMainBlockContainer"]',
+                            '#root', 
+                            'body', 
+                            'html'
+                        ];
+                        
+                        selectors.forEach(selector => {
+                            const el = document.querySelector(selector);
+                            if (el) {
+                                el.style.setProperty('height', 'auto', 'important');
+                                el.style.setProperty('overflow', 'visible', 'important');
+                                el.style.setProperty('max-height', 'none', 'important');
+                            }
+                        });
+                        
+                        // 2. 패딩 공간 조절로 레이아웃을 정갈하게 가다듬음
+                        const mainBlock = document.querySelector('[data-testid="stMainBlockContainer"]');
+                        if (mainBlock) {
+                            mainBlock.style.setProperty('padding-top', '2rem', 'important');
+                            mainBlock.style.setProperty('padding-bottom', '2rem', 'important');
                         }
                     }
                 """)
@@ -1740,24 +1782,19 @@ with st.container(border=True):
             except:
                 pass
             
-            # 데이터 로딩(레이지 로딩) 누락 방지를 위한 부드러운 가상 스크롤 다운/업
+            # [🔥 핵심 해결책 3] 스크롤이 풀린 본문 실제 전체 높이를 다시 측정해서 뷰포트를 일치시킴
             try:
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
-                time.sleep(0.5)
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                full_height = page.evaluate("() => document.documentElement.scrollHeight || document.body.scrollHeight")
+                page.set_viewport_size({"width": 1400, "height": max(full_height, 2000)})
                 time.sleep(1)
-                page.evaluate("window.scrollTo(0, 0);")
-                time.sleep(0.5)
             except:
                 pass
             
-            # [🔥 핵심 해결책 4] 브라우저 자체의 인쇄 엔진에게 웹 해상도 규격을 우선하라고 옵션 부여 (prefer_css_page_size)
-            # full_page나 무리한 height 조정 대신 인쇄 엔진이 자연스럽게 페이지를 분할하도록 유도
+            # 최종 PDF 인쇄 추출
             pdf_bytes = page.pdf(
                 format="A4",
                 print_background=True,
-                prefer_css_page_size=True, 
-                margin={"top": "10mm", "bottom": "10mm", "left": "10mm", "right": "10mm"}
+                margin={"top": "12mm", "bottom": "12mm", "left": "12mm", "right": "12mm"}
             )
             
             context.close()
@@ -1766,7 +1803,7 @@ with st.container(border=True):
 
     # 화면 캡처 실행 프로세스 버튼 트리거
     if st.button("📸 현재 에이전트 화면 스캔 및 PDF 컴파일 시작", use_container_width=True):
-        with st.spinner("하단 기능성 박스들을 숨기고 본문 리포트 화면만 스캔하여 PDF를 생성 중입니다..."):
+        with st.spinner("Streamlit 내부 레이아웃 구조를 해제하고 전체 리포트 화면을 스캔하여 PDF를 생성 중입니다..."):
             try:
                 captured_pdf_data = capture_current_dashboard_to_pdf()
                 
@@ -1775,12 +1812,12 @@ with st.container(border=True):
                     st.download_button(
                         label="📥 캡처 스냅숏 PDF 다운로드",
                         data=captured_pdf_data,
-                        file_name=f"KODEX_Dashboard_Fixed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        file_name=f"KODEX_Dashboard_Perfect_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
-                        key="dashboard_screenshot_pdf_download_v9"
+                        key="dashboard_screenshot_pdf_download_v10"
                     )
-                    st.success("🎉 레이아웃 겹침이 해결된 깔끔한 대시보드 PDF가 발행되었습니다!")
+                    st.success("🎉 내부 스크롤이 완벽히 해결된 깔끔한 전체 대시보드 PDF가 발행되었습니다!")
                 else:
                     st.error("화면 바이너리를 스냅숏 버퍼로 생성하는 데 실패했습니다.")
             except Exception as e:
