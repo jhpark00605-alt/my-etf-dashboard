@@ -1669,3 +1669,67 @@ with st.container(border=True):
             st.error("통합 PDF 리포트 바이너리를 바인딩하는 과정에서 구조적 에러가 발생했습니다.")
     except Exception as e:
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
+
+# ==============================================================================
+# 🖥️ [추가 부록] 에이전트 대시보드 화면 그대로 스크린샷 캡처 및 PDF 저장 기능
+# ==============================================================================
+st.markdown("<br>", unsafe_allow_html=True)
+with st.container(border=True):
+    st.subheader("🖥️ 대시보드 화면 그대로 스냅숏 PDF 발행")
+    st.caption("현재 브라우저에 렌더링된 차트, 레이아웃, 표 UI 전체를 사진 찍듯 그대로 PDF로 박제합니다.")
+    
+    # 로컬 테스트 및 배포 서버 환경 주소 (기본 포트 8501 설정)
+    # 클라우드 배포 시에는 실제 도메인 주소로 변경하여 활용 가능합니다.
+    st.info("💡 본 기능은 서버 백그라운드에서 가상 브라우저(Headless Chrome)를 구동하여 화면을 스캔합니다.")
+    
+    def capture_current_dashboard_to_pdf():
+        from playwright.sync_api import sync_playwright
+        import time
+        from io import BytesIO
+        
+        # 1. 현재 대시보드가 구동 중인 URL 타겟팅
+        # 일반적인 Streamlit 로컬 기본 주소 세팅이며, 필요시 변경 가능
+        target_dashboard_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app/"
+        
+        with sync_playwright() as p:
+            # 백그라운드에서 실행할 가상 크롬 브라우저 인스턴스 론칭
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            # 대시보드 주소 접속 및 네트워크 안정화 대기
+            page.goto(target_dashboard_url, wait_until="networkidle")
+            
+            # Plotly 차트, 데이터프레임 UI, 애니메이션이 완벽히 렌더링되도록 3초간 추가 딜레이
+            time.sleep(3)
+            
+            # 현재 렌더링된 웹 화면 전체를 A4 규격, 배경 스타일 포함하여 PDF 바이너리로 추출
+            pdf_bytes = page.pdf(
+                format="A4",
+                print_background=True,
+                margin={"top": "12mm", "bottom": "12mm", "left": "12mm", "right": "12mm"}
+            )
+            
+            browser.close()
+            return pdf_bytes
+
+    # 화면 캡처 실행 프로세스 버튼 트리거
+    if st.button("📸 현재 에이전트 화면 스캔 및 PDF 컴파일 시작", use_container_width=True):
+        with st.spinner("가상 브라우저 엔진을 구동하여 현재 화면 디자인과 플롯 차트를 캡처 중입니다..."):
+            try:
+                captured_pdf_data = capture_current_dashboard_to_pdf()
+                
+                if captured_pdf_data:
+                    st.download_button(
+                        label="📥 캡처 스냅숏 PDF 다운로드",
+                        data=captured_pdf_data,
+                        file_name=f"KODEX_Dashboard_Screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key="dashboard_screenshot_pdf_download"
+                    )
+                    st.success("🎉 현재 대시보드 화면이 성공적으로 PDF로 변환되었습니다!")
+                else:
+                    st.error("화면 바이너리를 스냅숏 버퍼로 생성하는 데 실패했습니다.")
+            except Exception as e:
+                st.error(f"❌ 캡처 엔진 가동 중 오류 발생: {e}")
+                st.caption("주의: 이 기능을 사용하려면 서버 터미널 환경에 'pip install playwright' 및 'playwright install'이 선행 설치되어 있어야 합니다.")
