@@ -1671,14 +1671,14 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
 
 # ==============================================================================
-# 🖥️ [오류 완벽 수정본] 에이전트 대시보드 화면 그대로 스크린샷 캡처 및 PDF 저장 기능
+# 🖥️ [최종 완결본] 하단 PDF 발행 컨테이너 2개 제외하고 화면 캡처하는 코드
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
     st.subheader("🖥️ 대시보드 화면 그대로 스냅숏 PDF 발행")
-    st.caption("현재 브라우저에 렌더링된 차트, 레이아웃, 표 UI 전체를 깨짐과 겹침 없이 그대로 PDF로 박제합니다.")
+    st.caption("현재 브라우저에 렌더링된 차트와 표 UI 전체를 깨짐, 겹침, 그리고 하단 버튼 구역 없이 깔끔하게 PDF로 박제합니다.")
     
-    st.info("💡 본 기능은 서버 백그라운드에서 가상 브라우저(Headless Chrome)를 구동하여 화면을 스캔합니다.")
+    st.info("💡 본 기능은 하단의 'PDF 리포트 발행' 및 '스냅숏 PDF 발행' 박스 2개를 자동으로 숨긴 후 스캔합니다.")
     
     def capture_current_dashboard_to_pdf():
         from playwright.sync_api import sync_playwright
@@ -1702,27 +1702,42 @@ with st.container(border=True):
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             
-            # 임시로 기본 뷰포트 크기 생성
+            # 임시 기본 뷰포트 생성
             context = browser.new_context(viewport={"width": 1300, "height": 1200})
             page = context.new_page()
             
             # 대시보드 주소 접속 및 네트워크 로딩 대기
             page.goto(target_dashboard_url, wait_until="networkidle", timeout=60000)
             
-            # 대시보드 내부의 동적 스크립트와 Plotly 차트가 완전히 안착할 때까지 5초 충분히 대기
+            # 대시보드 내부의 동적 스크립트와 차트 안착 대기
             time.sleep(5)
             
-            # [🔥 핵심 해결책] full_page 인자 대신 자바스크립트로 실제 대시보드의 전체 길이를 측정하여 뷰포트 확장
+            # [🔥 핵심 해결책] 자바스크립트를 실행하여 맨 아래에 있는 PDF 관련 컨테이너 2개를 찾아서 삭제(숨김)
             try:
-                # 웹페이지 본문의 실제 스크롤 높이(Height) 측정
+                page.evaluate("""
+                    () => {
+                        // Streamlit의 테두리가 있는 컨테이너 요소를 모두 서칭
+                        const containers = document.querySelectorAll('[data-testid="stVerticalBlockBorderContainer"]');
+                        if (containers.length >= 2) {
+                            // 맨 뒤에서 첫 번째(스냅숏 발행)와 두 번째(완전체 종합 PDF 발행) 컨테이너를 화면에서 숨김
+                            containers[containers.length - 1].style.display = 'none';
+                            containers[containers.length - 2].style.display = 'none';
+                        }
+                    }
+                """)
+                time.sleep(0.5) # 스타일 적용 안정화 대기
+            except:
+                pass
+            
+            # 자바스크립트로 하단 구역이 제외된 실제 대시보드의 전체 길이를 재측정하여 뷰포트 확장
+            try:
                 full_height = page.evaluate("() => document.documentElement.scrollHeight || document.body.scrollHeight")
-                # 알아낸 실제 높이에 맞춰 브라우저 화면 크기를 강제로 길게 늘림 (겹침 현상 원천 차단)
-                page.set_viewport_size({"width": 1300, "height": max(full_height, 2500)})
+                page.set_viewport_size({"width": 1300, "height": max(full_height, 2200)})
                 time.sleep(1)
             except:
                 pass
             
-            # 레이지 로딩 엘리먼트 활성화를 위한 가상 스크롤 롤링
+            # 레이지 로딩 활성화를 위한 가상 스크롤 롤링
             try:
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(1)
@@ -1731,7 +1746,7 @@ with st.container(border=True):
             except:
                 pass
             
-            # 에러를 유발하던 full_page=True 인자를 제거하고, 조정된 뷰포트 바탕으로 안전하게 PDF 추출
+            # 최종 PDF 추출
             pdf_bytes = page.pdf(
                 format="A4",
                 print_background=True,
@@ -1744,7 +1759,7 @@ with st.container(border=True):
 
     # 화면 캡처 실행 프로세스 버튼 트리거
     if st.button("📸 현재 에이전트 화면 스캔 및 PDF 컴파일 시작", use_container_width=True):
-        with st.spinner("가상 브라우저 엔진을 구동하여 현재 화면 디자인과 플롯 차트를 캡처 중입니다..."):
+        with st.spinner("하단 기능성 박스들을 숨기고 본문 리포트 화면만 스캔하여 PDF를 생성 중입니다..."):
             try:
                 captured_pdf_data = capture_current_dashboard_to_pdf()
                 
@@ -1753,12 +1768,12 @@ with st.container(border=True):
                     st.download_button(
                         label="📥 캡처 스냅숏 PDF 다운로드",
                         data=captured_pdf_data,
-                        file_name=f"KODEX_Dashboard_Screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        file_name=f"KODEX_Dashboard_Clean_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
-                        key="dashboard_screenshot_pdf_download_v5"
+                        key="dashboard_screenshot_pdf_download_v6"
                     )
-                    st.success("🎉 현재 대시보드 화면이 성공적으로 PDF로 변환되었습니다!")
+                    st.success("🎉 하단 버튼 섹션들이 제외된 깔끔한 대시보드 PDF가 발행되었습니다!")
                 else:
                     st.error("화면 바이너리를 스냅숏 버퍼로 생성하는 데 실패했습니다.")
             except Exception as e:
