@@ -1784,7 +1784,7 @@ with st.container(border=True):
             # Section 5까지 포함된 초대형 페이지를 담기 위해 가상 화면 높이를 최소 9,000px 이상으로 고정 확보합니다.
             try:
                 full_height = page.evaluate("() => Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)")
-                page.set_viewport_size({"width": 1500, "height": max(full_height, 8500)})
+                page.set_viewport_size({"width": 1500, "height": max(full_height, 8300)})
                 time.sleep(2.5)
             except:
                 pass
