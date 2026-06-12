@@ -1671,7 +1671,7 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
 
 # ==============================================================================
-# 🖥️ [Streamlit 전용 구조 교정본] 내부 스크롤을 강제로 풀어 겹침/누락을 해결한 코드
+# 🖥️ [최종 레이아웃 교정본] 가로폭을 강제 고정하여 2단 분할 겹침을 해결한 코드
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
@@ -1694,7 +1694,7 @@ with st.container(border=True):
             pass
 
         # 대시보드 로컬 호스트 타겟 주소
-        target_dashboard_url = "http://localhost:8501"
+        target_dashboard_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app/"
         
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -1702,26 +1702,26 @@ with st.container(border=True):
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             
-            # 가상 모니터 해상도를 넓게 확보
-            context = browser.new_context(viewport={"width": 1400, "height": 1200})
+            # 대형 데스크톱 Full HD 해상도로 컨텍스트 초기화
+            context = browser.new_context(viewport={"width": 1600, "height": 1200})
             page = context.new_page()
             
-            # 화면에 보이는 컬러 그대로 인쇄 설정
+            # 프린팅 모드가 아닌 일반 웹 모드 스타일 에뮬레이션
             page.emulate_media(media="screen")
             
             # 대시보드 접속 및 로딩 대기
             page.goto(target_dashboard_url, wait_until="networkidle", timeout=60000)
             
-            # 모든 차트와 동적 데이터가 완전히 렌더링될 때까지 6초 대기
+            # 모든 차트와 동적 데이터가 완전히 안착할 때까지 6초 대기
             time.sleep(6)
             
-            # 데이터 로딩(레이지 로딩) 누락 방지를 위해 아래로 끝까지 스크롤 이동
+            # 데이터 로딩(레이지 로딩) 누락 방지를 위해 아래로 스크롤링
             try:
                 page.evaluate("""
                     const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
                     mainContainer.scrollTo(0, 99999);
                 """)
-                time.sleep(1.5)
+                time.sleep(1)
                 page.evaluate("""
                     const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
                     mainContainer.scrollTo(0, 0);
@@ -1730,7 +1730,7 @@ with st.container(border=True):
             except:
                 pass
 
-            # [🔥 핵심 해결책 1] 하단의 특정 PDF 발행 버튼 컨테이너 2개 숨기기
+            # [🔥 해결책 1] 하단의 특정 PDF 발행 버튼 컨테이너 2개 숨기기 (공간을 유지하되 투명하게 만듦)
             try:
                 page.evaluate("""
                     () => {
@@ -1738,29 +1738,34 @@ with st.container(border=True):
                         for (let i = containers.length - 1; i >= 0; i--) {
                             const text = containers[i].textContent || "";
                             if (text.includes("대시보드 완전체 종합 PDF 리포트 발행") || text.includes("대시보드 화면 그대로 스냅숏 PDF 발행")) {
-                                containers[i].style.setProperty('display', 'none', 'important');
+                                containers[i].style.setProperty('visibility', 'hidden', 'important');
+                                containers[i].style.setProperty('height', '0px', 'important');
+                                containers[i].style.setProperty('margin', '0px', 'important');
+                                containers[i].style.setProperty('padding', '0px', 'important');
                             }
                         }
                     }
                 """)
-                time.sleep(0.5)
             except:
                 pass
 
-            # [🔥 핵심 해결책 2] Streamlit 내부의 갇혀있는 스크롤 높이를 강제로 해제하고 웹 전체로 확장
+            # [🔥 해결책 2 - 핵심] 가로폭을 강제로 1400px로 묶어 인쇄 시 레이아웃이 쪼그라들거나 겹치는 현상 원천 차단
             try:
                 page.evaluate("""
                     () => {
-                        // 1. Streamlit 메인 앱과 본문 감싸는 박스들의 높이 제한(스크롤바)을 강제로 해제
-                        const selectors = [
-                            '.stApp', 
-                            '[data-testid="stAppViewContainer"]', 
-                            '[data-testid="stMainBlockContainer"]',
-                            '#root', 
-                            'body', 
-                            'html'
-                        ];
+                        // Streamlit 메인 본문 컨테이너 타겟팅
+                        const mainBlock = document.querySelector('[data-testid="stMainBlockContainer"]');
+                        if (mainBlock) {
+                            // 반응형 레이아웃이 발동하지 못하도록 가로 길이를 고정 크기로 하드코딩 주입
+                            mainBlock.style.setProperty('width', '1400px', 'important');
+                            mainBlock.style.setProperty('max-width', '1400px', 'important');
+                            mainBlock.style.setProperty('min-width', '1400px', 'important');
+                            mainBlock.style.setProperty('padding-left', '2rem', 'important');
+                            mainBlock.style.setProperty('padding-right', '2rem', 'important');
+                        }
                         
+                        // 대시보드 내부 스크롤바 제한도 함께 해제하여 전체 페이지가 아래로 뻗도록 조치
+                        const selectors = ['.stApp', '[data-testid="stAppViewContainer"]', '#root', 'body', 'html'];
                         selectors.forEach(selector => {
                             const el = document.querySelector(selector);
                             if (el) {
@@ -1769,28 +1774,21 @@ with st.container(border=True):
                                 el.style.setProperty('max-height', 'none', 'important');
                             }
                         });
-                        
-                        // 2. 패딩 공간 조절로 레이아웃을 정갈하게 가다듬음
-                        const mainBlock = document.querySelector('[data-testid="stMainBlockContainer"]');
-                        if (mainBlock) {
-                            mainBlock.style.setProperty('padding-top', '2rem', 'important');
-                            mainBlock.style.setProperty('padding-bottom', '2rem', 'important');
-                        }
                     }
                 """)
                 time.sleep(1)
             except:
                 pass
             
-            # [🔥 핵심 해결책 3] 스크롤이 풀린 본문 실제 전체 높이를 다시 측정해서 뷰포트를 일치시킴
+            # 스크롤이 자연스럽게 풀린 본문의 실제 최종 높이를 측정하여 뷰포트 업데이트
             try:
                 full_height = page.evaluate("() => document.documentElement.scrollHeight || document.body.scrollHeight")
-                page.set_viewport_size({"width": 1400, "height": max(full_height, 2000)})
+                page.set_viewport_size({"width": 1600, "height": max(full_height, 2200)})
                 time.sleep(1)
             except:
                 pass
             
-            # 최종 PDF 인쇄 추출
+            # 최종 PDF 인쇄 추출 (A4 사이즈 안에 1400px 가로 디자인을 그대로 안착시킴)
             pdf_bytes = page.pdf(
                 format="A4",
                 print_background=True,
@@ -1803,22 +1801,6 @@ with st.container(border=True):
 
     # 화면 캡처 실행 프로세스 버튼 트리거
     if st.button("📸 현재 에이전트 화면 스캔 및 PDF 컴파일 시작", use_container_width=True):
-        with st.spinner("Streamlit 내부 레이아웃 구조를 해제하고 전체 리포트 화면을 스캔하여 PDF를 생성 중입니다..."):
+        with st.spinner("레이아웃 비율을 데스크톱 모드로 고정하고 전체 리포트 화면을 스캔하여 PDF를 생성 중입니다..."):
             try:
-                captured_pdf_data = capture_current_dashboard_to_pdf()
-                
-                if captured_pdf_data:
-                    from datetime import datetime
-                    st.download_button(
-                        label="📥 캡처 스냅숏 PDF 다운로드",
-                        data=captured_pdf_data,
-                        file_name=f"KODEX_Dashboard_Perfect_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True,
-                        key="dashboard_screenshot_pdf_download_v10"
-                    )
-                    st.success("🎉 내부 스크롤이 완벽히 해결된 깔끔한 전체 대시보드 PDF가 발행되었습니다!")
-                else:
-                    st.error("화면 바이너리를 스냅숏 버퍼로 생성하는 데 실패했습니다.")
-            except Exception as e:
-                st.error(f"❌ 캡처 엔진 가동 중 오류 발생: {e}")
+                captured_pdf
