@@ -1672,7 +1672,7 @@ with st.container(border=True):
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
         
 # ==============================================================================
-# 🖥️ 대시보드 화면 그대로 스냅샷 PDF 발행 (서버사이드 playwright 방식)
+# 🖥️ 대시보드 화면 그대로 스냅샷 PDF 발행 (Selenium 서버사이드 방식)
 # ==============================================================================
 
 st.markdown("---")
@@ -1683,97 +1683,83 @@ with st.container(border=True):
     st.info("💡 버튼을 누르면 서버에서 현재 대시보드 전체를 캡처하여 PDF로 생성합니다. 30~60초 소요됩니다.")
 
     if st.button("🎞 현재 에이전트 화면 스캔 및 PDF 컴파일 시작", use_container_width=True):
-        
         with st.spinner("🔄 대시보드 전체 캡처 중... (약 30~60초 소요)"):
             try:
-                from playwright.sync_api import sync_playwright
-                from PIL import Image
                 import io
+                from PIL import Image
+                from selenium import webdriver
+                from selenium.webdriver.chrome.options import Options
+                from selenium.webdriver.chrome.service import Service
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
+                from selenium.webdriver.common.by import By
+                import time
 
-                # 현재 앱 URL 가져오기
-                app_url = st.context.url if hasattr(st, 'context') else "http://localhost:8501"
-                
-                # URL이 없으면 session_state에서 가져오기
-                if not app_url or app_url == "http://localhost:8501":
-                    try:
-                        from streamlit.runtime.scriptrunner import get_script_run_ctx
-                        ctx = get_script_run_ctx()
-                        if ctx:
-                            app_url = f"https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app"
-                    except:
-                        app_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app"
+                app_url = "https://my-etf-dashboard-dtvcjqx6i2tlyawjbguwru.streamlit.app"
 
-                screenshot_bytes = None
+                chrome_options = Options()
+                chrome_options.add_argument("--headless=new")
+                chrome_options.add_argument("--no-sandbox")
+                chrome_options.add_argument("--disable-dev-shm-usage")
+                chrome_options.add_argument("--disable-gpu")
+                chrome_options.add_argument("--window-size=1600,900")
+                chrome_options.add_argument("--disable-extensions")
+                chrome_options.add_argument("--disable-software-rasterizer")
+                chrome_options.binary_location = "/usr/bin/google-chrome-stable"
 
-                with sync_playwright() as p:
-                    browser = p.chromium.launch(
-                        headless=True,
-                        args=[
-                            '--no-sandbox',
-                            '--disable-setuid-sandbox',
-                            '--disable-dev-shm-usage',
-                            '--disable-gpu',
-                        ]
+                # chromedriver 자동 매칭
+                try:
+                    from webdriver_manager.chrome import ChromeDriverManager
+                    service = Service(ChromeDriverManager().install())
+                except:
+                    service = Service("/usr/bin/chromedriver")
+
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+
+                try:
+                    driver.get(app_url)
+
+                    # Streamlit 앱 완전 로딩 대기 (최대 30초)
+                    WebDriverWait(driver, 30).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, ".main .block-container"))
                     )
-                    page = browser.new_page(
-                        viewport={"width": 1600, "height": 900}
-                    )
+                    time.sleep(8)  # 차트/데이터 렌더링 추가 대기
 
-                    # 앱 로드
-                    page.goto(app_url, wait_until="networkidle", timeout=60000)
-
-                    # Streamlit 렌더링 완료 대기 (차트/데이터 로딩 시간 포함)
-                    page.wait_for_timeout(8000)
-
-                    # 하단 PDF 발행 섹션 2개 숨기기
-                    page.evaluate("""
-                        () => {
-                            // 마지막 stVerticalBlockBorderWrapper 2개 숨기기
-                            const borders = document.querySelectorAll('[data-testid="stVerticalBlockBorderWrapper"]');
-                            const arr = Array.from(borders);
-                            const last2 = arr.slice(-2);
-                            last2.forEach(el => el.style.display = 'none');
-                            
-                            // 구분선(hr)도 마지막 1개 숨기기
-                            const hrs = document.querySelectorAll('hr');
-                            if (hrs.length > 0) hrs[hrs.length - 1].style.display = 'none';
-                        }
+                    # 하단 PDF 섹션 2개 숨기기
+                    driver.execute_script("""
+                        const borders = document.querySelectorAll('[data-testid="stVerticalBlockBorderWrapper"]');
+                        Array.from(borders).slice(-2).forEach(el => el.style.display = 'none');
+                        const hrs = document.querySelectorAll('hr');
+                        if (hrs.length > 0) hrs[hrs.length - 1].style.display = 'none';
                     """)
+                    time.sleep(0.5)
 
-                    # 전체 페이지 높이로 뷰포트 재설정
-                    full_height = page.evaluate("document.body.scrollHeight")
-                    page.set_viewport_size({"width": 1600, "height": full_height})
-                    page.wait_for_timeout(1000)
+                    # 전체 페이지 높이로 창 조정
+                    full_height = driver.execute_script("return document.body.scrollHeight")
+                    driver.set_window_size(1600, full_height)
+                    time.sleep(1)
 
-                    # 전체 페이지 스크린샷
-                    screenshot_bytes = page.screenshot(
-                        full_page=True,
-                        type="png"
-                    )
+                    # 스크린샷 캡처
+                    screenshot_bytes = driver.get_screenshot_as_png()
 
-                    browser.close()
+                finally:
+                    driver.quit()
 
-                if screenshot_bytes:
-                    # PIL로 이미지 → PDF 변환
-                    img = Image.open(io.BytesIO(screenshot_bytes))
-                    img = img.convert("RGB")
+                # PIL로 PNG → PDF 변환
+                img = Image.open(io.BytesIO(screenshot_bytes)).convert("RGB")
+                pdf_buffer = io.BytesIO()
+                img.save(pdf_buffer, format="PDF", resolution=150)
+                pdf_buffer.seek(0)
 
-                    pdf_buffer = io.BytesIO()
-                    img.save(pdf_buffer, format="PDF", resolution=150)
-                    pdf_buffer.seek(0)
+                today = datetime.now().strftime('%Y%m%d')
+                st.success("✅ PDF 생성 완료! 아래 버튼으로 다운로드하세요.")
+                st.download_button(
+                    label="📥 스냅샷 PDF 다운로드",
+                    data=pdf_buffer.getvalue(),
+                    file_name=f"KODEX_Dashboard_Snapshot_{today}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
 
-                    today = datetime.now().strftime('%Y%m%d')
-                    st.success("✅ PDF 생성 완료! 아래 버튼으로 다운로드하세요.")
-                    st.download_button(
-                        label="📥 스냅샷 PDF 다운로드",
-                        data=pdf_buffer.getvalue(),
-                        file_name=f"KODEX_Dashboard_Snapshot_{today}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-
-            except ImportError as e:
-                st.error(f"❌ 필요한 라이브러리가 없습니다: {e}")
-                st.code("pip install playwright pillow\npython -m playwright install chromium", language="bash")
             except Exception as e:
                 st.error(f"❌ 캡처 중 오류 발생: {e}")
