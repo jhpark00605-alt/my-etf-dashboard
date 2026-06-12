@@ -1689,11 +1689,15 @@ with st.container(border=True):
         from io import BytesIO
         from PIL import Image
         
-        # 리눅스 가상 서버 환경 내 브라우저 의존성 패키지 동기화 강제 집행
+        # 리눅스 가상 서버 환경 내 브라우저 및 시스템 핵심 라이브러리(libglib 등) 강제 집행
         try:
+            # 1. 크로미움 브라우저 설치
             subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-        except:
-            pass
+            # 2. [🔥 핵심 추가] 누락된 리눅스 OS 종속성 라이브러리 자체 해결 명령어 가동
+            subprocess.run([sys.executable, "-m", "playwright", "install-deps"], check=True)
+        except Exception as system_err:
+            # 에러가 나더라도 다음 프로세스로 안전하게 넘어가도록 처리
+            print(f"[Playwright OS Deps Install Log]: {system_err}")
 
         # 대시보드 로컬 호스트 타겟 주소
         target_dashboard_url = "http://localhost:8501"
