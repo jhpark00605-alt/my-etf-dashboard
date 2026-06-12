@@ -1,6 +1,6 @@
 fonts-nanum
 fonts-noto-color-emoji
-libglib2.0-0
+libglib2.0-dev
 libnss3
 libatk1.0-0
 libatk-bridge2.0-0
