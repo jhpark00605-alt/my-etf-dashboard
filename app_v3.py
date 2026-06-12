@@ -1686,35 +1686,54 @@ with st.container(border=True):
         from playwright.sync_api import sync_playwright
         import time
         from io import BytesIO
-        import os # 👈 시스템 명령어 실행을 위해 추가
+        import subprocess
+        import sys
         
-        # [★핵심 해결책] 리눅스 서버 환경에 브라우저가 없을 경우, 파이썬이 직접 다운로드 명령을 내림
+        # [🔥 해결책] os.system 대신 백그라운드 프로세스를 완벽히 동기화하여 브라우저 강제 설치
         try:
-            os.system("playwright install chromium")
+            # 주 브라우저와 리눅스 필수 시스템 의존성 파일까지 전수 다운로드 강제 집행
+            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
         except Exception as e:
             pass
 
-        # 로컬 테스트 및 배포 서버 환경 주소 (기본 포트 8501 설정)
+        # Streamlit Cloud 내부에서 자기 자신을 참조할 수 있는 최적의 포트 주소 다각도 서칭
         target_dashboard_url = "http://localhost:8501"
         
         with sync_playwright() as p:
-            # 백그라운드에서 실행할 가상 크롬 브라우저 인스턴스 론칭
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            # 백그라운드 가상 브라우저 실행
+            # 실행 파일 누락 오류를 원천 차단하기 위해 헤드리스 셸 가동 가이드 명시
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            )
+            
+            # 컨텍스트 생성 시 A4 비율에 맞춰 브라우저 가상 뷰포트 크기 최적화 (차트 찌그러짐 방지)
+            context = browser.new_context(viewport={"width": 1280, "height": 1600})
+            page = context.new_page()
             
             # 대시보드 주소 접속 및 네트워크 안정화 대기
-            page.goto(target_dashboard_url, wait_until="networkidle")
+            page.goto(target_dashboard_url, wait_until="networkidle", timeout=60000)
             
-            # Plotly 차트, 데이터프레임 UI, 애니메이션이 완벽히 렌더링되도록 3초간 추가 딜레이
-            time.sleep(3)
+            # 모든 Plotly 동적 웹 그래픽 플롯이 안착할 때까지 4초 대기
+            time.sleep(4)
             
-            # 현재 렌더링된 웹 화면 전체를 A4 규격, 배경 스타일 포함하여 PDF 바이너리로 추출
+            # 스크롤을 맨 아래까지 내렸다가 올려서 모든 레이지 로딩 엘리먼트 강제 활성화
+            try:
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+                page.evaluate("window.scrollTo(0, 0);")
+                time.sleep(0.5)
+            except:
+                pass
+            
+            # 현재 렌더링된 화면 전체 배경 스타일을 입혀 PDF 바이너리로 최종 추출
             pdf_bytes = page.pdf(
                 format="A4",
                 print_background=True,
-                margin={"top": "12mm", "bottom": "12mm", "left": "12mm", "right": "12mm"}
+                margin={"top": "10mm", "bottom": "10mm", "left": "10mm", "right": "10mm"}
             )
             
+            context.close()
             browser.close()
             return pdf_bytes
 
