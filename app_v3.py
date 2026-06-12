@@ -1069,7 +1069,7 @@ with col5_top_right:
 # ==============================================================================
 st.markdown("---")
 with st.container(border=True):
-    st.markdown("### ⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트 (실시간 수집 데이터 관통)")
+    st.markdown("### ⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트")
     st.markdown("<br>", unsafe_allow_html=True)
 
     dynamic_context = ""
@@ -1139,7 +1139,7 @@ with st.container(border=True):
 st.markdown("<br><br>", unsafe_allow_html=True)
 with st.container(border=True):
     st.subheader("📥 대시보드 완전체 종합 PDF 리포트 발행")
-    st.caption("Section 2 블로그 3대 항목 복구, Section 5 KODEX 주간 마케팅 리스트 실시간 완전 연동 및 네이버 데이터랩 분홍색 박스 차트화가 완료된 마스터본입니다.")
+    st.caption("KODEX 주간 마케팅 실시간 모니터링이 반영된 PDF를 다운받을 수 있습니다.")
     
     def generate_pdf_report():
         from xhtml2pdf import pisa
@@ -1721,7 +1721,7 @@ with st.container(border=True):
         pdf_data = generate_pdf_report()
         if pdf_data:
             st.download_button(
-                label="📄 에이전트 화면 완벽 매칭 - 마스터 PDF 리포트 다운로드",
+                label="📄 PDF 리포트 다운로드",
                 data=pdf_data,
                 file_name=f"KODEX_Perfect_Sync_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",
