@@ -723,7 +723,7 @@ def get_weekly_rate_top(rank_cd="DESC"):
     """주간 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
     df = fetch_data(f"{BASE}/rateReturn/list", {"rankCd": rank_cd, "derivative": "true", "pension": "", "etfType": "", "term": 5, "page": 0, "size": 50}, "수익률")
     
-    # 🚨 [핵심 수정] FunETF 쿠키가 깨져서 빈 데이터(empty)가 올 경우 대시보드가 터지지 않게 백업 데이터를 즉시 자동 주입합니다.
+    # 🚨 [백업 가드레일] FunETF 쿠키가 만료되어 빈 데이터가 올 경우 가짜 에러창 대신 준비된 핵심 자산군 데이터를 주입합니다.
     if df.empty:
         if rank_cd == "DESC":
             backup_items = [
@@ -767,7 +767,7 @@ def get_weekly_rate_top(rank_cd="DESC"):
     return df[available_cols]
 
 def get_theme_rate():
-    """테마별 수익률 데이터 수집"""
+    """테마별 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
     df = fetch_data(f"{BASE}/theme/list", {"page": 0, "size": 30}, "테마별 수익률")
     
     if df.empty or "themeNm" not in df.columns:
@@ -784,7 +784,9 @@ def get_theme_rate():
 # 📊 2. 스트림릿 대시보드 화면 렌더링 (SECTION 4)
 # ============================================================
 def render_section_4():
-    # 📦 SECTION 4 전체 레이아웃 테두리 상자 감싸기
+    # 🚨 [PDF 연동 핵심] 하단 PDF 출력 기능이 이 변수들을 전역에서 가져다 쓸 수 있도록 선언합니다.
+    global df_top_returns, df_theme_returns, selected_top_n
+    
     with st.container(border=True):
         st.markdown("## 📈 SECTION 4. 주간 ETF 시장 분석 & 추천 리스트")
         st.caption(f"출처: FUNETF (삼성자산운용) API 실시간 연동 리포트 | 조회 기준일: {datetime.today().strftime('%Y-%m-%d')}")
@@ -797,6 +799,7 @@ def render_section_4():
         col_ctrl1, col_ctrl2 = st.columns(2)
         with col_ctrl1:
             top_n = st.number_input("조회할 TOP N 개수 선택", min_value=3, max_value=20, value=10, step=1)
+            selected_top_n = top_n # 글로벌 변수에 동기화
         with col_ctrl2:
             order_type = st.selectbox("수익률 정렬 기준", ["상승률 상위 순 (DESC)", "하락률 상위 순 (ASC)"])
             rank_cd = "DESC" if "상승률" in order_type else "ASC"
@@ -806,6 +809,10 @@ def render_section_4():
         with st.spinner("FUNETF에서 실시간 데이터를 가져오는 중..."):
             df_rate = get_weekly_rate_top(rank_cd)
             df_theme = get_theme_rate()
+            
+            # PDF 연동 컴포넌트를 위해 전역 메모리에 데이터 복사본 전달
+            df_top_returns = df_rate.copy() if not df_rate.empty else pd.DataFrame()
+            df_theme_returns = df_theme.copy() if not df_theme.empty else pd.DataFrame()
 
         # --------------------------------------------------------
         # 1) 주간 수익률 TOP N (차트 + 표)
