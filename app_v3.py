@@ -1705,15 +1705,9 @@ with st.container(border=True):
                 chrome_options.add_argument("--window-size=1600,900")
                 chrome_options.add_argument("--disable-extensions")
                 chrome_options.add_argument("--disable-software-rasterizer")
-                chrome_options.binary_location = "/usr/bin/google-chrome-stable"
+                chrome_options.binary_location = "/usr/bin/chromium"
 
-                # chromedriver 자동 매칭
-                try:
-                    from webdriver_manager.chrome import ChromeDriverManager
-                    service = Service(ChromeDriverManager().install())
-                except:
-                    service = Service("/usr/bin/chromedriver")
-
+                service = Service("/usr/bin/chromedriver")
                 driver = webdriver.Chrome(service=service, options=chrome_options)
 
                 try:
