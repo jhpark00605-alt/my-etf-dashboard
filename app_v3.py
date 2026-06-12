@@ -1670,85 +1670,120 @@ with st.container(border=True):
             st.error("통합 PDF 리포트 바이너리를 바인딩하는 과정에서 구조적 에러가 발생했습니다.")
     except Exception as e:
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
+        
 # ==============================================================================
-# 🖥️ [최종 레이아웃 싱크 고정본] 뭉개짐과 1페이지 단절 현상을 완벽히 패치한 코드
+# 🖥️ 대시보드 화면 그대로 스냅샷 PDF 발행
 # ==============================================================================
-import streamlit as st
-import streamlit.components.v1 as components
 
 st.markdown("---")
 st.markdown("## 🖥️ 대시보드 화면 그대로 스냅샷 PDF 발행")
 st.markdown("현재 브라우저에 렌더링된 차트와 표 UI 전체를 깜짐, 겹침, 그리고 하단 버튼 구역 없이 깔끔하게 PDF로 박제합니다.")
-
 st.info("💡 본 기능은 하단의 'PDF 리포트 발행' 및 '스냅샷 PDF 발행' 박스 2개를 자동으로 숨긴 후 스캔합니다.")
 
-if st.button("🎞 현재 에이전트 화면 스캔 및 PDF 컴파일 시작"):
-    components.html(
-        """
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-        <script>
-        (async function() {
-            // 숨길 섹션 찾기 (PDF 발행 박스 2개 숨기기)
-            const allBlocks = window.parent.document.querySelectorAll(
-                '[data-testid="stVerticalBlock"]'
-            );
+# 버튼 + JS를 한 번에 주입 (iframe 우회)
+st.markdown(
+    """
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-            // 마지막 2개 블록을 숨김
-            const hiddenEls = [];
-            const blocks = Array.from(allBlocks);
-            const lastTwo = blocks.slice(-2);
-            lastTwo.forEach(el => {
-                hiddenEls.push(el);
-                el.style.visibility = 'hidden';
-                el.style.height = '0';
-                el.style.overflow = 'hidden';
+    <button id="snapshot-btn"
+        onclick="runSnapshot()"
+        style="
+            width:100%; padding:12px; font-size:15px; font-weight:600;
+            background-color:#1E3A5F; color:white; border:none;
+            border-radius:8px; cursor:pointer; margin-top:8px;
+        ">
+        🎞 현재 에이전트 화면 스캔 및 PDF 컴파일 시작
+    </button>
+    <p id="snapshot-status" style="color:gray; font-size:12px; margin-top:6px;"></p>
+
+    <script>
+    async function runSnapshot() {
+        const btn = document.getElementById('snapshot-btn');
+        const status = document.getElementById('snapshot-status');
+        btn.disabled = true;
+        btn.innerText = '⏳ 캡처 준비 중...';
+        status.innerText = '📄 PDF 생성 중... 잠시 기다려주세요.';
+
+        // html2canvas / jsPDF 라이브러리 로딩 대기
+        await new Promise(r => setTimeout(r, 800));
+
+        // ── 숨길 대상: 하단 PDF 섹션 2개 (st.container border=True 기준)
+        // Streamlit의 최상위 block-container 하위에서 마지막 2개 stVerticalBlockBorderWrapper를 찾아 숨김
+        const wrappers = document.querySelectorAll('[data-testid="stVerticalBlockBorderWrapper"]');
+        const allBlocks = document.querySelectorAll('[data-testid="stVerticalBlock"]');
+
+        // 숨길 요소 수집 (섹션 구분선 포함 마지막 구역)
+        const hiddenEls = [];
+
+        // 하단 스냅샷 섹션 전체(구분선 + 헤더 + info + 버튼)를 포함하는 부모를 찾아 숨김
+        // 전략: .main .block-container 직속 자식 중 마지막 2개를 숨김
+        const mainContainer = document.querySelector('.main .block-container');
+        if (mainContainer) {
+            const directChildren = Array.from(mainContainer.children);
+            // 마지막 PDF 발행 섹션 2개에 해당하는 자식들 숨기기
+            // (구분선 기준으로 마지막 8개 자식 요소를 숨김 — 두 섹션 통합)
+            const toHide = directChildren.slice(-8);
+            toHide.forEach(el => {
+                hiddenEls.push({ el, oldDisplay: el.style.display });
+                el.style.display = 'none';
             });
+        }
 
-            // 캡처 대상: Streamlit 메인 컨테이너
-            const target = window.parent.document.querySelector('.main .block-container');
+        // 렌더링 안정화 대기
+        await new Promise(r => setTimeout(r, 600));
 
-            await new Promise(r => setTimeout(r, 500)); // 렌더링 대기
-
+        try {
+            const target = document.querySelector('.main .block-container');
             const canvas = await html2canvas(target, {
                 scale: 2,
                 useCORS: true,
                 allowTaint: true,
-                scrollY: -window.parent.scrollY,
-                windowWidth: window.parent.document.documentElement.scrollWidth,
-                windowHeight: window.parent.document.documentElement.scrollHeight
+                logging: false,
+                scrollY: 0,
+                windowWidth: document.documentElement.scrollWidth,
+                windowHeight: target.scrollHeight
             });
 
             // 숨긴 요소 복원
-            hiddenEls.forEach(el => {
-                el.style.visibility = '';
-                el.style.height = '';
-                el.style.overflow = '';
+            hiddenEls.forEach(({ el, oldDisplay }) => {
+                el.style.display = oldDisplay;
             });
 
-            // PDF 생성
+            // ── PDF 생성
             const { jsPDF } = window.jspdf;
             const imgData = canvas.toDataURL('image/png');
-            const imgWidth = canvas.width;
-            const imgHeight = canvas.height;
 
-            const pdfWidth = 210;  // A4 mm
-            const pdfHeight = (imgHeight * pdfWidth) / imgWidth;
+            // 캔버스 비율 그대로 PDF 크기 설정 (A4 너비 기준)
+            const pdfWidthMm = 210;
+            const pdfHeightMm = (canvas.height / canvas.width) * pdfWidthMm;
 
             const pdf = new jsPDF({
-                orientation: pdfHeight > pdfWidth ? 'portrait' : 'landscape',
+                orientation: 'portrait',
                 unit: 'mm',
-                format: [pdfWidth, pdfHeight]
+                format: [pdfWidthMm, pdfHeightMm]
             });
 
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidthMm, pdfHeightMm);
 
-            // 날짜 포함 파일명
             const today = new Date().toISOString().slice(0, 10);
-            pdf.save('etf_dashboard_snapshot_' + today + '.pdf');
-        })();
-        </script>
-        <p style="color: gray; font-size: 12px;">📄 PDF 생성 중... 잠시 기다려주세요.</p>
-        """,
-        height=50,
-    )
+            pdf.save('KODEX_Dashboard_Snapshot_' + today + '.pdf');
+
+            btn.disabled = false;
+            btn.innerText = '🎞 현재 에이전트 화면 스캔 및 PDF 컴파일 시작';
+            status.innerText = '✅ PDF 저장 완료!';
+        } catch(err) {
+            // 숨긴 요소 복원 (에러 시에도 복원)
+            hiddenEls.forEach(({ el, oldDisplay }) => {
+                el.style.display = oldDisplay;
+            });
+            btn.disabled = false;
+            btn.innerText = '🎞 현재 에이전트 화면 스캔 및 PDF 컴파일 시작';
+            status.innerText = '❌ 오류 발생: ' + err.message;
+            console.error(err);
+        }
+    }
+    </script>
+    """,
+    unsafe_allow_html=True
+)
