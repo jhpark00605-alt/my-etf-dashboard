@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET  
 import email.utils
+import streamlit.components.v1 as components
 
 # 1. 페이지 기본 설정 및 와이드 모드 강제 적용
 st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈", layout="wide")
@@ -1672,165 +1673,82 @@ with st.container(border=True):
 # ==============================================================================
 # 🖥️ [최종 레이아웃 싱크 고정본] 뭉개짐과 1페이지 단절 현상을 완벽히 패치한 코드
 # ==============================================================================
-st.markdown("<br>", unsafe_allow_html=True)
-with st.container(border=True):
-    st.subheader("🖥️ 대시보드 화면 그대로 스냅숏 PDF 발행")
-    st.caption("현재 브라우저에 렌더링된 차트와 표 UI 전체를 깨짐, 겹침, 그리고 하단 버튼 구역 없이 깔끔하게 PDF로 박제합니다.")
-    
-    st.info("💡 본 기능은 하단의 'PDF 리포트 발행' 및 '스냅숏 PDF 발행' 박스 2개를 자동으로 숨긴 후 스캔합니다.")
-    
-    def capture_current_dashboard_to_pdf():
-        from playwright.sync_api import sync_playwright
-        import time
-        import subprocess
-        import sys
-        
-        # 리눅스 가상 서버 환경 내 브라우저 의존성 패키지 동기화 강제 집행
-        try:
-            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-        except:
-            pass
+import streamlit as st
+import streamlit.components.v1 as components
 
-        # 대시보드 로컬 호스트 타겟 주소
-        target_dashboard_url = "http://localhost:8501"
-        
-        with sync_playwright() as p:
-            # 브라우저 구동 시 인쇄 크기 왜곡을 막기 위해 가로세로 해상도를 애초에 거대하게 실행
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            )
-            
-            # [🔥 핵심 해결책 1] 초기 화면 크기를 가로 1500px, 세로 5000px로 극단적으로 길게 설정
-            # 이렇게 하면 Streamlit이 처음부터 모바일이 아닌 'PC 화면' 모드로 모든 섹션을 아래로 길게 로딩합니다.
-            context = browser.new_context(viewport={"width": 1500, "height": 5000})
-            page = context.new_page()
-            
-            # 모니터 화면 스타일 강제 복제
-            page.emulate_media(media="screen")
-            
-            # 대시보드 접속 및 네트워크 안정화 대기
-            page.goto(target_dashboard_url, wait_until="networkidle", timeout=60000)
-            
-            # [🔥 핵심 해결책 2] 스크롤바가 있는 메인 컨테이너를 타겟팅하여 위아래로 천천히 흔들어 
-            # Section 5까지 동적 차트들이 메모리에 완전히 안착하도록 가이드
-            try:
-                page.evaluate("""
-                    () => {
-                        const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
-                        // 아래로 찔끔찔끔 내리면서 스크롤 로딩 트리거 가동
-                        for (let i = 0; i < 5; i++) {
-                            setTimeout(() => { mainContainer.scrollTo(0, i * 1000); }, i * 300);
-                        }
-                    }
-                """)
-                time.sleep(2.5) # 스크롤이 내려가는 물리적인 시간 부여
-                
-                page.evaluate("""
-                    () => {
-                        const mainContainer = document.querySelector('[data-testid="stMainBlockContainer"]') || window;
-                        mainContainer.scrollTo(0, 0);
-                    }
-                """)
-                time.sleep(1)
-            except:
-                pass
+st.markdown("---")
+st.markdown("## 🖥️ 대시보드 화면 그대로 스냅샷 PDF 발행")
+st.markdown("현재 브라우저에 렌더링된 차트와 표 UI 전체를 깜짐, 겹침, 그리고 하단 버튼 구역 없이 깔끔하게 PDF로 박제합니다.")
 
-            # 모든 데이터 및 Plotly 그래픽 플롯이 렌더링 연산을 완전히 마칠 때까지 5초 추가 대기
-            time.sleep(5)
+st.info("💡 본 기능은 하단의 'PDF 리포트 발행' 및 '스냅샷 PDF 발행' 박스 2개를 자동으로 숨긴 후 스캔합니다.")
 
-            # [🔥 핵심 해결책 3] 인쇄용 강제 스타일 시트(CSS)를 주입하여 반응형 너비 비율을 하드코딩으로 박제
-            try:
-                page.evaluate("""
-                    () => {
-                        const style = document.createElement('style');
-                        style.innerHTML = `
-                            /* 1. 하단 PDF 발행 관련 테두리 상자 2개 무조건 숨김 */
-                            [data-testid="stVerticalBlockBorderContainer"]:has(button[key*="pdf"]),
-                            [data-testid="stVerticalBlockBorderContainer"]:has(button[key*="screenshot"]),
-                            div:has(h3:contains("대시보드 화면 그대로 스냅숏")),
-                            div:has(h3:contains("대시보드 완전체 종합")) {
-                                display: none !important;
-                                height: 0px !important;
-                            }
-                            
-                            /* 2. 대시보드 스크롤을 무력화하여 끊김 없이 아래로 길게 출력되도록 유도 */
-                            html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMainBlockContainer"] {
-                                height: auto !important;
-                                overflow: visible !important;
-                                max-height: none !important;
-                            }
-                            
-                            /* 3. 인쇄 시 너비가 쪼그라들면서 컴포넌트가 겹치는 현상 차단 */
-                            [data-testid="stMainBlockContainer"] {
-                                width: 1400px !important;
-                                max-width: 1400px !important;
-                                min-width: 1400px !important;
-                                padding: 2rem !important;
-                            }
-                            
-                            /* 4. 가로 배치(Columns) 레이아웃 강제 사수 */
-                            [data-testid="stHorizontalBlock"] {
-                                display: flex !important;
-                                flex-direction: row !important;
-                                flex-wrap: nowrap !important;
-                                width: 100% !important;
-                            }
-                        `;
-                        document.head.appendChild(style);
-                        
-                        // 하단 2개 컨테이너를 확실하게 2차 차단
-                        const containers = document.querySelectorAll('[data-testid="stVerticalBlockBorderContainer"]');
-                        for (let i = containers.length - 1; i >= 0; i--) {
-                            const text = containers[i].textContent || "";
-                            if (text.includes("대시보드 완전체 종합 PDF 리포트 발행") || text.includes("대시보드 화면 그대로 스냅숏 PDF 발행")) {
-                                containers[i].style.setProperty('display', 'none', 'important');
-                            }
-                        }
-                    }
-                """)
-                time.sleep(1)
-            except:
-                pass
-            
-            # 스크롤이 완전히 풀린 본문의 실제 전체 높이를 동적으로 측정하여 최종 모니터 크기 조절
-            try:
-                full_height = page.evaluate("() => Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)")
-                page.set_viewport_size({"width": 1500, "height": max(full_height, 3500)})
-                time.sleep(1.5) # 연산 싱크 대기
-            except:
-                pass
-            
-            # 최종 PDF 인쇄 추출 (A4 사이즈 안에 1400px 가로 디자인을 그대로 안착시킴)
-            pdf_bytes = page.pdf(
-                format="A4",
-                print_background=True,
-                prefer_css_page_size=True, # 👈 다시 True로 복귀하여 강제 분할 매핑 가동
-                margin={"top": "15mm", "bottom": "15mm", "left": "15mm", "right": "15mm"}
-            )
-            
-            context.close()
-            browser.close()
-            return pdf_bytes
+if st.button("🎞 현재 에이전트 화면 스캔 및 PDF 컴파일 시작"):
+    components.html(
+        """
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+        <script>
+        (async function() {
+            // 숨길 섹션 찾기 (PDF 발행 박스 2개 숨기기)
+            const allBlocks = window.parent.document.querySelectorAll(
+                '[data-testid="stVerticalBlock"]'
+            );
 
-    # 화면 캡처 실행 프로세스 버튼 트리거
-    if st.button("📸 현재 에이전트 화면 스캔 및 PDF 컴파일 시작", use_container_width=True):
-        with st.spinner("레이아웃 비율을 데스크톱 모드로 고정하고 전체 리포트 화면을 스캔하여 PDF를 생성 중입니다..."):
-            try:
-                captured_pdf_data = capture_current_dashboard_to_pdf()
-                
-                if captured_pdf_data:
-                    from datetime import datetime
-                    st.download_button(
-                        label="📥 캡처 스냅숏 PDF 다운로드",
-                        data=captured_pdf_data,
-                        file_name=f"KODEX_Dashboard_Fixed_Final_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True,
-                        key="dashboard_screenshot_pdf_download_v13"
-                    )
-                    st.success("🎉 레이아웃 정렬이 완벽하게 고정된 깔끔한 대시보드 PDF가 발행되었습니다!")
-                else:
-                    st.error("화면 바이너리를 스냅숏 버퍼로 생성하는 데 실패했습니다.")
-            except Exception as e:
-                st.error(f"❌ 캡처 엔진 가동 중 오류 발생: {e}")
+            // 마지막 2개 블록을 숨김
+            const hiddenEls = [];
+            const blocks = Array.from(allBlocks);
+            const lastTwo = blocks.slice(-2);
+            lastTwo.forEach(el => {
+                hiddenEls.push(el);
+                el.style.visibility = 'hidden';
+                el.style.height = '0';
+                el.style.overflow = 'hidden';
+            });
+
+            // 캡처 대상: Streamlit 메인 컨테이너
+            const target = window.parent.document.querySelector('.main .block-container');
+
+            await new Promise(r => setTimeout(r, 500)); // 렌더링 대기
+
+            const canvas = await html2canvas(target, {
+                scale: 2,
+                useCORS: true,
+                allowTaint: true,
+                scrollY: -window.parent.scrollY,
+                windowWidth: window.parent.document.documentElement.scrollWidth,
+                windowHeight: window.parent.document.documentElement.scrollHeight
+            });
+
+            // 숨긴 요소 복원
+            hiddenEls.forEach(el => {
+                el.style.visibility = '';
+                el.style.height = '';
+                el.style.overflow = '';
+            });
+
+            // PDF 생성
+            const { jsPDF } = window.jspdf;
+            const imgData = canvas.toDataURL('image/png');
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+
+            const pdfWidth = 210;  // A4 mm
+            const pdfHeight = (imgHeight * pdfWidth) / imgWidth;
+
+            const pdf = new jsPDF({
+                orientation: pdfHeight > pdfWidth ? 'portrait' : 'landscape',
+                unit: 'mm',
+                format: [pdfWidth, pdfHeight]
+            });
+
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+
+            // 날짜 포함 파일명
+            const today = new Date().toISOString().slice(0, 10);
+            pdf.save('etf_dashboard_snapshot_' + today + '.pdf');
+        })();
+        </script>
+        <p style="color: gray; font-size: 12px;">📄 PDF 생성 중... 잠시 기다려주세요.</p>
+        """,
+        height=50,
+    )
