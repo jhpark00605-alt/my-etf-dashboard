@@ -1338,10 +1338,11 @@ with st.container(border=True):
         # 📱 SECTION 5. 마케팅 뉴스 리스트 & 데이터랩 박스 차트 (session_state 연동)
         # ----------------------------------------------------------------------
         
-        # 💡 [핵심] 이제 UI에서 저장한 AI 분석 문장 3가지를 줄바꿈 단위로 정확히 가져옵니다.
+        # 💡 [해결] HTML 템플릿과의 호환성을 위해 변수명을 확실하게 매칭하고 정의합니다!
+        marketing_news_text = st.session_state.get('news_res', "마케팅 뉴스 분석 데이터 대기중...")
         ai_insight_text = st.session_state.get('final_insight', "AI 종합 인사이트 분석 데이터 대기중...")
         
-        # 만약 텍스트 형태 그대로 들어온다면 PDF 가독성을 위해 <br/> 태그로 변환해 줍니다.
+        # 만약 템플릿에서 ai_insight_html을 쓰고 있다면 아래 변수도 함께 만들어 둡니다.
         ai_insight_html = ai_insight_text.replace("\n", "<br/>")
 
         # 1. 뉴스 원문 리스트 출력 (g_news_titles 연동)
