@@ -812,11 +812,16 @@ def fetch_data(url, params, label):
     except Exception as e:
         return pd.DataFrame()
 
-def get_weekly_rate_top(rank_cd="DESC"):
-    """주간 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
-    df = fetch_data(f"{BASE}/rateReturn/list", {"rankCd": rank_cd, "derivative": "true", "pension": "", "etfType": "", "term": 5, "page": 0, "size": 50}, "수익률")
+def get_weekly_rate_top(rank_cd="DESC", term_days=5):
+    """주간/월간 등 선택된 기간별 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
+    # 💡 term_days 인자를 받아 API 파라미터인 "term"에 동적으로 매핑합니다.
+    df = fetch_data(
+        f"{BASE}/rateReturn/list", 
+        {"rankCd": rank_cd, "derivative": "true", "pension": "", "etfType": "", "term": term_days, "page": 0, "size": 50}, 
+        "수익률"
+    )
     
-    # 🚨 [데이터 보강] 상위 N개 요청에 대응할 수 있도록 백업 데이터를 10개로 확장합니다.
+    # [데이터 보강] 상위 N개 요청에 대응할 수 있도록 백업 데이터를 10개로 유지합니다.
     if df.empty:
         if rank_cd == "DESC":
             backup_items = [
@@ -872,14 +877,14 @@ def get_weekly_rate_top(rank_cd="DESC"):
         
     return df[available_cols]
 
-def get_theme_rate():
+def get_theme_rate(term_days=5):
     """
     [자체 연산 엔진 업그레이드]
     외부 테마 API 의존을 제거하고, 수집된 주간 수익률 TOP 50 데이터를 기반으로
     ETF 상품명을 분석하여 테마를 실시간 분류 및 평균 수익률을 산출합니다.
     """
-    # 1. 상위 수익률 50개 마스터 데이터를 가져와 분석 소스로 활용
-    df_src = get_weekly_rate_top("DESC")
+    # 💡 핵심 수정: 화면에서 선택된 기간(chosen_term) 값을 수집 함수에 그대로 넘겨줍니다.
+    df_src = get_weekly_rate_top("DESC", term_days=term_days)
     
     # 만약 데이터 수집에 완전히 실패한 경우, 최소한의 빈 데이터 프레임 구조 반환
     if df_src.empty or "ETF명" not in df_src.columns or "수익률(%)" not in df_src.columns:
@@ -888,7 +893,7 @@ def get_theme_rate():
             "주간수익률(%)": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         })
     
-    # 2. 룰베이스 기반 상품명 키워드 매핑 함수
+    # 룰베이스 기반 상품명 키워드 매핑 함수
     def classify_theme(etf_name):
         etf_name = str(etf_name).upper()
         
@@ -921,7 +926,7 @@ def get_theme_rate():
         else:
             return "국내/외 지수 및 기타"
 
-    # 3. 데이터 복사 및 테마 매핑 적용
+    # 데이터 복사 및 테마 매핑 적용
     df_calc = df_src.copy()
     df_calc["테마명"] = df_calc["ETF명"].apply(classify_theme)
     
@@ -929,10 +934,10 @@ def get_theme_rate():
     df_calc["수익률(%)"] = pd.to_numeric(df_calc["수익률(%)"], errors="coerce")
     df_calc = df_calc.dropna(subset=["수익률(%)"])
     
-    # 4. 🔥 [핵심 groupby 연산] 테마별로 묶어 수익률의 평균(mean) 산출
+    # 테마별로 묶어 수익률의 평균(mean) 산출
     df_theme = df_calc.groupby("테마명")["수익률(%)"].mean().reset_index()
     
-    # 5. 기존 render_section_4() 화면 컴포넌트와 호환되도록 컬럼명 리네임 및 정렬
+    # 기존 render_section_4() 화면 컴포넌트와 호환되도록 컬럼명 리네임 및 정렬
     df_theme = df_theme.rename(columns={"수익률(%)": "주간수익률(%)"})
     df_theme = df_theme.sort_values(by="주간수익률(%)", ascending=False).reset_index(drop=True)
     
@@ -950,35 +955,44 @@ def render_section_4():
         st.write("")
         
         # --------------------------------------------------------
-        # Control Panel
+        # Control Panel (기간 선택 기능 추가 업그레이드)
         # --------------------------------------------------------
-        # 이 container 내부에 [숨김대상] 텍스트를 심어두어, Playwright가 PDF를 캡처할 때 인풋 박스들을 통째로 지우게 만듭니다.
         with st.container():
-            st.markdown("####대시보드 조건 설정")
-            col_ctrl1, col_ctrl2 = st.columns(2)
+            st.markdown("#### ⚙️ 대시보드 조건 설정")
+            # 💡 기존 2열에서 3열 구조로 변경하여 '분석 기간 선택'창을 중간에 배치합니다.
+            col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
+            
             with col_ctrl1:
                 top_n = st.number_input("조회할 TOP N 개수 선택", min_value=3, max_value=20, value=10, step=1)
                 selected_top_n = top_n # 글로벌 변수에 동기화
-              # 👇 여기에 추가! (화면에서 바뀐 top_n 값을 세션 메모리에 실시간 저장)
                 st.session_state['selected_top_n'] = top_n
+                
             with col_ctrl2:
+                # 💡 [핵심 추가] 사용자가 직관적으로 기간을 고르면 내부 딕셔너리를 통해 API용 일수(days)로 자동 치환합니다.
+                period_opt = st.selectbox("📅 분석 기간 선택", ["1주 (기본)", "1일 (전영업일)", "1개월", "3개월", "6개월", "1년"])
+                period_mapping = {"1일 (전영업일)": 1, "1주 (기본)": 5, "1개월": 30, "3개월": 90, "6개월": 180, "1년": 365}
+                chosen_term = period_mapping[period_opt]
+                
+            with col_ctrl3:
                 order_type = st.selectbox("수익률 정렬 기준", ["상승률 상위 순 (DESC)", "하락률 상위 순 (ASC)"])
                 rank_cd = "DESC" if "상승률" in order_type else "ASC"
 
         st.write("---")
 
         with st.spinner("FUNETF에서 실시간 데이터를 가져오는 중..."):
-            df_rate = get_weekly_rate_top(rank_cd)
-            df_theme = get_theme_rate()
+            # 💡 [핵심 연결] 사용자가 화면에서 선택한 기간(chosen_term)을 데이터 수집 및 테마 연산 함수에 주입합니다!
+            df_rate = get_weekly_rate_top(rank_cd, term_days=chosen_term)
+            df_theme = get_theme_rate(term_days=chosen_term)
             
             # PDF 연동 컴포넌트를 위해 전역 메모리에 데이터 복사본 전달
             st.session_state['df_top_returns'] = df_rate.copy() if not df_rate.empty else pd.DataFrame()
             st.session_state['df_theme_returns'] = df_theme.copy() if not df_theme.empty else pd.DataFrame()
 
         # --------------------------------------------------------
-        # 1) 주간 수익률 TOP N (차트 + 표)
+        # 1) 선택 기간 수익률 TOP N (차트 + 표)
         # --------------------------------------------------------
-        st.markdown(f"### 🏆 주간 수익률 TOP {top_n}")
+        # 💡 타이틀도 사용자가 고른 기간이 동적으로 표시되도록 업그레이드했습니다.
+        st.markdown(f"### 🏆 선택 기간({period_opt}) 수익률 TOP {top_n}")
         
         if not df_rate.empty and "수익률(%)" in df_rate.columns:
             top_df = df_rate.head(top_n)
@@ -1011,14 +1025,14 @@ def render_section_4():
                 
             st.dataframe(display_df, use_container_width=True)
         else:
-            st.warning("⚠️ 주간 수익률 데이터를 불러오지 못했습니다. API 쿠키 및 세션 상태를 점검해주세요.")
+            st.warning(f"⚠️ {period_opt} 기간의 수익률 데이터를 불러오지 못했습니다. API 세션 상태를 점검해주세요.")
 
         st.write("---")
 
         # --------------------------------------------------------
-        # 2) 테마별 수익률 현황 (ValueError 해결 완료)
+        # 2) 테마별 수익률 현황 (동적 기간 실시간 계산 적용)
         # --------------------------------------------------------
-        st.markdown("### 🗂️ 주간 주요 테마별 수익률 현황")
+        st.markdown(f"### 🗂️ 선택 기간({period_opt}) 주요 테마별 평균 수익률 현황")
         
         if not df_theme.empty:
             col_th1, col_th2 = st.columns([3, 2])
@@ -1032,7 +1046,7 @@ def render_section_4():
                     x="테마명",
                     y="주간수익률(%)",
                     color="주간수익률(%)",
-                    color_continuous_scale="RdBu_r",  # [💡 수정]: Plotly 표준 양방향 컬러맵 적용
+                    color_continuous_scale="RdBu_r",  
                     text=theme_text,
                     template="plotly_white"
                 )
@@ -1048,7 +1062,6 @@ def render_section_4():
             st.info("ℹ️ 현재 수집된 테마별 수익률 요약 데이터가 존재하지 않습니다.")
 
         st.write("---")
-
         # --------------------------------------------------------
         # 3) 다음주 주목할 ETF 리스트 (Gemini's Pick) - 동적 생성 버전
         # --------------------------------------------------------
