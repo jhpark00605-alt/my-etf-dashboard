@@ -1233,14 +1233,17 @@ with st.container(border=True):
             sec2_data[com_key]['reason'] = res.get('reasoning', sec2_data[com_key]['reason'])
 
         # ----------------------------------------------------------------------
-        # 👥 SECTION 3. 투자자별 순매수 수급 강도 (session_state 연동)
+        # 👥 SECTION 3. 투자자별 순매수 수급 강도
         # ----------------------------------------------------------------------
         section3_chart_html = ""
+        # 💡 [해결] 빠졌던 변수 선언을 다시 추가하여 컴파일 에러를 해결합니다!
+        excel_summary = "실시간 매매 수급 에이전트 연동 데이터셋" 
+        
         target_agent_df = st.session_state.get('res_df', None)
         
         if target_agent_df is not None and not target_agent_df.empty:
             try:
-                # 🚨 수정된 부분: .head(15)를 붙여서 상위 15개만 PDF에 그리도록 강제합니다.
+                # .head(15)를 붙여서 상위 15개만 PDF에 그리도록 제한
                 summary = target_agent_df.sort_values(by='매수강도', ascending=False).head(15)
                 max_vol = float(summary['매수강도'].max()) if summary['매수강도'].max() > 0 else 1.0
                 
