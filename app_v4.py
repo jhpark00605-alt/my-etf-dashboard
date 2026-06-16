@@ -1303,32 +1303,61 @@ with st.container(border=True):
         top_n_count = st.session_state.get('selected_top_n', 10) 
         target_top_df = st.session_state.get('df_top_returns', None)
         
+        # 1. 실제 대시보드 데이터 연동부
         if target_top_df is not None and not target_top_df.empty:
             try:
-                # 대시보드에서 하락률순으로 정렬된 데이터 그대로 top_n_count만큼 가져옵니다.
                 for idx, row in target_top_df.head(top_n_count).reset_index().iterrows():
                     r_name = row.get('종목명', row.get('ETF명', row.get('ETF종목명', 'KODEX 상위 자산')))
                     r_val = row.get('수익률(%)', row.get('수익률', row.get('주간수익률', 0.0)))
                     
-                    # 수치 비교를 위해 안전하게 float 형변환 (문자열 % 기호 제거)
+                    # 💡 [핵심 조치] 대시보드에서 '+-4.21%' 문자열이 넘어오더라도 이를 완벽히 청소합니다.
+                    clean_val_str = str(r_val).replace('+-', '-').replace('+', '').strip()
+                    
+                    # 수치 비교를 위해 float 형변환 (% 기호 제거)
                     try:
-                        num_val = float(str(r_val).replace('%', '').strip())
+                        num_val = float(clean_val_str.replace('%', ''))
                     except:
                         num_val = 0.0
                     
                     if num_val != 0.0:
-                        # 💡 [핵심 버그 수정] 양수일 때만 +를 붙이고, 음수일 때는 자체 - 기호를 사용합니다.
+                        # 깨끗하게 정제된 값에 따라 기호와 색상을 동적으로 매칭합니다.
                         if num_val > 0:
                             sign_str = "+"
-                            color_span = "#B91C1C" # 상승은 빨간색
+                            color_span = "#B91C1C" # 상승 빨강
                         else:
-                            sign_str = ""          # 음수는 이미 마이너스가 포함되어 있으므로 빈 문자열
-                            color_span = "#1E40AF" # 하락은 파란색
+                            sign_str = ""          # 음수는 clean_val_str에 마이너스가 포함되어 있으므로 빈값
+                            color_span = "#1E40AF" # 하락 파랑
                             
-                        # 기존의 +{r_val}% 강제 표기를 제거하고, 판별된 sign_str과 색상을 적용합니다.
-                        top_n_return_html += f"<tr><td>{r_name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{r_val}%</td></tr>"
+                        top_n_return_html += f"<tr><td>{r_name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{clean_val_str if '%' in clean_val_str else clean_val_str + '%'}</td></tr>"
             except: 
-                pass
+                pass # 💡 문법 에러(SyntaxError)가 나지 않도록 개행 및 인덴트를 정렬했습니다.
+
+        # 2. 백업용 데이터 구역 (데이터 연동 실패 시 작동하며, 여기서도 기호를 정밀 정제합니다)
+        if not top_n_return_html:
+            top_n_return_html = "" 
+            default_top_assets = [("KODEX 미국AI테크TOP10+", "6.72"), ("KODEX AI반도체TOP2플러스", "6.15"), ("KODEX 미국나스닥100", "4.12"), ("KODEX 단기자금", "0.08"), ("KODEX 국채30년선물", "-1.05")]
+            for name, val in default_top_assets[:top_n_count]:
+                val_str = str(val).replace('+-', '-').replace('+', '').strip()
+                color_span = "#1E40AF" if "-" in val_str else "#B91C1C"
+                sign_str = "" if "-" in val_str else "+"
+                top_n_return_html += f"<tr><td>{name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{val_str}%</td></tr>"
+
+        # 3. 우측 테마별 평균 수익률 구역
+        theme_return_html = ""
+        target_theme_df = st.session_state.get('df_theme_returns', None)
+        
+        if target_theme_df is not None and not target_theme_df.empty:
+            try:
+                for idx, row in target_theme_df.reset_index().iterrows():
+                    t_name = row.get('테마명', row.get('시장핵심테마', '핵심섹터'))
+                    t_val = row.get('주간수익률(%)', row.get('주간수익률', row.get('평균수익률', 0.0)))
+                    
+                    clean_t_str = str(t_val).replace('+-', '-').replace('+', '').strip()
+                    color_str = "#1E40AF" if "-" in clean_t_str else "#B91C1C"
+                    sign_str = "" if "-" in clean_t_str else "+"
+                    theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{clean_t_str if '%' in clean_t_str else clean_t_str + '%'}</td></tr>"
+            except: 
+                pass # 💡 개행 및 들여쓰기 교정 완료
 
         # 백업용 더미 데이터 영역 (데이터가 없을 때만 작동)
         if not top_n_return_html or top_n_return_html.count("0.0%") > 3:
