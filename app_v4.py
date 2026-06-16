@@ -1508,59 +1508,59 @@ with st.container(border=True):
         current_date_str = kst_now.strftime('%Y-%m-%d %H:%M:%S')
 
         # ----------------------------------------------------------------------
-        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드 (파이썬 인덴트 일치 버전)
+        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드 (문법 에러 교정 완료)
         # ----------------------------------------------------------------------
-        html_string = f"""
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
-                @page {{ size: a4; margin: 11mm 11mm 11mm 11mm; }}
-                body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }}
-                .header-container {{ border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }}
-                .doc-title {{ font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }}
-                .doc-meta {{ text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }}
-                .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }}
-                .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
-                .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }}
-                .badge-up {{ color: #B91C1C; font-weight: bold; }}
-                .badge-down {{ color: #1E40AF; font-weight: bold; }}
-                table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }}
-                th {{ background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }}
-                td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }}
-                ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
-                li {{ margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }}
-                .page-break {{ page-break-before: always; }}
-                .footer-text {{ text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }}
-            </style>
-        </head>
-        <body>
-            <div class="header-container">
-                <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
-                <div class="doc-meta">발행기준시점: {current_date_str} | 작성주체: AI 자동 분석 컴파일러</div>
-            </div>
-        """  
-            <div class="section-container">
-                <div class="section-title">🎯 Section 1. 시장 트렌드 & 실시간 뉴스 키워드 빈도</div>
-                <p style="margin: 0.5mm 0;">• <span class="badge-up">🚀 라이징 테마:</span> {rising_theme}</p>
-                <p style="margin: 0.5mm 0;">• <span class="badge-down">📉 하락/정체 테마:</span> {falling_theme}</p>
-                <p style="margin: 0.5mm 0;">• <b>🧭 관심 자산군 변화 추이:</b> {trend_text}</p>
-                
-                <div class="content-title">[실시간 뉴스 핵심 키워드 검색량]</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 30%;">추출 키워드</th>
-                            <th style="width: 20%;">뉴스 노출 언급량</th>
-                            <th style="width: 50%;">트래픽 모멘텀 비주얼라이저</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {section1_graph_html}
-                    </tbody>
-                </table>
-            </div>
+        html_string = f"""<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
+        @page {{ size: a4; margin: 11mm 11mm 11mm 11mm; }}
+        body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }}
+        .header-container {{ border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }}
+        .doc-title {{ font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }}
+        .doc-meta {{ text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }}
+        .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }}
+        .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
+        .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }}
+        .badge-up {{ color: #B91C1C; font-weight: bold; }}
+        .badge-down {{ color: #1E40AF; font-weight: bold; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }}
+        th {{ background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }}
+        td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }}
+        ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
+        li {{ margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }}
+        .page-break {{ page-break-before: always; }}
+        .footer-text {{ text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }}
+    </style>
+</head>
+<body>
+    <div class="header-container">
+        <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
+        <div class="doc-meta">발행기준시점: {current_date_str} | 작성주체: AI 자동 분석 컴파일러</div>
+    </div>
+    
+    <div class="section-container">
+        <div class="section-title">🎯 Section 1. 시장 트렌드 & 실시간 뉴스 키워드 빈도</div>
+        <p style="margin: 0.5mm 0;">• <span class="badge-up">🚀 라이징 테마:</span> {rising_theme}</p>
+        <p style="margin: 0.5mm 0;">• <span class="badge-down">📉 하락/정체 테마:</span> {falling_theme}</p>
+        <p style="margin: 0.5mm 0;">• <b>🧭 관심 자산군 변화 추이:</b> {trend_text}</p>
+        
+        <div class="content-title">[실시간 뉴스 핵심 키워드 검색량]</div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 30%;">추출 키워드</th>
+                    <th style="width: 20%;">뉴스 노출 언급량</th>
+                    <th style="width: 50%;">트래픽 모멘텀 비주얼라이저</th>
+                </tr>
+            </thead>
+            <tbody>
+                {section1_graph_html}
+            </tbody>
+        </table>
+    </div>
+"""
             
             <div class="section-container">
                 <div class="section-title">📺 Section 2. 자산운용사 마케팅 동향 및 공식 미디어/리테일 채널 입체 분석</div>
