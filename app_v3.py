@@ -922,42 +922,116 @@ def render_section_4():
         st.write("---")
 
         # --------------------------------------------------------
-        # 3) 다음주 주목할 ETF 리스트 (Gemini's Pick)
+        # 3) 다음주 주목할 ETF 리스트 (Gemini's Pick) - 동적 생성 버전
         # --------------------------------------------------------
         st.markdown("### 🤖 다음주 주목할 ETF 리스트 (Gemini's Pick)")
         st.caption("상위 수익률 트렌드와 대금 유입 패턴을 종합 연산하여 산출한 AI 추천 가이드입니다.")
-        
+
         if not df_rate.empty and len(df_rate) >= 3:
             pick_1 = df_rate.iloc[0]["ETF명"]
             pick_2 = df_rate.iloc[1]["ETF명"]
             pick_3 = df_rate.iloc[2]["ETF명"]
+            pick_1_rate = df_rate.iloc[0].get("수익률(%)", "")
+            pick_2_rate = df_rate.iloc[1].get("수익률(%)", "")
+            pick_3_rate = df_rate.iloc[2].get("수익률(%)", "")
         else:
-            pick_1 = "ACE MSCI인도네시아(합성)"
-            pick_2 = "TIGER 한중반도체(합성)"
-            pick_3 = "KODEX 방산TOP10"
+            pick_1, pick_1_rate = "ACE MSCI인도네시아(합성)", ""
+            pick_2, pick_2_rate = "TIGER 한중반도체(합성)", ""
+            pick_3, pick_3_rate = "KODEX 방산TOP10", ""
+
+        def generate_pick_analysis(p1, p2, p3, r1, r2, r3):
+            prompt = f"""
+당신은 ETF 전문 애널리스트입니다. 아래 3개 ETF에 대해 각각 '선정 배경'과 '투자 포인트'를 작성하세요.
+
+- Pick 1 (주도주 모멘텀): {p1} | 주간수익률: {r1}%
+- Pick 2 (테마 순환매 수혜): {p2} | 주간수익률: {r2}%
+- Pick 3 (리스크 헤지형): {p3} | 주간수익률: {r3}%
+
+각 항목의 선정 배경은 해당 ETF의 특성과 수익률 근거를 반영하여 1~2문장으로,
+투자 포인트는 다음 주 매매 관점에서 실질적인 조언을 1~2문장으로 작성하세요.
+반드시 아래 JSON 형식으로만 출력하고 다른 설명은 절대 포함하지 마세요.
+
+{{
+  "pick1": {{"bg": "선정 배경 문장", "point": "투자 포인트 문장"}},
+  "pick2": {{"bg": "선정 배경 문장", "point": "투자 포인트 문장"}},
+  "pick3": {{"bg": "선정 배경 문장", "point": "투자 포인트 문장"}}
+}}
+"""
+            try:
+                import json
+                result = generate_via_requests(prompt, "gemini-1.5-flash")
+                if result:
+                    clean = result.strip().replace("```json", "").replace("```", "").strip()
+                    return json.loads(clean)
+            except:
+                pass
+            return {
+                "pick1": {"bg": f"{p1}은 주간 수익률 상위권을 기록하며 강한 상방 모멘텀을 보이고 있습니다.",
+                          "point": "기관 및 외국인의 순매수 유입이 지속되며 다음 주도 시세 연속성이 기대됩니다."},
+                "pick2": {"bg": f"{p2}은 거래량 증가와 함께 기술적 추세 전환 신호가 감지되고 있습니다.",
+                          "point": "순환매 자금 유입 국면으로 단기 트레이딩 관점에서 유효한 타이밍입니다."},
+                "pick3": {"bg": f"{p3}은 변동성 확대 구간에서도 안정적인 방어력을 입증하고 있습니다.",
+                          "point": "포트폴리오 변동성 축소 목적의 헤지 수단으로 적합합니다."}
+            }
+
+        with st.spinner("🤖 Gemini가 종목별 선정 배경 및 투자 포인트를 실시간 분석 중..."):
+            pick_analysis = generate_pick_analysis(
+                pick_1, pick_2, pick_3,
+                pick_1_rate, pick_2_rate, pick_3_rate
+            )
 
         col_p1, col_p2, col_p3 = st.columns(3)
-        
+
         with col_p1:
             st.info(f"🌟 **주도주 모멘텀**\n\n**{pick_1}**")
-            st.markdown("""
-            - **선정 배경**: 최근 주간 수익률 최상위권을 수성하며 시장의 강력한 상방 압력을 견인하고 있습니다.
-            - **투자 포인트**: 기관 및 외국인의 대규모 양방향 순매수 유입세가 뚜렷하여 다음 주 초반까지 시세 연속성 기대감이 높습니다.
+            st.markdown(f"""
+            - **선정 배경**: {pick_analysis['pick1']['bg']}
+            - **투자 포인트**: {pick_analysis['pick1']['point']}
             """)
-            
+
         with col_p2:
             st.success(f"📈 **테마 순환매 수혜**\n\n**{pick_2}**")
-            st.markdown("""
-            - **선정 배경**: 바닥권 다지기 이후 거래량이 눈에 띄게 증가하며 기술적 추세 전환의 신호탄을 쏘아 올렸습니다.
-            - **투자 포인트**: 기존 주도주 섹터의 차익 실현 자금이 유입되는 국면이므로, 단기 순환매 랠리를 활용한 트레이딩이 유효합니다.
+            st.markdown(f"""
+            - **선정 배경**: {pick_analysis['pick2']['bg']}
+            - **투자 포인트**: {pick_analysis['pick2']['point']}
             """)
-            
+
+        with col_p3:
+            st.warning(f"🛡️ **리스크 헤지형**\n\n**{pick_3}**")
+            st.markdown(f"""
+            - **선정 배경**: {pick_analysis['pick3']['bg']}
+            - **투자 포인트**: {pick_analysis['pick3']['point']}
+            """)
+
         with col_p3:
             st.warning(f"🛡️ **리스크 헤지형**\n\n**{pick_3}**")
             st.markdown("""
             - **선정 배경**: 매크로 불확실성 및 글로벌 지수 변동성 확대 국면에서도 탄탄한 펀더멘탈로 방어력을 입증했습니다.
             - **투자 포인트**: 시장 전반의 지수 조정 리스크에 대응하여 내 포트폴리오의 변동성을 낮추고 안정적인 안전판 역할을 하기에 적합합니다.
             """)
+
+        # ↓↓↓ 이 코드를 958번 줄 바로 뒤(col_p3 블록 끝나는 지점)에 추가
+        st.session_state['gemini_picks'] = {
+            "pick1": {"label": "🌟 주도주 모멘텀", "name": pick_1,
+                      "bg": "최근 주간 수익률 최상위권을 수성하며 시장의 강력한 상방 압력을 견인하고 있습니다.",
+                      "point": "기관 및 외국인의 대규모 양방향 순매수 유입세가 뚜렷하여 다음 주 초반까지 시세 연속성 기대감이 높습니다."},
+            "pick2": {"label": "📈 테마 순환매 수혜", "name": pick_2,
+                      "bg": "바닥권 다지기 이후 거래량이 눈에 띄게 증가하며 기술적 추세 전환의 신호탄을 쏘아 올렸습니다.",
+                      "point": "기존 주도주 섹터의 차익 실현 자금이 유입되는 국면이므로, 단기 순환매 랠리를 활용한 트레이딩이 유효합니다."},
+            "pick3": {"label": "🛡️ 리스크 헤지형", "name": pick_3,
+                      "bg": "매크로 불확실성 및 글로벌 지수 변동성 확대 국면에서도 탄탄한 펀더멘탈로 방어력을 입증했습니다.",
+                      "point": "시장 전반의 지수 조정 리스크에 대응하여 내 포트폴리오의 변동성을 낮추고 안정적인 안전판 역할을 하기에 적합합니다."}
+        }
+
+        # PDF 연동을 위해 session_state에 실시간 저장
+        st.session_state['gemini_picks'] = {
+            "pick1": {"label": "🌟 주도주 모멘텀", "name": pick_1,
+                      "bg": pick_analysis['pick1']['bg'], "point": pick_analysis['pick1']['point']},
+            "pick2": {"label": "📈 테마 순환매 수혜", "name": pick_2,
+                      "bg": pick_analysis['pick2']['bg'], "point": pick_analysis['pick2']['point']},
+            "pick3": {"label": "🛡️ 리스크 헤지형", "name": pick_3,
+                      "bg": pick_analysis['pick3']['bg'], "point": pick_analysis['pick3']['point']}
+        }
 
 # 대시보드 연동 실행
 render_section_4()
@@ -1362,6 +1436,36 @@ with st.container(border=True):
                 sign_str = "" if "-" in clean_dt_str else "+"
                 theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{clean_dt_str}%</td></tr>"
 
+        # ↓↓↓ 아래 코드를 theme_return_html 처리 블록 바로 뒤에 추가
+        # ----------------------------------------------------------------------
+        # 🤖 SECTION 4-PICK. 다음주 주목할 ETF (Gemini's Pick) PDF 렌더링
+        # ----------------------------------------------------------------------
+        picks = st.session_state.get('gemini_picks', {})
+
+        def _pick_box(label, name, bg, point, accent):
+            return f"""
+            <div style="flex:1; border:2px solid {accent}; border-radius:8px; padding:4mm; background-color:#FAFAFA; min-width:0;">
+                <div style="font-weight:bold; color:{accent}; font-size:9.5pt; margin-bottom:1.5mm;">{label}</div>
+                <div style="font-size:10pt; font-weight:bold; color:#1E3A8A; margin-bottom:3mm; border-bottom:1px solid #E5E7EB; padding-bottom:2mm;">{name}</div>
+                <div style="font-size:8pt; color:#374151; margin-bottom:1.5mm;"><b>▪ 선정 배경:</b> {bg}</div>
+                <div style="font-size:8pt; color:#374151;"><b>▪ 투자 포인트:</b> {point}</div>
+            </div>
+            """
+
+        if picks:
+            p1 = picks.get('pick1', {})
+            p2 = picks.get('pick2', {})
+            p3 = picks.get('pick3', {})
+            gemini_pick_html = f"""
+            <div style="display:flex; gap:4mm; margin-top:2mm;">
+                {_pick_box(p1.get('label','🌟 주도주 모멘텀'), p1.get('name','—'), p1.get('bg',''), p1.get('point',''), '#1D4ED8')}
+                {_pick_box(p2.get('label','📈 테마 순환매 수혜'), p2.get('name','—'), p2.get('bg',''), p2.get('point',''), '#047857')}
+                {_pick_box(p3.get('label','🛡️ 리스크 헤지형'), p3.get('name','—'), p3.get('bg',''), p3.get('point',''), '#B45309')}
+            </div>
+            """
+        else:
+            gemini_pick_html = "<p style='color:#9CA3AF; font-size:8pt;'>Section 4 수익률 데이터 로드 후 자동 반영됩니다.</p>"
+
         # ----------------------------------------------------------------------
         # 📱 SECTION 5. 마케팅 뉴스 리스트 & 데이터랩 박스 차트 (완벽 동기화 버전)
         # ----------------------------------------------------------------------
@@ -1640,6 +1744,10 @@ with st.container(border=True):
                         </td>
                     </tr>
                 </table>
+                    <div style="margin-top:4mm;">
+                    <div class="content-title">🤖 다음주 주목할 ETF 리스트 (Gemini's Pick)</div>
+                    {gemini_pick_html}
+                </div>
             </div>
 
             <div class="section-container">
