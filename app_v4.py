@@ -1395,22 +1395,33 @@ with st.container(border=True):
             except: 
                 pass
 
-        if not theme_return_html or theme_return_html.count("0.0%") > 2:
-            theme_return_html = ""
-            default_themes = [("반도체/AI 혁신 테마", "4.85"), ("미국 빅테크&소프트웨어", "4.12"), ("바이오/헬스케어 대형주", "2.10"), ("2차전지 대형주", "-3.20")]
-            for t_name, t_val in default_themes:
-                color_str = "#1E40AF" if "-" in t_val else "#B91C1C"
-                sign_str = "" if "-" in t_val else "+"
-                theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{t_val}%</td></tr>"
-            except: pass
+        # 3. 우측 테마별 평균 수익률 구역 (실시간 데이터 연동 및 try-except 마감)
+        theme_return_html = ""
+        target_theme_df = st.session_state.get('df_theme_returns', None)
+        
+        if target_theme_df is not None and not target_theme_df.empty:
+            try:
+                for idx, row in target_theme_df.reset_index().iterrows():
+                    t_name = row.get('테마명', row.get('시장핵심테마', '핵심섹터'))
+                    t_val = row.get('주간수익률(%)', row.get('주간수익률', row.get('평균수익률', 0.0)))
+                    
+                    # 기호 오염 방지 정제
+                    clean_t_str = str(t_val).replace('+-', '-').replace('+', '').strip()
+                    color_str = "#1E40AF" if "-" in clean_t_str else "#B91C1C"
+                    sign_str = "" if "-" in clean_t_str else "+"
+                    theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{clean_t_str if '%' in clean_t_str else clean_t_str + '%'}</td></tr>"
+            except: 
+                pass # 💡 실시간 데이터를 처리하는 try 블록의 올바른 짝입니다.
 
+        # 4. 💡 [중요] 테마 백업용 구역 (try-except 완전히 바깥으로 격리 및 중복 제거)
         if not theme_return_html or theme_return_html.count("0.0%") > 2:
             theme_return_html = ""
             default_themes = [("반도체/AI 혁신 테마", "4.85"), ("미국 빅테크&소프트웨어", "4.12"), ("바이오/헬스케어 대형주", "2.10"), ("2차전지 대형주", "-3.20")]
             for t_name, t_val in default_themes:
-                color_str = "#1E40AF" if "-" in t_val else "#B91C1C"
-                sign_str = "" if "-" in t_val else "+"
-                theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{t_val}%</td></tr>"
+                clean_dt_str = str(t_val).replace('+-', '-').replace('+', '').strip()
+                color_str = "#1E40AF" if "-" in clean_dt_str else "#B91C1C"
+                sign_str = "" if "-" in clean_dt_str else "+"
+                theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{clean_dt_str}%</td></tr>"
 
         # ----------------------------------------------------------------------
         # 📱 SECTION 5. 마케팅 뉴스 리스트 & 데이터랩 박스 차트 (완벽 동기화 버전)
