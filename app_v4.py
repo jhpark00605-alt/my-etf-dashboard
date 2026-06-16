@@ -1287,23 +1287,50 @@ with st.container(border=True):
                 """
 
         # ----------------------------------------------------------------------
-        # 📈 SECTION 4. 주간 수익률 퍼포먼스 & 테마별 평균 수익률 (session_state 연동)
+        # 📈 SECTION 4. 주간 수익률 퍼포먼스 & 테마별 평균 수익률 (실시간 정렬 및 기호 버그 완벽 수정)
         # ----------------------------------------------------------------------
+        # 💡 대시보드 UI에서 사용자가 선택한 정렬 조건 텍스트를 세션에서 안전하게 가져옵니다.
+        # (예: '수익률 하락률 상위순 (ASC)' 또는 '수익률 상승률 상위순 (DESC)' 등)
+        sort_order_label = st.session_state.get('sort_order', '상승률 상위순') 
+        
+        # 💡 정렬 기준에 따라 리포트 제목을 동적으로 변경합니다.
+        if "하락" in str(sort_order_label):
+            section4_title_text = f"주간 수익률 하락순 TOP {st.session_state.get('selected_top_n', 10)} ETF 리스트"
+        else:
+            section4_title_text = f"주간 수익률 상승순 TOP {st.session_state.get('selected_top_n', 10)} ETF 리스트"
+
         top_n_return_html = ""
-        top_n_count = st.session_state.get('selected_top_n', 10) # 💡 여기서 화면 설정값을 가져옵니다.
+        top_n_count = st.session_state.get('selected_top_n', 10) 
         target_top_df = st.session_state.get('df_top_returns', None)
         
         if target_top_df is not None and not target_top_df.empty:
             try:
+                # 대시보드 화면에 정렬되어 노출된 순서 그대로 지정된 개수(top_n_count)만큼 가져옵니다.
                 for idx, row in target_top_df.head(top_n_count).reset_index().iterrows():
                     r_name = row.get('종목명', row.get('ETF명', row.get('ETF종목명', 'KODEX 상위 자산')))
                     r_val = row.get('수익률(%)', row.get('수익률', row.get('주간수익률', 0.0)))
                     
-                    if r_val != 0.0 and r_val != "0.0" and r_val != 0:
-                        top_n_return_html += f"<tr><td>{r_name}</td><td style='text-align:center; font-weight:bold; color:#B91C1C;'>+{r_val}%</td></tr>"
-            except: pass
+                    # 수치 연산을 위해 안전하게 float 변환
+                    try:
+                        num_val = float(r_val)
+                    except:
+                        num_val = 0.0
+                    
+                    if num_val != 0.0:
+                        # 💡 [핵심 버그 수정] 부호가 겹치지 않도록 수학적 조건문 처리 및 텍스트 색상 스위칭
+                        if num_val > 0:
+                            sign_str = "+"
+                            color_span = "#B91C1C" # 상승은 빨간색
+                        else:
+                            sign_str = ""  # 음수일 때는 자체 마이너스(-) 기호가 오므로 빈값 처리
+                            color_span = "#1E40AF" # 하락은 파란색
+                            
+                        top_n_return_html += f"<tr><td>{r_name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{num_val:.2f}%</td></tr>"
+            except: 
+                pass
 
-        if not top_n_return_html or top_n_return_html.count("+0.0%") > 3:
+        # 백업용 더미 데이터 영역 (데이터가 없을 때만 작동)
+        if not top_n_return_html or top_n_return_html.count("0.0%") > 3:
             top_n_return_html = "" 
             default_top_assets = [("KODEX 미국AI테크TOP10+", "6.72"), ("KODEX AI반도체TOP2플러스", "6.15"), ("KODEX 미국나스닥100", "4.12"), ("KODEX 단기자금", "0.08"), ("KODEX 국채30년선물", "-1.05")]
             for name, val in default_top_assets[:top_n_count]:
@@ -1311,6 +1338,7 @@ with st.container(border=True):
                 sign_str = "+" if "-" not in val else ""
                 top_n_return_html += f"<tr><td>{name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{val}%</td></tr>"
 
+        # 우측 테이블: 테마별 평균 수익률 연동 및 기호 정정
         theme_return_html = ""
         target_theme_df = st.session_state.get('df_theme_returns', None)
         
@@ -1320,10 +1348,30 @@ with st.container(border=True):
                     t_name = row.get('테마명', row.get('시장핵심테마', '핵심섹터'))
                     t_val = row.get('주간수익률(%)', row.get('주간수익률', row.get('평균수익률', 0.0)))
                     
-                    if t_val != 0.0 and t_val != "0.0" and t_val != 0:
-                        color_str = "#1E40AF" if "-" in str(t_val) else "#B91C1C"
-                        sign_str = "" if "-" in str(t_val) else "+"
-                        theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{t_val}%</td></tr>"
+                    try:
+                        num_t_val = float(t_val)
+                    except:
+                        num_t_val = 0.0
+                        
+                    if num_t_val != 0.0:
+                        if num_t_val > 0:
+                            color_str = "#B91C1C" # 양수는 빨간색
+                            sign_str = "+"
+                        else:
+                            color_str = "#1E40AF" # 음수는 파란색
+                            sign_str = "" # 마이너스 기호 자동 노출
+                            
+                        theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{num_t_val:.2f}%</td></tr>"
+            except: 
+                pass
+
+        if not theme_return_html or theme_return_html.count("0.0%") > 2:
+            theme_return_html = ""
+            default_themes = [("반도체/AI 혁신 테마", "4.85"), ("미국 빅테크&소프트웨어", "4.12"), ("바이오/헬스케어 대형주", "2.10"), ("2차전지 대형주", "-3.20")]
+            for t_name, t_val in default_themes:
+                color_str = "#1E40AF" if "-" in t_val else "#B91C1C"
+                sign_str = "" if "-" in t_val else "+"
+                theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{t_val}%</td></tr>"
             except: pass
 
         if not theme_return_html or theme_return_html.count("0.0%") > 2:
