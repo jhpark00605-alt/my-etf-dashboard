@@ -811,7 +811,7 @@ def render_section_4():
         # --------------------------------------------------------
         # 이 container 내부에 [숨김대상] 텍스트를 심어두어, Playwright가 PDF를 캡처할 때 인풋 박스들을 통째로 지우게 만듭니다.
         with st.container():
-            st.markdown("#### [숨김대상] 대시보드 조건 설정")
+            st.markdown("####대시보드 조건 설정")
             col_ctrl1, col_ctrl2 = st.columns(2)
             with col_ctrl1:
                 top_n = st.number_input("조회할 TOP N 개수 선택", min_value=3, max_value=20, value=10, step=1)
