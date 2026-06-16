@@ -1151,6 +1151,9 @@ with st.container(border=True):
         with st.container(border=True):
             st.markdown("### 🌏 **핵심 전략 03**")
             st.write(final_insights[2])
+            
+            # 💡 [여기에 추가!] 화면에 뜬 최종 전략 3가지를 문자열로 묶어서 세션에 저장합니다.
+    st.session_state['final_insight'] = "\n\n".join(final_insights)
 
 # ==============================================================================
 # 📥 [부록] 원클릭 PDF 리포트 자동 생성 및 다운로드 기능 (실시간 데이터셋 완벽 동기화 버전)
@@ -1332,61 +1335,59 @@ with st.container(border=True):
         # 📱 SECTION 5. 마케팅 뉴스 리스트 & 데이터랩 박스 차트 (session_state 연동)
         # ----------------------------------------------------------------------
         
-        # 💡 [핵심] 대시보드 화면(UI)에서 저장했던 AI 분석 텍스트를 정확한 변수명으로 가져옵니다.
-        marketing_news_text = st.session_state.get('news_res', "마케팅 뉴스 분석 데이터 대기중...")
+        # 💡 [핵심] 이제 UI에서 저장한 AI 분석 문장 3가지를 줄바꿈 단위로 정확히 가져옵니다.
         ai_insight_text = st.session_state.get('final_insight', "AI 종합 인사이트 분석 데이터 대기중...")
+        
+        # 만약 텍스트 형태 그대로 들어온다면 PDF 가독성을 위해 <br/> 태그로 변환해 줍니다.
+        ai_insight_html = ai_insight_text.replace("\n", "<br/>")
 
-        # 1. 뉴스 원문 리스트 출력 (개수 제한 없이 전부 출력)
+        # 1. 뉴스 원문 리스트 출력 (g_news_titles 연동)
         kodex_press_dynamic_html = ""
         kodex_list = st.session_state.get('g_news_titles', [])
         
         if kodex_list:
             for item in kodex_list:
-                # 에이전트에 있는 뉴스 제목들만 가져와서 리스트(li) 태그로 하나씩 예쁘게 그립니다.
                 kodex_press_dynamic_html += f"<li style='margin-bottom:1.5mm;'>{item}</li>"
         else:
-            # 연동 실패 시 기본값 (안전망)
             kodex_press_dynamic_html = """
-            <li style="margin-bottom:1.5mm;">🚀 <b>AI 및 반도체 라인업 화력 집중:</b> 상장 및 순자산 돌파 보도가 40% 이상을 차지합니다.</li>
-            <li style="margin-bottom:1.5mm;">💰 <b>월배당 및 절세(ISA) 마케팅:</b> 커버드콜 상품의 분배금 지급 현황이 집중 조명되고 있습니다.</li>
-            <li style="margin-bottom:1.5mm;">🌐 <b>글로벌 신흥국 테마 다각화:</b> 인도 비즈니스 및 인프라 테마 ETF 시리즈 자금 유입세가 뚜렷합니다.</li>
+            <li style="margin-bottom:1.5mm;">🚀 <b>AI 및 반도체 라인업 화력 집중:</b> 상장 및 순자산 돌파 보도가 지속되고 있습니다.</li>
+            <li style="margin-bottom:1.5mm;">💰 <b>월배당 및 절세(ISA) 마케팅:</b> 커버드콜 상품의 분배금 지급 현황이 주목받고 있습니다.</li>
             """
 
-        # 2. 네이버 데이터랩 출력 (과거의 깔끔한 가로형 디자인 복원)
+        # 2. 네이버 데이터랩 출력 (image_598cda.png의 가로형 박스 완벽 복원)
         datalab_box_chart_html = ""
         target_dl_df = st.session_state.get('df_sns', None)
 
         if target_dl_df is not None and not target_dl_df.empty:
             try:
                 for idx, row in target_dl_df.iterrows():
-                    # 💡 컬럼명 상관없이 무조건 위치(0번째, 1번째)로 가져와서 에러 차단!
+                    # 💡 인덱스 위치(iloc) 기반으로 접근하여 컬럼명 에러 완벽 차단!
                     date_val = str(row.iloc[0]) 
                     c_val = float(row.iloc[1])
                     
                     b_cnt = max(1, min(10, round((c_val / 100.0) * 10)))
                     pink_bars = "■" * b_cnt
                     
-                    # 예전의 가로 꽉 차는 깔끔한 핑크색 박스 스타일 적용
+                    # 렌더링 확인: 요청하신 가로 100% 꽉 차는 박스 스타일 복원
                     datalab_box_chart_html += f"""
                     <div style='border: 1px solid #FECACA; background-color: #FEF2F2; padding: 2.5mm; margin-bottom: 1.5mm; border-radius: 4px; display: block;'>
                         <span style='font-weight: bold; color: #1F2937; font-size: 8.5pt;'>{date_val}</span> 
                         <span style='color: #DC2626; font-weight: bold; font-size: 8.5pt;'>[{c_val:,.1f}]</span>
-                        <span style='color: #F43F5E; font-size: 9pt; letter-spacing: 1mm; margin-left: 2mm;'>{pink_bars}</span>
+                        <span style='color: #F43F5E; font-size: 9pt; letter-spacing: 0.8mm; margin-left: 2mm;'>{pink_bars}</span>
                     </div>
                     """
             except Exception as e:
                 pass
                 
         if not datalab_box_chart_html:
-            # 연동 실패 시 띄워주는 예비용 데이터
-            sample_dl = [("06월 07일", 81.0, 8), ("06월 08일", 80.0, 8), ("06월 09일", 75.0, 7)]
+            # 연동 실패 시 안전망용 백업 데이터
+            sample_dl = [("06월 14일", 58.0, 6), ("06월 15일", 45.0, 4), ("06월 16일", 83.0, 8)]
             for d_date, d_val, d_bar in sample_dl:
                 datalab_box_chart_html += f"""
-                <div style='border: 1px solid #FEB2B2; background-color: #FFF5F5; padding: 2mm; margin-bottom: 1.5mm; border-radius: 4px; display: inline-block; width: 31%; margin-right: 1%;'>
-                    <span style='font-weight: bold; color: #4B5563; font-size: 8.5pt;'>{d_date}</span> 
+                <div style='border: 1px solid #FECACA; background-color: #FEF2F2; padding: 2.5mm; margin-bottom: 1.5mm; border-radius: 4px; display: block;'>
+                    <span style='font-weight: bold; color: #1F2937; font-size: 8.5pt;'>{d_date}</span> 
                     <span style='color: #DC2626; font-weight: bold; font-size: 8.5pt;'>[{d_val}]</span>
-                    <br/>
-                    <span style='color: #F43F5E; font-size: 9pt; letter-spacing: 0.5mm;'>{"■"*d_bar}</span>
+                    <span style='color: #F43F5E; font-size: 9pt; letter-spacing: 0.8mm; margin-left: 2mm;'>{"■"*d_bar}</span>
                 </div>
                 """
         # ----------------------------------------------------------------------
