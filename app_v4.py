@@ -1752,19 +1752,19 @@ with st.container(border=True):
 """
 
     # ----------------------------------------------------------------------
-    # 📑 [파이썬 전용 구역] 함수 내부에 명확하게 종속되도록 들여쓰기 공백을 고정했습니다.
+    # 📑 [파이썬 전용 구역] 함수 규격(공백 4칸)에 맞추어 완벽하게 수평 정렬되었습니다.
     # ----------------------------------------------------------------------
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
     
     if pisa_status.err:
         return None
-    
+        
     pdf_buffer.seek(0)
     return pdf_buffer.getvalue()
 
 # ----------------------------------------------------------------------
-# 📥 Streamlit UI 렌더링 구역 (함수 바깥 공간)
+# 📥 Streamlit UI 렌더링 구역 (함수 정의가 완전히 종료된 외부 공간)
 # ----------------------------------------------------------------------
 try:
     pdf_data = generate_pdf_report()
