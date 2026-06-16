@@ -633,9 +633,10 @@ with st.container(border=True):
             
             # 셀렉트 박스 필터 영역
             sub_c1, sub_c2, sub_c3 = st.columns(3)
-            with sub_c1: prev_week = st.selectbox("1주차 (전주)", weeks, index=0)
-            with sub_c2: curr_week = st.selectbox("2주차 (금주)", weeks, index=min(1, len(weeks)-1))
-            with sub_c3: target_investor = st.selectbox("분석 타겟", ['개인', '기관', '외국인', '투신'], index=0)
+            with sub_c1: prev_week = st.selectbox("1주차 (전주)", weeks, index=0, key="week1_option")
+            with sub_c2: curr_week = st.selectbox("2주차 (금주)", weeks, index=min(1, len(weeks)-1), key="week2_option")
+            with sub_c3: target_investor = st.selectbox("분석 타겟", ['개인', '기관', '외국인', '투신'], index=0, key="target_agent_option")
+
             
             df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
             df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
