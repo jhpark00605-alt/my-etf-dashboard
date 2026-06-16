@@ -1503,6 +1503,16 @@ with st.container(border=True):
         # ----------------------------------------------------------------------
         # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
         # ----------------------------------------------------------------------
+        # ----------------------------------------------------------------------
+        # 🕒 [시간 설정 추가] 서버 시간을 한국 표준시(KST, UTC+9)로 보정합니다.
+        # ----------------------------------------------------------------------
+        from datetime import datetime, timedelta
+        kst_now = datetime.utcnow() + timedelta(hours=9)
+        current_date_str = kst_now.strftime('%Y-%m-%d %H:%M:%S')
+
+        # ----------------------------------------------------------------------
+        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
+        # ----------------------------------------------------------------------
         html_string = f"""
         <html>
         <head>
@@ -1530,9 +1540,10 @@ with st.container(border=True):
         </head>
         <body>
             <div class="header-container">
-                <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
-                <div class="doc-meta">발행기준시점: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 작성주체: AI 자동 분석 컴파일러</div>
+                <div class="doc-title">📊 KODEX ETF 시장 종합 분석 리포트</div>
+                <div class="doc-meta">발행기준시점: {current_date_str} | 작성주체: AI 자동 분석 컴파일러</div>
             </div>
+"""
             
             <div class="section-container">
                 <div class="section-title">🎯 Section 1. 시장 트렌드 & 실시간 뉴스 키워드 빈도</div>
@@ -1540,7 +1551,7 @@ with st.container(border=True):
                 <p style="margin: 0.5mm 0;">• <span class="badge-down">📉 하락/정체 테마:</span> {falling_theme}</p>
                 <p style="margin: 0.5mm 0;">• <b>🧭 관심 자산군 변화 추이:</b> {trend_text}</p>
                 
-                <div class="content-title">[실시간 뉴스 핵심 키워드 언급 강도 인디케이터]</div>
+                <div class="content-title">[실시간 뉴스 핵심 키워드 검색량]</div>
                 <table>
                     <thead>
                         <tr>
