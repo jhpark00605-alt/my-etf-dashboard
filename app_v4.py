@@ -1290,7 +1290,8 @@ with st.container(border=True):
         # 📈 SECTION 4. 주간 수익률 퍼포먼스 & 테마별 평균 수익률 (session_state 연동)
         # ----------------------------------------------------------------------
         top_n_return_html = ""
-        top_n_count = st.session_state.get('selected_top_n', 10) 
+        top_n_count = st.session_state.get('selected_top_n', 10)
+        section4_title_text = f"주간 KODEX ETF 수익률 상위 TOP {top_n_count}"  # ← 이 줄 추가
         target_top_df = st.session_state.get('df_top_returns', None)
         
         # 1. 실제 대시보드 데이터 연동부
