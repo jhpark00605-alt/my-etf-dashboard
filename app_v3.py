@@ -628,21 +628,39 @@ with st.container(border=True):
     
     if uploaded_file is not None:
         try:
+            # 1. 엑셀 파일 로드 및 시트 추출
             xls = pd.ExcelFile(uploaded_file)
             weeks = [s for s in xls.sheet_names if s != '참고사항']
             
-            # 셀렉트 박스 필터 영역
-            sub_c1, sub_c2, sub_c3 = st.columns(3)
-            with sub_c1: prev_week = st.selectbox("1주차 (전주)", weeks, index=0, key="week1_option")
-            with sub_c2: curr_week = st.selectbox("2주차 (금주)", weeks, index=min(1, len(weeks)-1), key="week2_option")
-            with sub_c3: target_investor = st.selectbox("분석 타겟", ['개인', '기관', '외국인', '투신'], index=0, key="target_agent_option")
+            # 💡 [UI 정제] '전주' 셀렉트 박스를 삭제하고 2열 구조로 더 넓게 배치합니다.
+            sub_c1, sub_c2 = st.columns(2)
+            with sub_c1: 
+                curr_week = st.selectbox("📅 분석 기간 (금주)", weeks, index=min(1, len(weeks)-1), key="week2_option")
+            with sub_c2: 
+                investor_opts = ['개인', '기관', '외국인', '투신', '은행', '금융투자', '연기금 등']
+                target_investor = st.selectbox("👥 분석 타겟", investor_opts, index=0, key="target_agent_option")
 
-            
+            # 💡 [엔진 고도화] 사용자가 선택한 금주 시트의 위치를 찾아 '바로 전주 시트'를 자동으로 판단합니다.
+            curr_index = weeks.index(curr_week)
+            if curr_index == 0:
+                # 만약 사용자가 맨 첫 번째 시트를 골랐다면, 전주 데이터가 없으므로 자기 자신을 바라보거나 경고를 띄웁니다.
+                prev_week = weeks[0]
+                st.warning("⚠️ 선택하신 주차가 파일의 첫 번째 데이터입니다. 전주 역산 추정 시 기준점이 현재 주차와 동일하게 처리됩니다.")
+            else:
+                # 정상적인 경우 바로 앞 순서(index - 1)의 시트명을 전주로 자동 지정합니다.
+                prev_week = weeks[curr_index - 1]
+
+            # 2. 전주 및 금주 데이터 로드
             df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
             df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
             
+            # '전체' 행 및 결측치 제외
             df_prev = df_prev[(df_prev['종목명'] != '전체') & (df_prev['종목명'].notna())]
             df_curr = df_curr[(df_curr['종목명'] != '전체') & (df_curr['종목명'].notna())]
+            
+            # 3. 네이버 금융 실시간 ETF 전종목 마스터 로드 (현재 시점의 실시간 자산 수급)
+            status_aum = st.empty()
+            status_aum.text(f"🌐 [최종 엔진] 네이버 AUM 동기화 및 {prev_week}차 자산 자동 역산 중...")
             
             naver_url = "https://finance.naver.com/api/sise/etfItemList.nhn"
             req = urllib.request.Request(naver_url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -650,42 +668,101 @@ with st.container(border=True):
                 res_json = json.loads(response.read().decode('cp949', errors='ignore'))
                 etf_items = res_json.get('result', {}).get('etfItemList', [])
             
+            # 네이버 마스터 DB 구축 (매칭키 청소)
             naver_data = []
             for item in etf_items:
                 naver_data.append({
                     '💡매칭키': re.sub(r'[^가-힣A-Za-z0-9]', '', str(item.get('itemname',''))).upper(),
-                    '자산': float(item.get('amount', 0)) if item.get('amount') else 800.0
+                    '종목코드': str(item.get('itemcode', '')).strip(),
+                    '네이버실제자산(억원)': float(item.get('amount', 0)) if item.get('amount') else 0.0
                 })
             df_naver = pd.DataFrame(naver_data).drop_duplicates(subset=['💡매칭키'])
             
-            df_curr['💡매칭키'] = df_curr['종목명'].astype(str).apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
-            df_curr[target_investor] = pd.to_numeric(df_curr[target_investor].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            # 4. 엑셀 데이터 숫자 정제 및 매칭키 빌드
+            scale_factor = 100_000.0  # 천원 단위 -> 억원 단위 변환 스케일 팩터
+            investor_cols = ['기관', '외국인', '개인', '금융투자', '보험', '투신', '사모', '은행', '연기금 등']
             
-            m_df = pd.merge(df_curr, df_naver, on='💡매칭키', how='inner')
-            m_df['정제순매수(억원)'] = m_df[target_investor] / 100000.0
-            m_df['매수강도'] = (m_df['정제순매수(억원)'] / m_df['자산']) * 100
+            for df_target in [df_prev, df_curr]:
+                df_target['종목명_정제'] = df_target['종목명'].astype(str).str.strip()
+                df_target['💡매칭키'] = df_target['종목명_정제'].apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
+                
+                # 가용한 모든 투자자 컬럼의 콤마 제거 및 수치화
+                available_cols = [c for c in investor_cols if c in df_target.columns]
+                for col in available_cols:
+                    df_target[col] = df_target[col].astype(str).str.replace(',', '').str.strip()
+                    df_target[col] = pd.to_numeric(df_target[col], errors='coerce').fillna(0)
             
-            # 🚨 원본: res_df = m_df.sort_values(by='매수강도', ascending=False).head(15)
-            # 👇 아래처럼 수정합니다. (.head(15) 삭제 및 세션 저장 코드 추가)
-            res_df = m_df.sort_values(by='매수강도', ascending=False)
+            # 전주 기준의 자산을 구하기 위해, 금주 전체 투자자의 총 순매수액 계산
+            df_curr['금주_총순매수(억원)'] = df_curr[available_cols].sum(axis=1) / scale_factor
             
-            # [핵심] 바로 이곳에 추가합니다! PDF로 'res_df' 전체 데이터를 무사히 넘겨줍니다.
+            # 5. 전주 데이터와 금주 데이터 1차 병합
+            merged_df = pd.merge(
+                df_prev[['💡매칭키', '종목명_정제', target_investor]], 
+                df_curr[['💡매칭키', target_investor, '금주_총순매수(억원)']], 
+                on='💡매칭키', 
+                suffixes=('_전주', '_금주')
+            )
+            
+            # 6. 네이버 실시간 실제 자산 결합 및 텍스트 2차 포함 검증 매칭 보정
+            final_df = pd.merge(merged_df, df_naver, on='💡매칭키', how='left')
+            
+            for idx, row in final_df.iterrows():
+                if pd.isna(row['네이버실제자산(억원)']) or row['네이버실제자산(억원)'] == 0:
+                    ex_key = str(row['💡매칭키'])
+                    if ex_key:
+                        match_sub = df_naver[df_naver['💡매칭키'].apply(lambda x: ex_key in str(x) or str(x) in ex_key)]
+                        if not match_sub.empty:
+                            final_df.at[idx, '네이버실제자산(억원)'] = match_sub['네이버실제자산(억원)'].values[0]
+            
+            final_df['네이버실제자산(억원)'] = final_df['네이버실제자산(억원)'].fillna(0)
+            
+            # 7. [공식 공식 교정] 전주 기준 추정 순자산 역산
+            final_df['전주_추정순자산(억원)'] = final_df['네이버실제자산(억원)'] - final_df['금주_총순매수(억원)']
+            
+            # 왜곡 방지 장치 (분모가 0이 되거나 너무 작아져 강도가 폭등하는 버그 차단)
+            final_df['전주_추정순자산(억원)'] = np.where(
+                final_df['전주_추정순자산(억원)'] < 50.0, 
+                np.where(final_df['네이버실제자산(억원)'] > 50.0, final_df['네이버실제자산(억원)'], 800.0), 
+                final_df['전주_추정순자산(억원)']
+            )
+            
+            status_aum.empty()  # 로딩 메시지 제거
+            
+            # 8. 타겟 투자자의 금주 순매수액 및 최종 순매수 강도 계산
+            final_df['정제된_금주순매수(억원)'] = final_df[f'{target_investor}_금주'] / scale_factor
+            final_df['매수강도'] = (final_df['정제된_금주순매수(억원)'] / final_df['전주_추정순자산(억원)']) * 100
+            
+            # 데이터 정렬 및 세션 저장 (전체 데이터 PDF 연동용)
+            res_df = final_df.sort_values(by='매수강도', ascending=False)
             st.session_state['res_df'] = res_df 
             
-            top_bought_etfs = ", ".join(res_df['종목명'].head(5).tolist())
-            
+            # 글로벌 컨텍스트 빌드
+            top_bought_etfs = ", ".join(res_df['종목명_정제'].head(5).tolist())
             if "global_context" not in st.session_state:
                 st.session_state.global_context = ""
-            st.session_state.global_context += f"[엑셀 순매수 강도 분석 결과]\n타겟 투자자 {target_investor}가 현재 가장 강하게 순매수 중인 자산 리스트: {top_bought_etfs}\n\n"
+            st.session_state.global_context += f"[엑셀 순매수 강도 분석 결과]\n타겟 투자자 {target_investor}가 {prev_week}차 AUM 대비 {curr_week}차에 가장 강하게 순매수 중인 자산 리스트: {top_bought_etfs}\n\n"
             
-            # 🚨 차트는 너무 많으면 깨질 수 있으니 화면(에이전트)에 그릴 때만 15개로 컷 해줍니다.
+            # 9. 화면 시각화 출력 (상위 15개 제한)
             display_df = res_df.head(15) 
             
-            # 가로 전체를 활용하여 더 크고 가독성 좋게 시각화 차트를 그립니다.
-            fig = px.bar(display_df, x='종목명', y='매수강도', color='매수강도', color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 리포트")
+            st.markdown(f"### 🏆 {curr_week} 주차 순매수 강도 TOP 15 리포트")
+            st.caption(f"公式: [금주({curr_week}) {target_investor} 순매수액(억원)] ÷ [시스템 자동추적 전주({prev_week}) 기준 순자산(억원)] × 100 (%)")
+            
+            # 와이드 스크린 전용 차트 생성
+            fig = px.bar(display_df, x='종목명_정제', y='매수강도', color='매수강도', text_auto='.2f',
+                         color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 (자동추적 전주 AUM 대비)",
+                         labels={"매수강도": "순매수 강도 (%)", "종목명_정제": "종목명"})
             st.plotly_chart(fig, use_container_width=True)
             
-            st.dataframe(res_df[['종목명', '자산', '정제순매수(억원)', '매수강도']], use_container_width=True, hide_index=True)
+            # 전체 결과 데이터프레임 노출 (와이드 버전 가독성 포맷팅)
+            df_display = res_df[['종목명_정제', '전주_추정순자산(억원)', '정제된_금주순매수(억원)', '매수강도']].copy()
+            df_display.columns = ['종목명', f'{prev_week} 기준 순자산(억원)', f'{curr_week} {target_investor} 순매수(억원)', '순매수 강도 (%)']
+            
+            st.dataframe(df_display.style.format({
+                f'{prev_week} 기준 순자산(억원)': '{:,.1f}',
+                f'{curr_week} {target_investor} 순매수(억원)': '{:,.1f}',
+                '순매수 강도 (%)': '{:.3f}'
+            }), use_container_width=True, hide_index=True)
             
         except Exception as e:
             st.error(f"데이터 연산 처리 중 에러 발생: {e}")
