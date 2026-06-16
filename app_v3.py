@@ -1502,11 +1502,13 @@ with st.container(border=True):
         top_n_return_html = ""
         top_n_count = st.session_state.get('selected_top_n', 10)
         
-        # 💡 [여기서부터] 화면에서 선택한 기간(1일, 1개월, 3개월 등)을 동적으로 가져옵니다.
-        chosen_period_label = st.session_state.get('chosen_period_text', '1주 (기본)')
-        section4_title_text = f"🏆 선택 기간({chosen_period_label}) KODEX ETF 수익률 상위 TOP {top_n_count}"
-        theme_return_title = f"🗂️ 선택 기간({chosen_period_label}) 주요 테마별 평균 수익률 현황"
-        # 💡 [여기까지 덮어쓰기 하시면 됩니다]
+        # 💡 세션에서 기간(예: 1주 (기본), 1개월 등)을 읽어온 뒤 뒤의 괄호 찌꺼기나 설명을 떼고 깔끔하게 만듭니다.
+        raw_period = st.session_state.get('chosen_period_text', '1주')
+        chosen_period_label = raw_period.split(" ")[0]  # "1주 (기본)" -> "1주", "1일 (전영업일)" -> "1일"
+        
+        # ⭕ 요청하신 대로 "X개월 주요 테마별 평균 수익률 현황" 규격으로 제목을 정의합니다!
+        section4_title_text = f"{chosen_period_label} KODEX ETF 수익률 상위 TOP {top_n_count}"
+        theme_return_title = f"{chosen_period_label} 주요 테마별 평균 수익률 현황"
         
         target_top_df = st.session_state.get('df_top_returns', None)
         
