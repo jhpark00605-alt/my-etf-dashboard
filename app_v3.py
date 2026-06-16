@@ -873,19 +873,70 @@ def get_weekly_rate_top(rank_cd="DESC"):
     return df[available_cols]
 
 def get_theme_rate():
-    """테마별 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
-    df = fetch_data(f"{BASE}/theme/list", {"page": 0, "size": 30}, "테마별 수익률")
+    """
+    [자체 연산 엔진 업그레이드]
+    외부 테마 API 의존을 제거하고, 수집된 주간 수익률 TOP 50 데이터를 기반으로
+    ETF 상품명을 분석하여 테마를 실시간 분류 및 평균 수익률을 산출합니다.
+    """
+    # 1. 상위 수익률 50개 마스터 데이터를 가져와 분석 소스로 활용
+    df_src = get_weekly_rate_top("DESC")
     
-    if df.empty or "themeNm" not in df.columns:
+    # 만약 데이터 수집에 완전히 실패한 경우, 최소한의 빈 데이터 프레임 구조 반환
+    if df_src.empty or "ETF명" not in df_src.columns or "수익률(%)" not in df_src.columns:
         return pd.DataFrame({
             "테마명": ["반도체/AI 혁신", "미국 빅테크&소프트웨어", "바이오/헬스케어", "조선/방산 중공업", "글로벌 금리형/채권", "2차전지/핵심소재"],
-            "주간수익률(%)": [5.42, 4.12, 3.81, 1.95, 0.08, -2.15]
+            "주간수익률(%)": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         })
     
-    df = df.rename(columns={"themeNm": "테마명", "suikRt": "주간수익률(%)"})
-    df["주간수익률(%)"] = pd.to_numeric(df["주간수익률(%)"], errors="coerce")
-    return df[["테마명", "주간수익률(%)"]]
+    # 2. 룰베이스 기반 상품명 키워드 매핑 함수
+    def classify_theme(etf_name):
+        etf_name = str(etf_name).upper()
+        
+        # 반도체 및 테크 관련 키워드
+        if any(kw in etf_name for kw in ["반도체", "AI", "인공지능", "테크", "빅테크", "나스닥", "SOX", "필라델피아"]):
+            if any(kw in etf_name for kw in ["빅테크", "나스닥100", "FANG", "애플", "엔비디아", "마이크로소프트"]):
+                return "미국 빅테크&소프트웨어"
+            return "반도체/AI 혁신"
+            
+        # 바이오/헬스케어 키워드
+        elif any(kw in etf_name for kw in ["바이오", "헬스케어", "의료기기", "제약", "비만"]):
+            return "바이오/헬스케어"
+            
+        # 조선/방산/중공업 키워드
+        elif any(kw in etf_name for kw in ["조선", "방산", "중공업", "우주", "항공", "K방산"]):
+            return "조선/방산 중공업"
+            
+        # 글로벌 금리형/채권 키워드
+        elif any(kw in etf_name for kw in ["금리", "KOFR", "CD", "채권", "국채", "미국채", "통화", "달러"]):
+            return "글로벌 금리형/채권"
+            
+        # 2차전지 키워드
+        elif any(kw in etf_name for kw in ["2차전지", "이차전지", "배터리", "소재", "양극재"]):
+            return "2차전지/핵심소재"
+            
+        # 고배당 및 밸류업 가치주 키워드
+        elif any(kw in etf_name for kw in ["배당", "고배당", "밸류업", "금융", "은행"]):
+            return "배당 및 가치주"
+            
+        else:
+            return "국내/외 지수 및 기타"
 
+    # 3. 데이터 복사 및 테마 매핑 적용
+    df_calc = df_src.copy()
+    df_calc["테마명"] = df_calc["ETF명"].apply(classify_theme)
+    
+    # 수익률 데이터를 확실하게 수치형으로 변환 및 결측치 제거
+    df_calc["수익률(%)"] = pd.to_numeric(df_calc["수익률(%)"], errors="coerce")
+    df_calc = df_calc.dropna(subset=["수익률(%)"])
+    
+    # 4. 🔥 [핵심 groupby 연산] 테마별로 묶어 수익률의 평균(mean) 산출
+    df_theme = df_calc.groupby("테마명")["수익률(%)"].mean().reset_index()
+    
+    # 5. 기존 render_section_4() 화면 컴포넌트와 호환되도록 컬럼명 리네임 및 정렬
+    df_theme = df_theme.rename(columns={"수익률(%)": "주간수익률(%)"})
+    df_theme = df_theme.sort_values(by="주간수익률(%)", ascending=False).reset_index(drop=True)
+    
+    return df_theme
 # ============================================================
 # 📊 2. 스트림릿 대시보드 화면 렌더링 (SECTION 4)
 # ============================================================
