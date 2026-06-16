@@ -1500,8 +1500,8 @@ with st.container(border=True):
                     <div style='color: #F43F5E; font-size: 8.5pt; letter-spacing: 0.3mm; margin-top: 0.5mm;'>{"■"*d_bar}</div>
                 </div>
                 """
-# ----------------------------------------------------------------------
-        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
+        # ----------------------------------------------------------------------
+        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드 (변수 스코프 완벽 정렬)
         # ----------------------------------------------------------------------
         html_string = f"""
         <html>
@@ -1570,7 +1570,7 @@ with st.container(border=True):
                     <tbody>
                         <tr><td><b>삼성자산운용 (KODEX)</b></td><td>AI 테크, 미국 반도체, 월배당 고배당, 연금투자 안정성 밸류체인 유입 소구</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
                         <tr><td><b>미래에셋자산운용 (TIGER)</b></td><td>글로벌 혁신기술, 나스닥 핵심 성장주, 개인 투자 수급 집중형 직관 테마 마케팅</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
-                        <tr><td><b>KB자산운용 (RISE)</b></td><td>정부 밸류업 프로그램 수혜주, 저평가 가치 배당주, 국채 자산배분 안정성 소구</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
+                        <tr><td><b>KB자산운용 (RISE)</b></td><td>政府 밸류업 프로그램 수혜주, 저평가 가치 배당주, 국채 자산배분 안정성 소구</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
                         <tr><td><b>한국투자신탁운용 (ACE)</b></td><td>글로벌 원천 반도체 TOP4, 빅테크 소프트웨어 독점주, 신흥국(인도 등) 시장 타겟팅</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
                     </tbody>
                 </table>
@@ -1734,22 +1734,25 @@ with st.container(border=True):
         pdf_buffer = BytesIO()
         pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
         
+        # 중요: 변수 초기화 및 스코프 매칭 보장
+        pdf_data = None 
+        
         if pisa_status.err:
             st.error("PDF 생성에 실패했습니다.")
         else:
             pdf_buffer.seek(0)
             pdf_data = pdf_buffer.getvalue()
 
-    try:
-        if pdf_data:
-            st.download_button(
-                label="📄 PDF 리포트 다운로드",
-                data=pdf_data,
-                file_name=f"KODEX_Perfect_Sync_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-        else:
-            st.error("통합 PDF 리포트 바이너리를 바인딩하는 과정에서 구조적 에러가 발생했습니다.")
-    except Exception as e:
-        st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
+        try:
+            if pdf_data:
+                st.download_button(
+                    label="📄 PDF 리포트 다운로드",
+                    data=pdf_data,
+                    file_name=f"KODEX_Perfect_Sync_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+            else:
+                st.error("통합 PDF 리포트 바이너리를 바인딩하는 과정에서 구조적 에러가 발생했습니다.")
+        except Exception as e:
+            st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
