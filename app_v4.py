@@ -1226,6 +1226,7 @@ with st.container(border=True):
         # 👥 SECTION 3. 투자자별 순매수 수급 강도 (session_state 연동)
         # ----------------------------------------------------------------------
         section3_chart_html = ""
+        excel_summary = "실시간 매매 수급 에이전트 연동 데이터셋"
         # 💡 st.session_state에서 타겟 에이전트 DF를 최우선으로 가져옵니다.
         target_agent_df = st.session_state.get('filtered_agent_df', st.session_state.get('df_agent', None))
         
