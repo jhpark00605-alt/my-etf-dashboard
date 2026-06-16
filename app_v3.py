@@ -972,6 +972,7 @@ def render_section_4():
                 period_opt = st.selectbox("📅 분석 기간 선택", ["1주", "1일(전영업일)", "1개월", "3개월", "6개월", "1년"])
                 period_mapping = {"1일(전영업일)": 1, "1주": 5, "1개월": 30, "3개월": 90, "6개월": 180, "1년": 365}
                 chosen_term = period_mapping[period_opt]
+                st.session_state['chosen_period_text'] = period_opt
                 
             with col_ctrl3:
                 order_type = st.selectbox("수익률 정렬 기준", ["상승률 상위 순 (DESC)", "하락률 상위 순 (ASC)"])
@@ -1500,7 +1501,13 @@ with st.container(border=True):
         # ----------------------------------------------------------------------
         top_n_return_html = ""
         top_n_count = st.session_state.get('selected_top_n', 10)
-        section4_title_text = f"주간 KODEX ETF 수익률 상위 TOP {top_n_count}"  # ← 이 줄 추가
+        
+        # 💡 [여기서부터] 화면에서 선택한 기간(1일, 1개월, 3개월 등)을 동적으로 가져옵니다.
+        chosen_period_label = st.session_state.get('chosen_period_text', '1주 (기본)')
+        section4_title_text = f"🏆 선택 기간({chosen_period_label}) KODEX ETF 수익률 상위 TOP {top_n_count}"
+        theme_return_title = f"🗂️ 선택 기간({chosen_period_label}) 주요 테마별 평균 수익률 현황"
+        # 💡 [여기까지 덮어쓰기 하시면 됩니다]
+        
         target_top_df = st.session_state.get('df_top_returns', None)
         
         # 1. 실제 대시보드 데이터 연동부
@@ -1859,7 +1866,7 @@ with st.container(border=True):
                         </td>
                         <td style="width:4%; border:none;"></td>
                         <td style="width:48%; border:none; padding:0; vertical-align: top;">
-                            <div class="content-title">[주간 주요 테마별 평균 수익률 전체 테이블]</div>
+                            <div class="content-title">{theme_return_title}</div>
                             <table style="width:100%; border-collapse: collapse; margin-top: 1.5mm;">
                                 <thead>
                                     <tr>
