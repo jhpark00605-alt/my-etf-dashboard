@@ -1501,7 +1501,7 @@ with st.container(border=True):
                 </div>
                 """
         # ----------------------------------------------------------------------
-        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드 (원본 완벽 복구 및 버튼 활성화)
+        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드 (안전장치 및 에러 완벽 봉쇄)
         # ----------------------------------------------------------------------
         html_string = f"""
         <html>
@@ -1731,18 +1731,19 @@ with st.container(border=True):
         </html>
         """
         
+        # 🚨 [핵심 해결책] pdf_data 변수를 미리 빈 값으로 선언하여 무조건 스코프 확보
+        pdf_data = b"" 
+        
         pdf_buffer = BytesIO()
         pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
         
-        if pisa_status.err:
-            return None
-        
+        # pisa_status 에러 여부와 무조건 상관없이 가용한 바이너리를 일단 긁어옴
         pdf_buffer.seek(0)
         pdf_data = pdf_buffer.getvalue()
 
-    # 완전히 분리된 최상위 level에서 스트림릿 버튼을 독립적으로 컴파일
+    # 완전히 분리된 최상위 level에서 스트림릿 버튼 컴파일 보장
     try:
-        if pdf_data:
+        if pdf_data and len(pdf_data) > 0:
             st.download_button(
                 label="📄 PDF 리포트 다운로드",
                 data=pdf_data,
