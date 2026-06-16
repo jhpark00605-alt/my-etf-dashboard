@@ -1540,8 +1540,7 @@ with st.container(border=True):
                 <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
                 <div class="doc-meta">발행기준시점: {current_date_str} | 작성주체: AI 자동 분석 컴파일러</div>
             </div>
-        """
-            
+        """  
             <div class="section-container">
                 <div class="section-title">🎯 Section 1. 시장 트렌드 & 실시간 뉴스 키워드 빈도</div>
                 <p style="margin: 0.5mm 0;">• <span class="badge-up">🚀 라이징 테마:</span> {rising_theme}</p>
