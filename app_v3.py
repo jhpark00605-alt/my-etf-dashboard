@@ -1650,42 +1650,37 @@ with st.container(border=True):
                 </table>
 
                 <div class="content-title" style="margin-top:4mm;">▶ 4. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
-                
-                <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
-                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 삼성자산운용 (KODEX)</span>
-                    <ul style="margin-top:0.5mm; padding-left:4mm;">
-                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['kodex']['prod']}</li>
-                        <li><b>핵심 투자 테마:</b> {sec2_data['kodex']['theme']}</li>
-                        <li><b>주력 판단 근거:</b> {sec2_data['kodex']['reason']}</li>
-                    </ul>
-                </div>
 
-                <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
-                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 미래에셋자산운용 (TIGER)</span>
-                    <ul style="margin-top:0.5mm; padding-left:4mm;">
-                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['tiger']['prod']}</li>
-                        <li><b>핵심 투자 테마:</b> {sec2_data['tiger']['theme']}</li>
-                        <li><b>주력 판단 근거:</b> {sec2_data['tiger']['reason']}</li>
-                    </ul>
-                </div>
-
-                <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
-                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ KB자산운용 (RISE)</span>
-                    <ul style="margin-top:0.5mm; padding-left:4mm;">
-                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['rise']['prod']}</li>
-                        <li><b>핵심 투자 테마:</b> {sec2_data['rise']['theme']}</li>
-                        <li><b>주력 판단 근거:</b> {sec2_data['rise']['reason']}</li>
-                    </ul>
-                </div>
-
-                <div>
-                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 한국투자신탁운용 (ACE)</span>
-                    <ul style="margin-top:0.5mm; padding-left:4mm;">
-                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['ace']['prod']}</li>
-                        <li><b>핵심 투자 테마:</b> {sec2_data['ace']['theme']}</li>
-                        <li><b>주력 판단 근거:</b> {sec2_data['ace']['reason']}</li>
-                    </ul>
-                </div>
+                <table style="width:100%; border-collapse:separate; border-spacing:2mm; table-layout:fixed; margin-top:2mm;">
+                    <tr>
+                        <td style="width:50%; vertical-align:top; border:2px solid #1D4ED8; border-radius:6px; padding:3mm; background-color:#EFF6FF;">
+                            <div style="font-weight:bold; color:#1D4ED8; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #1D4ED8; padding-bottom:1.5mm;">■ 삼성자산운용 (KODEX)</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['kodex']['prod']}</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['kodex']['theme']}</div>
+                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['kodex']['reason']}</div>
+                        </td>
+                        <td style="width:50%; vertical-align:top; border:2px solid #EA580C; border-radius:6px; padding:3mm; background-color:#FFF7ED;">
+                            <div style="font-weight:bold; color:#EA580C; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #EA580C; padding-bottom:1.5mm;">■ 미래에셋자산운용 (TIGER)</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['tiger']['prod']}</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['tiger']['theme']}</div>
+                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['tiger']['reason']}</div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="width:50%; vertical-align:top; border:2px solid #CA8A04; border-radius:6px; padding:3mm; background-color:#FEFCE8;">
+                            <div style="font-weight:bold; color:#CA8A04; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #CA8A04; padding-bottom:1.5mm;">■ KB자산운용 (RISE)</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['rise']['prod']}</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['rise']['theme']}</div>
+                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['rise']['reason']}</div>
+                        </td>
+                        <td style="width:50%; vertical-align:top; border:2px solid #047857; border-radius:6px; padding:3mm; background-color:#ECFDF5;">
+                            <div style="font-weight:bold; color:#047857; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #047857; padding-bottom:1.5mm;">■ 한국투자신탁운용 (ACE)</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['ace']['prod']}</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['ace']['theme']}</div>
+                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['ace']['reason']}</div>
+                        </td>
+                    </tr>
+                </table>
             </div>
 
             <div class="section-container">
