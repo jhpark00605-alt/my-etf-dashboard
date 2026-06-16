@@ -1393,7 +1393,7 @@ with st.container(border=True):
                 max_vol = float(summary['매수강도'].max()) if summary['매수강도'].max() > 0 else 1.0
                 
                 for idx, row in summary.reset_index(drop=True).iterrows():
-                    item_name = row.get('종목명', f'KODEX 혁신 자산 {idx+1}')
+                    item_name = row.get('종목명_정제', row.get('종목명', f'KODEX 혁신 자산 {idx+1}'))
                     vol_val = row.get('매수강도', 0.0)
                     
                     blocks = max(1, round((float(vol_val) / max_vol) * 12))
