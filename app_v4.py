@@ -1305,27 +1305,28 @@ with st.container(border=True):
         
         if target_top_df is not None and not target_top_df.empty:
             try:
-                # 대시보드 화면에 정렬되어 노출된 순서 그대로 지정된 개수(top_n_count)만큼 가져옵니다.
+                # 대시보드에서 하락률순으로 정렬된 데이터 그대로 top_n_count만큼 가져옵니다.
                 for idx, row in target_top_df.head(top_n_count).reset_index().iterrows():
                     r_name = row.get('종목명', row.get('ETF명', row.get('ETF종목명', 'KODEX 상위 자산')))
                     r_val = row.get('수익률(%)', row.get('수익률', row.get('주간수익률', 0.0)))
                     
-                    # 수치 연산을 위해 안전하게 float 변환
+                    # 수치 비교를 위해 안전하게 float 형변환 (문자열 % 기호 제거)
                     try:
-                        num_val = float(r_val)
+                        num_val = float(str(r_val).replace('%', '').strip())
                     except:
                         num_val = 0.0
                     
                     if num_val != 0.0:
-                        # 💡 [핵심 버그 수정] 부호가 겹치지 않도록 수학적 조건문 처리 및 텍스트 색상 스위칭
+                        # 💡 [핵심 버그 수정] 양수일 때만 +를 붙이고, 음수일 때는 자체 - 기호를 사용합니다.
                         if num_val > 0:
                             sign_str = "+"
                             color_span = "#B91C1C" # 상승은 빨간색
                         else:
-                            sign_str = ""  # 음수일 때는 자체 마이너스(-) 기호가 오므로 빈값 처리
+                            sign_str = ""          # 음수는 이미 마이너스가 포함되어 있으므로 빈 문자열
                             color_span = "#1E40AF" # 하락은 파란색
                             
-                        top_n_return_html += f"<tr><td>{r_name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{num_val:.2f}%</td></tr>"
+                        # 기존의 +{r_val}% 강제 표기를 제거하고, 판별된 sign_str과 색상을 적용합니다.
+                        top_n_return_html += f"<tr><td>{r_name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{r_val}%</td></tr>"
             except: 
                 pass
 
