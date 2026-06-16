@@ -1233,19 +1233,15 @@ with st.container(border=True):
         # 👥 SECTION 3. 투자자별 순매수 수급 강도 (session_state 연동)
         # ----------------------------------------------------------------------
         section3_chart_html = ""
-        excel_summary = "실시간 매매 수급 에이전트 연동 데이터셋"
-        
-        # 💡 [핵심] 이제 UI에서 저장한 'res_df' 전체 데이터를 정확하게 가져옵니다.
         target_agent_df = st.session_state.get('res_df', None)
         
         if target_agent_df is not None and not target_agent_df.empty:
             try:
-                # 🚨 실제 데이터에 맞게 '매수강도' 기준으로 전체 개수를 다 가져옵니다.
-                summary = target_agent_df.sort_values(by='매수강도', ascending=False)
+                # 🚨 수정된 부분: .head(15)를 붙여서 상위 15개만 PDF에 그리도록 강제합니다.
+                summary = target_agent_df.sort_values(by='매수강도', ascending=False).head(15)
                 max_vol = float(summary['매수강도'].max()) if summary['매수강도'].max() > 0 else 1.0
                 
-                for idx, row in summary.reset_index().iterrows():
-                    # 실제 종목명 컬럼 연동
+                for idx, row in summary.reset_index(drop=True).iterrows():
                     item_name = row.get('종목명', f'KODEX 혁신 자산 {idx+1}')
                     vol_val = row.get('매수강도', 0.0)
                     
@@ -1255,7 +1251,7 @@ with st.container(border=True):
                     <div style='margin-bottom:1.2mm; border-bottom:1px dashed #F3F4F6; padding-bottom:0.8mm;'>
                         <div style='font-weight:bold; color:#1F2937; font-size:8.5pt;'>{idx+1}. {item_name}</div>
                         <div style='margin-top:0.5mm;'>
-                            <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:75px;'>매수강도: {vol_val:,.0f}</span>
+                            <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:75px;'>매수강도: {vol_val:,.1f}</span>
                             <span style='color:#3B82F6; font-size:8pt;'>{bar_display}</span>
                         </div>
                     </div>
@@ -1356,30 +1352,29 @@ with st.container(border=True):
             <li style="margin-bottom:1.5mm;">🌐 <b>글로벌 신흥국 테마 다각화:</b> 인도 비즈니스 및 인프라 테마 ETF 시리즈 자금 유입세가 뚜렷합니다.</li>
             """
 
-        # 2. 네이버 데이터랩 출력 (.tail(6) 없이 전체 출력되도록 수정)
+        # 2. 네이버 데이터랩 출력 (과거의 깔끔한 가로형 디자인 복원)
         datalab_box_chart_html = ""
         target_dl_df = st.session_state.get('df_sns', None)
 
         if target_dl_df is not None and not target_dl_df.empty:
             try:
                 for idx, row in target_dl_df.iterrows():
-                    # 데이터랩 컬럼명 매칭 ('검색 지수' 혹은 첫번째/두번째 컬럼 사용)
-                    c_val = float(row.get('검색 지수', row.iloc[1] if len(row) > 1 else 50.0))
-                    date_val = row.get('날짜', row.iloc[0] if len(row) > 0 else '날짜')
+                    # 💡 컬럼명 상관없이 무조건 위치(0번째, 1번째)로 가져와서 에러 차단!
+                    date_val = str(row.iloc[0]) 
+                    c_val = float(row.iloc[1])
                     
                     b_cnt = max(1, min(10, round((c_val / 100.0) * 10)))
                     pink_bars = "■" * b_cnt
                     
-                    # 30개 넘는 데이터를 그리기 위해 한 줄에 3개씩(width 31%) 들어가는 가로 배치(inline-block) 적용
+                    # 예전의 가로 꽉 차는 깔끔한 핑크색 박스 스타일 적용
                     datalab_box_chart_html += f"""
-                    <div style='border: 1px solid #FEB2B2; background-color: #FFF5F5; padding: 2mm; margin-bottom: 1.5mm; border-radius: 4px; display: inline-block; width: 31%; margin-right: 1%;'>
-                        <span style='font-weight: bold; color: #4B5563; font-size: 8.5pt;'>{date_val}</span> 
+                    <div style='border: 1px solid #FECACA; background-color: #FEF2F2; padding: 2.5mm; margin-bottom: 1.5mm; border-radius: 4px; display: block;'>
+                        <span style='font-weight: bold; color: #1F2937; font-size: 8.5pt;'>{date_val}</span> 
                         <span style='color: #DC2626; font-weight: bold; font-size: 8.5pt;'>[{c_val:,.1f}]</span>
-                        <br/>
-                        <span style='color: #F43F5E; font-size: 9pt; letter-spacing: 0.5mm;'>{pink_bars}</span>
+                        <span style='color: #F43F5E; font-size: 9pt; letter-spacing: 1mm; margin-left: 2mm;'>{pink_bars}</span>
                     </div>
                     """
-            except Exception as e: 
+            except Exception as e:
                 pass
                 
         if not datalab_box_chart_html:
