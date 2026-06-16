@@ -1501,14 +1501,28 @@ with st.container(border=True):
                 </div>
                 """
 # ======================================================================
-# 🕒 [완벽 해결] 한국 표준시(KST) 시간 변수 선언 (NameError 방지)
+# 🕒 [시간 안전장치] current_date_str이 없으면 현재 시간으로 자동 생성
 # ======================================================================
-from datetime import datetime, timedelta
-kst_now = datetime.utcnow() + timedelta(hours=9)
-current_date_str = kst_now.strftime('%Y-%m-%d %H:%M:%S')
+if 'current_date_str' not in locals() and 'current_date_str' not in globals():
+    from datetime import datetime, timedelta
+    kst_now = datetime.utcnow() + timedelta(hours=9)
+    current_date_str = kst_now.strftime('%Y-%m-%d %H:%M:%S')
 
 # ======================================================================
-# 👑 질문자님의 오리지널 데이터 연동 구조 (단 하나의 통문장 HTML로 복구)
+# 🛡️ [데이터 방어막] 실행 순서가 꼬여 sec2_data를 못 찾을 때를 대비한 안전망
+# ======================================================================
+if 'sec2_data' not in locals() and 'sec2_data' not in globals():
+    # 데이터가 비어있을 때 앱이 터지지 않도록 기본 구조만 생성합니다.
+    # 만약 위쪽 코드에서 정상 로드된다면 이 껍데기는 무시되고 원래 데이터가 나옵니다.
+    sec2_data = {
+        'kodex': {'prod': '데이터 로딩 실패 (위치 인지 불가)', 'theme': '-', 'reason': '-'},
+        'tiger': {'prod': '-', 'theme': '-', 'reason': '-'},
+        'rise': {'prod': '-', 'theme': '-', 'reason': '-'},
+        'ace': {'prod': '-', 'theme': '-', 'reason': '-'}
+    }
+
+# ======================================================================
+# 👑 질문자님의 오리지널 데이터 연동 구조 (단 하나의 통문장 HTML)
 # ======================================================================
 html_string = f"""<html>
 <head>
