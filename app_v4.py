@@ -1501,16 +1501,16 @@ with st.container(border=True):
                 </div>
                 """
         # ----------------------------------------------------------------------
-        # 🕒 [시간 설정] 서버 시간을 한국 표준시(KST, UTC+9)로 보정
-        # ----------------------------------------------------------------------
-        from datetime import datetime, timedelta
-        kst_now = datetime.utcnow() + timedelta(hours=9)
-        current_date_str = kst_now.strftime('%Y-%m-%d %H:%M:%S')
+# 🕒 [시간 설정] 서버 시간을 한국 표준시(KST, UTC+9)로 보정
+# ----------------------------------------------------------------------
+from datetime import datetime, timedelta
+kst_now = datetime.utcnow() + timedelta(hours=9)
+current_date_str = kst_now.strftime('%Y-%m-%d %H:%M:%S')
 
-        # ----------------------------------------------------------------------
-        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드 (문법 에러 교정 완료)
-        # ----------------------------------------------------------------------
-        html_string = f"""<html>
+# ----------------------------------------------------------------------
+# 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드 (문법 에러 교정 완료)
+# ----------------------------------------------------------------------
+html_string = f"""<html>
 <head>
     <meta charset="utf-8">
     <style>
@@ -1539,14 +1539,15 @@ with st.container(border=True):
         <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
         <div class="doc-meta">발행기준시점: {current_date_str} | 작성주체: AI 자동 분석 컴파일러</div>
     </div>
-            
-    # ----------------------------------------------------------------------
+"""  # 💡 [여기가 핵심 교정!] 위에서 시작한 html_string을 여기서 먼저 문장 마감("설치)해 줍니다.
+
+# ----------------------------------------------------------------------
 # 🎯 Section 1 시작 (기존 html_string 변수에 문자열을 이어서 담는 구조)
 # ----------------------------------------------------------------------
 html_string += f"""
 <div class="section-container">
     <div class="section-title">🎯 Section 1. 시장 트렌드 & 실시간 뉴스 키워드 빈도</div>
-    </div>
+</div>
 
 <div class="section-container">
     <div class="section-title">📺 Section 2. 자산운용사/증권사 공식 유튜브 채널 분석</div>
