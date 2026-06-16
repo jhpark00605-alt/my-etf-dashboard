@@ -1500,45 +1500,37 @@ with st.container(border=True):
                     <div style='color: #F43F5E; font-size: 8.5pt; letter-spacing: 0.3mm; margin-top: 0.5mm;'>{"■"*d_bar}</div>
                 </div>
                 """
-# 1. 🕒 서버 시간을 한국 표준시(KST)로 정확히 선언
-from datetime import datetime, timedelta
-kst_now = datetime.utcnow() + timedelta(hours=9)
-current_date_str = kst_now.strftime('%Y-%m-%d %H:%M:%S')
-
-# 2. 🎨 에러의 주범이었던 CSS 구역을 일반 문자열로 격리 (중괄호 충돌 원천 차단)
-style_string = """
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
-    @page { size: a4; margin: 11mm 11mm 11mm 11mm; }
-    body { font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }
-    .header-container { border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }
-    .doc-title { font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }
-    .doc-meta { text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }
-    .section-container { margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }
-    .section-title { font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }
-    .content-title { font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }
-    .badge-up { color: #B91C1C; font-weight: bold; }
-    .badge-down { color: #1E40AF; font-weight: bold; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }
-    th { background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }
-    td { border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }
-    ul { margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }
-    li { margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }
-    .page-break { page-break-before: always; }
-    .footer-text { text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }
-</style>
-"""
-
-# 3. 👑 오직 질문자님의 대시보드 변수들만 깔끔하게 매칭하는 HTML Body 구역
-html_body = f"""<html>
+# ======================================================================
+# 👑 [100% 원본 복구] 에러가 나기 전 완벽하게 작동하던 오리지널 통문장 구조
+# ======================================================================
+html_string = f"""<html>
 <head>
     <meta charset="utf-8">
-    {style_string}
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght=400;700&display=swap');
+        @page {{ size: a4; margin: 11mm 11mm 11mm 11mm; }}
+        body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }}
+        .header-container {{ border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }}
+        .doc-title {{ font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }}
+        .doc-meta {{ text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }}
+        .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }}
+        .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
+        .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }}
+        .badge-up {{ color: #B91C1C; font-weight: bold; }}
+        .badge-down {{ color: #1E40AF; font-weight: bold; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }}
+        th {{ background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }}
+        td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }}
+        ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
+        li {{ margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }}
+        .page-break {{ page-break-before: always; }}
+        .footer-text {{ text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }}
+    </style>
 </head>
 <body>
     <div class="header-container">
         <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
-        <div class="doc-meta">발행기준시점: {current_date_str} | 작성주체: AI 자동 분석 컴파일러</div>
+        <div class="doc-meta">작성주체: AI 자동 분석 컴파일러</div>
     </div>
             
     <div class="section-container">
@@ -1730,10 +1722,9 @@ html_body = f"""<html>
 </html>
 """
 
-# 4. 📑 두 문자열을 결합할 필요 없이, 최종 주입용 html_string은 html_body 그대로 사용합니다.
-html_string = html_body
-
-# 5. 🖨️ PDF 컴파일 구역
+# ======================================================================
+# 📑 3. PDF 컴파일 및 원래 Streamlit 다운로드 버튼 작동 구역
+# ======================================================================
 pdf_buffer = BytesIO()
 pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
 
@@ -1743,16 +1734,12 @@ else:
     pdf_buffer.seek(0)
     pdf_data = pdf_buffer.getvalue()
 
-    # 📥 다운로드 버튼 렌더링 구역
     try:
         if pdf_data:
-            from datetime import datetime, timedelta
-            fn_date = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y%m%d')
-            
             st.download_button(
                 label="📄 PDF 리포트 다운로드",
                 data=pdf_data,
-                file_name=f"KODEX_Perfect_Sync_Report_{fn_date}.pdf",
+                file_name="KODEX_Intelligence_Report.pdf",
                 mime="application/pdf",
                 use_container_width=True
             )
