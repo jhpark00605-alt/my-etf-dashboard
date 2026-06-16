@@ -1501,48 +1501,45 @@ with st.container(border=True):
                 </div>
                 """
         # ----------------------------------------------------------------------
-        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
-        # ----------------------------------------------------------------------
-        # ----------------------------------------------------------------------
-        # 🕒 [시간 설정 추가] 서버 시간을 한국 표준시(KST, UTC+9)로 보정합니다.
+        # 🕒 [시간 설정] 서버 시간을 한국 표준시(KST, UTC+9)로 보정
         # ----------------------------------------------------------------------
         from datetime import datetime, timedelta
         kst_now = datetime.utcnow() + timedelta(hours=9)
         current_date_str = kst_now.strftime('%Y-%m-%d %H:%M:%S')
 
         # ----------------------------------------------------------------------
-        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
+        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드 (들여쓰기 교정 완료)
         # ----------------------------------------------------------------------
         html_string = f"""
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
-                @page {{ size: a4; margin: 11mm 11mm 11mm 11mm; }}
-                body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }}
-                .header-container {{ border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }}
-                .doc-title {{ font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }}
-                .doc-meta {{ text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }}
-                .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }}
-                .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
-                .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }}
-                .badge-up {{ color: #B91C1C; font-weight: bold; }}
-                .badge-down {{ color: #1E40AF; font-weight: bold; }}
-                table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }}
-                th {{ background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }}
-                td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }}
-                ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
-                li {{ margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }}
-                .page-break {{ page-break-before: always; }}
-                .footer-text {{ text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }}
-            </style>
-        </head>
-        <body>
-            <div class="header-container">
-                <div class="doc-title">📊 KODEX ETF 시장 종합 분석 리포트</div>
-                <div class="doc-meta">발행기준시점: {current_date_str} | 작성주체: AI 자동 분석 컴파일러</div>
-            </div>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
+        @page {{ size: a4; margin: 11mm 11mm 11mm 11mm; }}
+        body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }}
+        .header-container {{ border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }}
+        .doc-title {{ font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }}
+        .doc-meta {{ text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }}
+        .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }}
+        .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
+        .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }}
+        .badge-up {{ color: #B91C1C; font-weight: bold; }}
+        .badge-down {{ color: #1E40AF; font-weight: bold; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }}
+        th {{ background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }}
+        td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }}
+        ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
+        li {{ margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }}
+        .page-break {{ page-break-before: always; }}
+        .footer-text {{ text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }}
+    </style>
+</head>
+<body>
+    <div class="header-container">
+        <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
+        <div class="doc-meta">발행기준시점: {current_date_str} | 작성주체: AI 자동 분석 컴파일러</div>
+    </div>
 """
             
             <div class="section-container">
