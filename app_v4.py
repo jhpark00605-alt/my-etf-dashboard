@@ -664,7 +664,12 @@ with st.container(border=True):
             m_df['정제순매수(억원)'] = m_df[target_investor] / 100000.0
             m_df['매수강도'] = (m_df['정제순매수(억원)'] / m_df['자산']) * 100
             
-            res_df = m_df.sort_values(by='매수강도', ascending=False).head(15)
+            # 🚨 원본: res_df = m_df.sort_values(by='매수강도', ascending=False).head(15)
+            # 👇 아래처럼 수정합니다. (.head(15) 삭제 및 세션 저장 코드 추가)
+            res_df = m_df.sort_values(by='매수강도', ascending=False)
+            
+            # [핵심] 바로 이곳에 추가합니다! PDF로 'res_df' 전체 데이터를 무사히 넘겨줍니다.
+            st.session_state['res_df'] = res_df 
             
             top_bought_etfs = ", ".join(res_df['종목명'].head(5).tolist())
             
@@ -672,9 +677,11 @@ with st.container(border=True):
                 st.session_state.global_context = ""
             st.session_state.global_context += f"[엑셀 순매수 강도 분석 결과]\n타겟 투자자 {target_investor}가 현재 가장 강하게 순매수 중인 자산 리스트: {top_bought_etfs}\n\n"
             
+            # 🚨 차트는 너무 많으면 깨질 수 있으니 화면(에이전트)에 그릴 때만 15개로 컷 해줍니다.
+            display_df = res_df.head(15) 
+            
             # 가로 전체를 활용하여 더 크고 가독성 좋게 시각화 차트를 그립니다.
-            fig = px.bar(res_df, x='종목명', y='매수강도', color='매수강도', color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 리포트")
-            fig.update_layout(height=400, margin=dict(t=50, b=20))
+            fig = px.bar(display_df, x='종목명', y='매수강도', color='매수강도', color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 리포트")
             st.plotly_chart(fig, use_container_width=True)
             
             st.dataframe(res_df[['종목명', '자산', '정제순매수(억원)', '매수강도']], use_container_width=True, hide_index=True)
@@ -1228,18 +1235,19 @@ with st.container(border=True):
         section3_chart_html = ""
         excel_summary = "실시간 매매 수급 에이전트 연동 데이터셋"
         
-        # 💡 st.session_state에서 타겟 에이전트 DF를 최우선으로 가져옵니다.
-        target_agent_df = st.session_state.get('filtered_agent_df', st.session_state.get('df_agent', None))
+        # 💡 [핵심] 이제 UI에서 저장한 'res_df' 전체 데이터를 정확하게 가져옵니다.
+        target_agent_df = st.session_state.get('res_df', None)
         
         if target_agent_df is not None and not target_agent_df.empty:
             try:
-                # 🚨 수정됨: .head(15)를 삭제하여 사용자가 화면에서 선택한 N개 전체가 다 나오도록 제한 해제
-                summary = target_agent_df.sort_values(by='volume', ascending=False)
-                max_vol = float(summary['volume'].max()) if summary['volume'].max() > 0 else 1.0
+                # 🚨 실제 데이터에 맞게 '매수강도' 기준으로 전체 개수를 다 가져옵니다.
+                summary = target_agent_df.sort_values(by='매수강도', ascending=False)
+                max_vol = float(summary['매수강도'].max()) if summary['매수강도'].max() > 0 else 1.0
                 
                 for idx, row in summary.reset_index().iterrows():
-                    item_name = row.get('종목명', row.get('종목名', row.get('item_name', f'KODEX 혁신 자산 {idx+1}')))
-                    vol_val = row['volume']
+                    # 실제 종목명 컬럼 연동
+                    item_name = row.get('종목명', f'KODEX 혁신 자산 {idx+1}')
+                    vol_val = row.get('매수강도', 0.0)
                     
                     blocks = max(1, round((float(vol_val) / max_vol) * 12))
                     bar_display = "■" * blocks
@@ -1252,11 +1260,11 @@ with st.container(border=True):
                         </div>
                     </div>
                     """
-            except:
+            except Exception as e:
                 pass
 
         if not section3_chart_html:
-            # 🚨 수정됨: 데이터 연동 실패 시 보여지는 예비용 데이터도 10개로 넉넉하게 확장
+            # 연동 실패 시 보여지는 예비용 데이터 (만약을 대비한 백업)
             sample_agents = [
                 ("TIGER SK하이닉스단일종목레버리지", 1250), ("KODEX SK하이닉스단일종목레버리지", 1180), 
                 ("TIGER 미국우주테크", 1020), ("SOL AI반도체TOP2플러스", 950), 
@@ -1328,61 +1336,54 @@ with st.container(border=True):
         # 📱 SECTION 5. 마케팅 뉴스 리스트 & 데이터랩 박스 차트 (session_state 연동)
         # ----------------------------------------------------------------------
         
-        # 🚨 수정 포인트 1: AI 인사이트 및 마케팅 뉴스 변수 호출 범위 확대
-        # UI에서 어떤 이름으로 저장했더라도 최대한 가져올 수 있도록 복수 변수(.get 연속)로 처리합니다.
-        marketing_news_text = st.session_state.get('sec5_marketing_news', st.session_state.get('news_ai_summary', "삼성자산운용 KODEX는 고객 가치 중심의 월배당 ETF 마케팅 캠페인을 활발히 전개 중입니다."))
-        ai_insight_text = st.session_state.get('ai_insight_text', st.session_state.get('sec5_ai_insight', "매크로 불확실성 구간에서는 성장주와 인컴형 자산을 융합한 바벨 전략이 가장 유효합니다."))
+        # 💡 [핵심] 대시보드 화면(UI)에서 저장했던 AI 분석 텍스트를 정확한 변수명으로 가져옵니다.
+        marketing_news_text = st.session_state.get('news_res', "마케팅 뉴스 분석 데이터 대기중...")
+        ai_insight_text = st.session_state.get('final_insight', "AI 종합 인사이트 분석 데이터 대기중...")
 
-        # 🚨 수정 포인트 2: 뉴스 리스트(3개 이상) 강제 변환 및 출력
+        # 1. 뉴스 원문 리스트 출력 (개수 제한 없이 전부 출력)
         kodex_press_dynamic_html = ""
-        kodex_list = st.session_state.get('kodex_weekly_marketing_list', st.session_state.get('news_ai_summary', []))
+        kodex_list = st.session_state.get('g_news_titles', [])
         
-        # 만약 에이전트 화면의 AI 요약본이 단순 긴 문자열(텍스트)이라면 줄바꿈 단위로 쪼개서 리스트(<li>)로 만듭니다.
-        if isinstance(kodex_list, str) and len(kodex_list) > 10:
-            for line in kodex_list.split('\n'):
-                clean_line = line.replace('-', '').replace('*', '').strip()
-                if clean_line:
-                    kodex_press_dynamic_html += f"<li style='margin-bottom:1.5mm;'>{clean_line}</li>"
-                    
-        # 리스트 형태일 경우의 기존 처리 방식
-        elif isinstance(kodex_list, list) and kodex_list:
-            try:
-                for item in kodex_list:
-                    kodex_press_dynamic_html += f"<li style='margin-bottom:1.5mm;'><b>{item.get('title','마케팅 테마')}</b>: {item.get('content','세부 내용 연동')}</li>"
-            except: pass
-
-        # 연동 실패 시 띄울 백업본도 3개로 복구했습니다.
-        if not kodex_press_dynamic_html:
+        if kodex_list:
+            for item in kodex_list:
+                # 에이전트에 있는 뉴스 제목들만 가져와서 리스트(li) 태그로 하나씩 예쁘게 그립니다.
+                kodex_press_dynamic_html += f"<li style='margin-bottom:1.5mm;'>{item}</li>"
+        else:
+            # 연동 실패 시 기본값 (안전망)
             kodex_press_dynamic_html = """
             <li style="margin-bottom:1.5mm;">🚀 <b>AI 및 반도체 라인업 화력 집중:</b> 상장 및 순자산 돌파 보도가 40% 이상을 차지합니다.</li>
             <li style="margin-bottom:1.5mm;">💰 <b>월배당 및 절세(ISA) 마케팅:</b> 커버드콜 상품의 분배금 지급 현황이 집중 조명되고 있습니다.</li>
             <li style="margin-bottom:1.5mm;">🌐 <b>글로벌 신흥국 테마 다각화:</b> 인도 비즈니스 및 인프라 테마 ETF 시리즈 자금 유입세가 뚜렷합니다.</li>
             """
 
-        # 🚨 수정 포인트 3: 데이터랩 .tail(6) 삭제 -> 30개 전체 출력되도록 제한 해제
+        # 2. 네이버 데이터랩 출력 (.tail(6) 없이 전체 출력되도록 수정)
         datalab_box_chart_html = ""
-        target_dl_df = st.session_state.get('df_raw', st.session_state.get('df_sns', None))
+        target_dl_df = st.session_state.get('df_sns', None)
 
         if target_dl_df is not None and not target_dl_df.empty:
             try:
-                # iterrows() 앞에 있던 tail(6)을 완전히 제거했습니다.
                 for idx, row in target_dl_df.iterrows():
-                    c_val = float(row['검색 지수'])
+                    # 데이터랩 컬럼명 매칭 ('검색 지수' 혹은 첫번째/두번째 컬럼 사용)
+                    c_val = float(row.get('검색 지수', row.iloc[1] if len(row) > 1 else 50.0))
+                    date_val = row.get('날짜', row.iloc[0] if len(row) > 0 else '날짜')
+                    
                     b_cnt = max(1, min(10, round((c_val / 100.0) * 10)))
                     pink_bars = "■" * b_cnt
                     
-                    # 데이터가 30개로 많아졌으므로 세로로 너무 길어지지 않게 가로 배치(inline-block)를 적용했습니다.
+                    # 30개 넘는 데이터를 그리기 위해 한 줄에 3개씩(width 31%) 들어가는 가로 배치(inline-block) 적용
                     datalab_box_chart_html += f"""
                     <div style='border: 1px solid #FEB2B2; background-color: #FFF5F5; padding: 2mm; margin-bottom: 1.5mm; border-radius: 4px; display: inline-block; width: 31%; margin-right: 1%;'>
-                        <span style='font-weight: bold; color: #4B5563; font-size: 8.5pt;'>{row['날짜']}</span> 
+                        <span style='font-weight: bold; color: #4B5563; font-size: 8.5pt;'>{date_val}</span> 
                         <span style='color: #DC2626; font-weight: bold; font-size: 8.5pt;'>[{c_val:,.1f}]</span>
                         <br/>
                         <span style='color: #F43F5E; font-size: 9pt; letter-spacing: 0.5mm;'>{pink_bars}</span>
                     </div>
                     """
-            except: pass
-            
+            except Exception as e: 
+                pass
+                
         if not datalab_box_chart_html:
+            # 연동 실패 시 띄워주는 예비용 데이터
             sample_dl = [("06월 07일", 81.0, 8), ("06월 08일", 80.0, 8), ("06월 09일", 75.0, 7)]
             for d_date, d_val, d_bar in sample_dl:
                 datalab_box_chart_html += f"""
