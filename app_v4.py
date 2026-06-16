@@ -550,41 +550,42 @@ else:
             "key_copy": ai_res.get("key_copy"),
             "reasoning": ai_res.get("reasoning")
         })
-      # 기존 코드에서 analysis_results 리스트에 append가 끝난 루프 바로 밑에 추가하세요.
-st.session_state['blog_analysis_results'] = analysis_results
 
+    # 👇 여기서부터 for 루프가 끝났으므로 들여쓰기가 4칸으로 돌아옵니다.
+    st.session_state['blog_analysis_results'] = analysis_results
+    
     # 🎨 [UI 출력 구역]
-    if analysis_results:
+if analysis_results:
         st.markdown("#### 📈 공식 블로그 주력 상품 실시간 분석 리포트")
         
-        for res in analysis_results:
-            with st.container(border=True):
+    for res in analysis_results:
+        with st.container(border=True):
                 text_color = "#111111" if res['hex'] == "#FFCC00" else "#ffffff"
                 
-                header_html = f"""
-                <div style='
-                    background-color: {res['hex']}; 
-                    padding: 12px 20px; 
-                    border-radius: 6px; 
-                    margin-bottom: 15px;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                '>
-                    <span style='color: {text_color}; font-size: 1.25rem; font-weight: bold;'>
-                        {res['company']}
-                    </span>
-                    <span style='color: {text_color}; font-size: 0.9rem; opacity: 0.9;'>
-                        📅 분석 기간: {res['date_range']}
-                    </span>
-                </div>
-                """
-                st.markdown(header_html, unsafe_allow_html=True)
+            header_html = f"""
+            <div style='
+                background-color: {res['hex']}; 
+                padding: 12px 20px; 
+                border-radius: 6px; 
+                margin-bottom: 15px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            '>
+                <span style='color: {text_color}; font-size: 1.25rem; font-weight: bold;'>
+                    {res['company']}
+                </span>
+                <span style='color: {text_color}; font-size: 0.9rem; opacity: 0.9;'>
+                    📅 분석 기간: {res['date_range']}
+                </span>
+            </div>
+            """
+            st.markdown(header_html, unsafe_allow_html=True)
                 
-                col_left, col_right = st.columns(2)
+            col_left, col_right = st.columns(2)
                 
-                with col_left:
-                    st.markdown(f"##### 🔥 현재 주력 ETF 상품")
+            with col_left:
+                st.markdown(f"##### 🔥 현재 주력 ETF 상품")
                     st.info(res['main_products'])
                     
                     st.markdown(f"##### 💬 공식 마케팅 카피")
