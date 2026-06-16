@@ -1562,7 +1562,7 @@ with st.container(border=True):
     </div>
 """
             
-            # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
     # 📺 Section 2. 자산운용사 마케팅 동향 및 공식 미디어/리테일 채널 입체 분석 (html_string 내부로 통합)
     # ----------------------------------------------------------------------
     html_string += f"""
@@ -1751,33 +1751,32 @@ with st.container(border=True):
 </html>
 """
 
-        # ----------------------------------------------------------------------
-        # 📑 PDF 컴파일 및 다운로드 컴포넌트 핸들링 (파이썬 로직 전용 구역)
-        # ----------------------------------------------------------------------
-        pdf_buffer = BytesIO()
-        pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
-        
-        if pisa_status.err:
-            return None
-        
-        pdf_buffer.seek(0)
-        return pdf_buffer.getvalue()
+    # ----------------------------------------------------------------------
+    # 📑 [파이썬 전용 구역] 들여쓰기 공백을 함수 규격(4칸 자석 정렬)에 완벽하게 맞췄습니다.
+    # ----------------------------------------------------------------------
+    pdf_buffer = BytesIO()
+    pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
+    
+    if pisa_status.err:
+        return None
+    
+    pdf_buffer.seek(0)
+    return pdf_buffer.getvalue()
 
-    try:
-        pdf_data = generate_pdf_report()
-        if pdf_data:
-            # 타임존 처리를 반영하여 파일이 생성되는 일자 매칭
-            from datetime import datetime, timedelta
-            fn_date = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y%m%d')
-            
-            st.download_button(
-                label="📄 PDF 리포트 다운로드",
-                data=pdf_data,
-                file_name=f"KODEX_Perfect_Sync_Report_{fn_date}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-        else:
-            st.error("통합 PDF 리포트 바이너리를 바인딩하는 과정에서 구조적 에러가 발생했습니다.")
-    except Exception as e:
-        st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
+try:
+    pdf_data = generate_pdf_report()
+    if pdf_data:
+        from datetime import datetime, timedelta
+        fn_date = (datetime.utcnow() + timedelta(hours=9)).strftime('%Y%m%d')
+        
+        st.download_button(
+            label="📄 PDF 리포트 다운로드",
+            data=pdf_data,
+            file_name=f"KODEX_Perfect_Sync_Report_{fn_date}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+    else:
+        st.error("통합 PDF 리포트 바이너리를 바인딩하는 과정에서 구조적 에러가 발생했습니다.")
+except Exception as e:
+    st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
