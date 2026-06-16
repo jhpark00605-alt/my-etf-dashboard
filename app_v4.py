@@ -1549,9 +1549,9 @@ html_string += f"""
     </div>
 
 <div class="section-container">
-    <div class="section-title">📺 Section 2. 자산운용사 마케팅 동향 및 공식 미디어/리테일 채널 입체 분석</div>
+    <div class="section-title">📺 Section 2. 자산운용사/증권사 공식 유튜브 채널 분석</div>
     
-    <div class="content-title">▶ 1. 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도</div>
+    <div class="content-title">▶ 1. 대형 자산운용사 핵심 마케팅 키워드 및 업로드 주기</div>
     <table>
         <thead>
             <tr>
