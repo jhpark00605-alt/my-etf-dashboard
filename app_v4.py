@@ -1287,18 +1287,8 @@ with st.container(border=True):
                 """
 
         # ----------------------------------------------------------------------
-        # 📈 SECTION 4. 주간 수익률 퍼포먼스 & 테마별 평균 수익률 (실시간 정렬 및 기호 버그 완벽 수정)
+        # 📈 SECTION 4. 주간 수익률 퍼포먼스 & 테마별 평균 수익률 (session_state 연동)
         # ----------------------------------------------------------------------
-        # 💡 대시보드 UI에서 사용자가 선택한 정렬 조건 텍스트를 세션에서 안전하게 가져옵니다.
-        # (예: '수익률 하락률 상위순 (ASC)' 또는 '수익률 상승률 상위순 (DESC)' 등)
-        sort_order_label = st.session_state.get('sort_order', '상승률 상위순') 
-        
-        # 💡 정렬 기준에 따라 리포트 제목을 동적으로 변경합니다.
-        if "하락" in str(sort_order_label):
-            section4_title_text = f"주간 수익률 하락순 TOP {st.session_state.get('selected_top_n', 10)} ETF 리스트"
-        else:
-            section4_title_text = f"주간 수익률 상승순 TOP {st.session_state.get('selected_top_n', 10)} ETF 리스트"
-
         top_n_return_html = ""
         top_n_count = st.session_state.get('selected_top_n', 10) 
         target_top_df = st.session_state.get('df_top_returns', None)
@@ -1341,59 +1331,6 @@ with st.container(border=True):
                 color_span = "#1E40AF" if "-" in val_str else "#B91C1C"
                 sign_str = "" if "-" in val_str else "+"
                 top_n_return_html += f"<tr><td>{name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{val_str}%</td></tr>"
-
-        # 3. 우측 테마별 평균 수익률 구역
-        theme_return_html = ""
-        target_theme_df = st.session_state.get('df_theme_returns', None)
-        
-        if target_theme_df is not None and not target_theme_df.empty:
-            try:
-                for idx, row in target_theme_df.reset_index().iterrows():
-                    t_name = row.get('테마명', row.get('시장핵심테마', '핵심섹터'))
-                    t_val = row.get('주간수익률(%)', row.get('주간수익률', row.get('평균수익률', 0.0)))
-                    
-                    clean_t_str = str(t_val).replace('+-', '-').replace('+', '').strip()
-                    color_str = "#1E40AF" if "-" in clean_t_str else "#B91C1C"
-                    sign_str = "" if "-" in clean_t_str else "+"
-                    theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{clean_t_str if '%' in clean_t_str else clean_t_str + '%'}</td></tr>"
-            except: 
-                pass # 💡 개행 및 들여쓰기 교정 완료
-
-        # 백업용 더미 데이터 영역 (데이터가 없을 때만 작동)
-        if not top_n_return_html or top_n_return_html.count("0.0%") > 3:
-            top_n_return_html = "" 
-            default_top_assets = [("KODEX 미국AI테크TOP10+", "6.72"), ("KODEX AI반도체TOP2플러스", "6.15"), ("KODEX 미국나스닥100", "4.12"), ("KODEX 단기자금", "0.08"), ("KODEX 국채30년선물", "-1.05")]
-            for name, val in default_top_assets[:top_n_count]:
-                color_span = "#B91C1C" if "-" not in val else "#1E40AF"
-                sign_str = "+" if "-" not in val else ""
-                top_n_return_html += f"<tr><td>{name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{val}%</td></tr>"
-
-        # 우측 테이블: 테마별 평균 수익률 연동 및 기호 정정
-        theme_return_html = ""
-        target_theme_df = st.session_state.get('df_theme_returns', None)
-        
-        if target_theme_df is not None and not target_theme_df.empty:
-            try:
-                for idx, row in target_theme_df.reset_index().iterrows():
-                    t_name = row.get('테마명', row.get('시장핵심테마', '핵심섹터'))
-                    t_val = row.get('주간수익률(%)', row.get('주간수익률', row.get('평균수익률', 0.0)))
-                    
-                    try:
-                        num_t_val = float(t_val)
-                    except:
-                        num_t_val = 0.0
-                        
-                    if num_t_val != 0.0:
-                        if num_t_val > 0:
-                            color_str = "#B91C1C" # 양수는 빨간색
-                            sign_str = "+"
-                        else:
-                            color_str = "#1E40AF" # 음수는 파란색
-                            sign_str = "" # 마이너스 기호 자동 노출
-                            
-                        theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{num_t_val:.2f}%</td></tr>"
-            except: 
-                pass
 
         # 3. 우측 테마별 평균 수익률 구역 (실시간 데이터 연동 및 try-except 마감)
         theme_return_html = ""
@@ -1501,7 +1438,7 @@ with st.container(border=True):
                 </div>
                 """
         # ----------------------------------------------------------------------
-        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드 (안전장치 및 에러 완벽 봉쇄)
+        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
         # ----------------------------------------------------------------------
         html_string = f"""
         <html>
@@ -1668,56 +1605,76 @@ with st.container(border=True):
 
             <div class="section-container">
                 <div class="section-title">📈 Section 4. 주간 수익률 퍼포먼스 & 차주 주목 테마 ETF 라인업</div>
-                <table style="width:100%; border:none;">
-                    <tr>
-                        <td style="width:48%; border:none; padding:0;">
-                            <div class="content-title">[주간 수익률 TOP {top_n_count} ETF 전체 리스트]</div>
-                            <table>
-                                <thead><tr><th>KODEX ETF 종목명</th><th>주간 수익률</th></tr></thead>
-                                <tbody>{top_n_return_html}</tbody>
+                <table style="width:100%; border:none; border-collapse: collapse;">
+                    <tr style="border:none;">
+                        <td style="width:48%; border:none; padding:0; vertical-align: top;">
+                            <div class="content-title">[{section4_title_text}]</div>
+                            <table style="width:100%; border-collapse: collapse; margin-top: 1.5mm;">
+                                <thead>
+                                    <tr>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt;">KODEX ETF 종목명</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 30%;">주간 수익률</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {top_n_return_html}
+                                </tbody>
                             </table>
                         </td>
                         <td style="width:4%; border:none;"></td>
-                        <td style="width:48%; border:none; padding:0;">
+                        <td style="width:48%; border:none; padding:0; vertical-align: top;">
                             <div class="content-title">[주간 주요 테마별 평균 수익률 전체 테이블]</div>
-                            <table>
-                                <thead><tr><th>시장 핵심 분석 테마 섹터</th><th>평균 수익률</th></tr></thead>
-                                <tbody>{theme_return_html}</tbody>
+                            <table style="width:100%; border-collapse: collapse; margin-top: 1.5mm;">
+                                <thead>
+                                    <tr>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt;">시장 핵심 분석 테마 섹터</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 30%;">평균 수익률</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {theme_return_html}
+                                </tbody>
                             </table>
                         </td>
                     </tr>
                 </table>
             </div>
-            
+
             <div class="section-container">
                 <div class="section-title">📱 Section 5. 네이버 데이터랩 트렌드 변동 & 마케팅 뉴스 및 AI 최종 인사이트</div>
                 
-                <div class="content-title">▶ 1. KODEX 브랜드 및 타겟 키워드 마케팅 뉴스 모니터링 원문</div>
-                <p style="color:#4B5563; font-size:8.5pt; margin-bottom:2mm; padding-left:0.5mm;">{marketing_news_text}</p>
-                
-                <div style="background-color:#EFF6FF; border: 1px solid #BFDBFE; padding:3.5mm; border-radius:6px; margin-bottom:3mm;">
-                    <div style="font-weight:bold; color:#1E40AF; font-size:10pt; margin-bottom:2mm;">📢 KODEX 주간 마케팅 및 보도 트렌드 종합 요약 (에이전트 실시간 연동)</div>
-                    <ul style="padding-left:4mm; margin:0; line-height:1.5;">
+                <div style="border: 1px solid #DBEAFE; background-color: #EFF6FF; padding: 3.5mm; margin-bottom: 4mm; border-radius: 6px;">
+                    <div style="font-weight: bold; color: #1E40AF; font-size: 9.5pt; margin-bottom: 1.5mm;">📢 KODEX 주간 마케팅 및 보도 트렌드 종합 요약 (에이전트 실시간 연동)</div>
+                    <ul style="margin: 0; padding-left: 4mm; line-height: 1.5;">
                         {kodex_press_dynamic_html}
                     </ul>
                 </div>
-                
-                <table style="width:100%; border:none;">
-                    <tr>
-                        <td style="width:50%; border:none; padding:0;">
+
+                <table style="width: 100%; border-collapse: collapse; border: none;">
+                    <tr style="border: none;">
+                        <td style="width: 52%; vertical-align: top; padding-right: 4mm; border: none;">
                             <div class="content-title">[ 📊 네이버 데이터랩 검색 트렌드 변동 그래프 ]</div>
-                            <div style="margin-top:2mm;">
+                            <div style="margin-top: 2mm; background-color: #FFFFFF; border: 1px solid #E5E7EB; padding: 3mm; border-radius: 6px;">
                                 {datalab_box_chart_html}
                             </div>
-                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2mm; text-align: center; font-size: 7.5pt; color: #6B7280; border-radius: 4px; margin-top: 1.5mm;">
-                                * 우측 분홍색 바(■) 길이는 최대 검색량 대비 상대적 트래픽 강도를 뜻함
-                            </div>
                         </td>
-                        <td style="width:4%; border:none;"></td>
-                        <td style="width:46%; border:none; padding:0;">
+                        
+                        <td style="width: 48%; vertical-align: top; border: none;">
                             <div class="content-title">💡 2. 자산 배분 전략 및 에이전트 AI 종합 인사이트</div>
-                            <div style="background-color:#F9FAFB; border:1px solid #E5E7EB; padding:3mm; border-radius:4px; font-size:8pt; line-height:1.5; color:#1F2937;">
-                                {ai_insight_text}
+                            
+                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; margin-bottom: 2mm; border-radius: 4px;">
+                                <div style="font-weight: bold; color: #BE185D; font-size: 8pt; margin-bottom: 0.5mm;">🎯 핵심 전략 01</div>
+                                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{pdf_insights[0]}</div>
+                            </div>
+                            
+                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; margin-bottom: 2mm; border-radius: 4px;">
+                                <div style="font-weight: bold; color: #B45309; font-size: 8pt; margin-bottom: 0.5mm;">💰 핵심 전략 02</div>
+                                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{pdf_insights[1]}</div>
+                            </div>
+                            
+                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; border-radius: 4px;">
+                                <div style="font-weight: bold; color: #047857; font-size: 8pt; margin-bottom: 0.5mm;">🌏 핵심 전략 03</div>
+                                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{pdf_insights[2]}</div>
                             </div>
                         </td>
                     </tr>
@@ -1731,19 +1688,18 @@ with st.container(border=True):
         </html>
         """
         
-        # 🚨 [핵심 해결책] pdf_data 변수를 미리 빈 값으로 선언하여 무조건 스코프 확보
-        pdf_data = b"" 
-        
         pdf_buffer = BytesIO()
         pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
         
-        # pisa_status 에러 여부와 무조건 상관없이 가용한 바이너리를 일단 긁어옴
+        if pisa_status.err:
+            return None
+        
         pdf_buffer.seek(0)
-        pdf_data = pdf_buffer.getvalue()
+        return pdf_buffer.getvalue()
 
-    # 완전히 분리된 최상위 level에서 스트림릿 버튼 컴파일 보장
     try:
-        if pdf_data and len(pdf_data) > 0:
+        pdf_data = generate_pdf_report()
+        if pdf_data:
             st.download_button(
                 label="📄 PDF 리포트 다운로드",
                 data=pdf_data,
