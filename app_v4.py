@@ -1539,7 +1539,9 @@ with st.container(border=True):
         <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
         <div class="doc-meta">발행기준시점: {current_date_str} | 작성주체: AI 자동 분석 컴파일러</div>
     </div>
-    
+            
+    def generate_pdf_report():
+    """
     <div class="section-container">
         <div class="section-title">🎯 Section 1. 시장 트렌드 & 실시간 뉴스 키워드 빈도</div>
         <p style="margin: 0.5mm 0;">• <span class="badge-up">🚀 라이징 테마:</span> {rising_theme}</p>
@@ -1560,8 +1562,8 @@ with st.container(border=True):
             </tbody>
         </table>
     </div>
-"""
-            
+    """
+    
     # ----------------------------------------------------------------------
     # 📺 Section 2. 자산운용사 마케팅 동향 및 공식 미디어/리테일 채널 입체 분석
     # ----------------------------------------------------------------------
@@ -1752,7 +1754,7 @@ with st.container(border=True):
 """
 
     # ----------------------------------------------------------------------
-    # 📑 [파이썬 코드 구역] 4칸 공백 정렬 고정 완료
+    # 📑 PDF 생성 (정확히 함수 시작점에서 공백 4칸 들어간 위치로 고정)
     # ----------------------------------------------------------------------
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
@@ -1765,7 +1767,7 @@ with st.container(border=True):
 
 
 # ----------------------------------------------------------------------
-# 📥 Streamlit UI 구역 (함수 바깥 영역, 맨 앞 줄 공백 없음)
+# 📥 Streamlit UI 구역 (함수 정의가 완전히 끝났으므로 맨 앞줄 공백 없음)
 # ----------------------------------------------------------------------
 try:
     pdf_data = generate_pdf_report()
