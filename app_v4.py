@@ -1500,246 +1500,252 @@ with st.container(border=True):
                     <div style='color: #F43F5E; font-size: 8.5pt; letter-spacing: 0.3mm; margin-top: 0.5mm;'>{"■"*d_bar}</div>
                 </div>
                 """
-# ======================================================================
-# 👑 [100% 원본 복구] 에러가 나기 전 완벽하게 작동하던 오리지널 통문장 구조
-# ======================================================================
-html_string = f"""<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght=400;700&display=swap');
-        @page {{ size: a4; margin: 11mm 11mm 11mm 11mm; }}
-        body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }}
-        .header-container {{ border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }}
-        .doc-title {{ font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }}
-        .doc-meta {{ text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }}
-        .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }}
-        .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
-        .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }}
-        .badge-up {{ color: #B91C1C; font-weight: bold; }}
-        .badge-down {{ color: #1E40AF; font-weight: bold; }}
-        table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }}
-        th {{ background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }}
-        td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }}
-        ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
-        li {{ margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }}
-        .page-break {{ page-break-before: always; }}
-        .footer-text {{ text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }}
-    </style>
-</head>
-<body>
-    <div class="header-container">
-        <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
-        <div class="doc-meta">작성주체: AI 자동 분석 컴파일러</div>
-    </div>
+# ----------------------------------------------------------------------
+        # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
+        # ----------------------------------------------------------------------
+        html_string = f"""
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
+                @page {{ size: a4; margin: 11mm 11mm 11mm 11mm; }}
+                body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }}
+                .header-container {{ border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }}
+                .doc-title {{ font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }}
+                .doc-meta {{ text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }}
+                .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }}
+                .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
+                .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }}
+                .badge-up {{ color: #B91C1C; font-weight: bold; }}
+                .badge-down {{ color: #1E40AF; font-weight: bold; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }}
+                th {{ background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }}
+                td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }}
+                ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
+                li {{ margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }}
+                .page-break {{ page-break-before: always; }}
+                .footer-text {{ text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }}
+            </style>
+        </head>
+        <body>
+            <div class="header-container">
+                <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
+                <div class="doc-meta">발행기준시점: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 작성주체: AI 자동 분석 컴파일러</div>
+            </div>
             
-    <div class="section-container">
-        <div class="section-title">🎯 Section 1. 시장 트렌드 & 실시간 뉴스 키워드 빈도</div>
-    </div>
-
-    <div class="section-container">
-        <div class="section-title">📺 Section 2. 자산운용사/증권사 공식 유튜브 채널 분석</div>
-        
-        <div class="content-title">▶ 1. 대형 자산운용사 핵심 마케팅 키워드 및 업로드 주기</div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 22%;">자산운용사 (브랜드)</th>
-                    <th style="width: 63%;">핵심 마케팅 타겟 키워드 및 타겟팅 스코어</th>
-                    <th style="width: 15%;">캠페인 집중도</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td><b>삼성자산운용 (KODEX)</b></td><td>AI 테크, 미국 반도체, 월배당 고배당, 연금투자 안정성 밸류체인 유입 소구</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
-                <tr><td><b>미래에셋자산운용 (TIGER)</b></td><td>글로벌 혁신기술, 나스닥 핵심 성장주, 개인 투자 수급 집중형 직관 테마 마케팅</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
-                <tr><td><b>KB자산운용 (RISE)</b></td><td>정부 밸류업 프로그램 수혜주, 저평가 가치 배당주, 국채 자산배분 안정성 소구</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
-                <tr><td><b>한국투자신탁운용 (ACE)</b></td><td>글로벌 원천 반도체 TOP4, 빅테크 소프트웨어 독점주, 신흥국(인도 등) 시장 타겟팅</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
-            </tbody>
-        </table>
-
-        <div class="content-title" style="margin-top:3mm;">▶ 2. 4대 주요 증권사별 리테일 영업 채널 상품 소구 동향</div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 25%;">대형 리테일 증권사</th>
-                    <th style="width: 75%;">영업점 창구 및 MTS 홈화면 주력 매칭 추천 ETF 테마 동향</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td><b>삼성증권</b></td><td>패밀리오피스 및 자산가 그룹 대상 절세 연금 포트폴리오 다변화를 위한 미국 반도체 및 인컴 자산 매칭 유도</td></tr>
-                <tr><td><b>미래에셋증권</b></td><td>연금저축 및 퇴직연금(IRP) 디지털 독자층 타겟형 미국 독점 AI 기술주 및 커버드콜 결합형 상품 전면 배치</td></tr>
-                <tr><td><b>키움증권</b></td><td>리테일 개인 주식 투자 헤비 트레이더 대상 일간 거래량 최상위 테크 레버리지 및 섹터 회전 가이드 중심 수급 유도</td></tr>
-                <tr><td><b>한국투자증권</b></td><td>글로벌 지수 압축 독점 자산군 장기 적립식 가이드 제공 및 엔화 노출형 미국채 자산군 중심의 매크로 헷징 제안</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div class="page-break"></div>
-
-    <div class="section-container">
-        <div class="content-title">▶ 3. 4대 운용사 오피셜 유튜브 채널 콘텐츠 포커싱 점검</div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 25%;">운용사</th>
-                    <th style="width: 35%;">최근 2주간 업로드 핵심 콘텐츠 유형</th>
-                    <th style="width: 40%;">뉴미디어 트래픽 유입 포인트 분석</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td><b>KODEX (삼성)</b></td><td>• 펀드매니저가 직접 출연하는 AI ETF 설명회<br/>• 쇼츠 기반 연금 투자 세제 혜택 가이드</td><td>전문가 신뢰성 중심의 정밀 분석 영상 배치로 고액 자산가 및 장기 투자 인컴족 락인 유도</td></tr>
-                <tr><td><b>TIGER (미래에셋)</b></td><td>• 유명 주식 유튜버 콜라보 시황 브리핑<br/>• 미국 테크 밸류체인 인포그래픽 모션그래픽</td><td>트렌디한 비주얼과 인플루언서 수급을 무기로 2040 젊은 스마트 트레이더층 대량 유입 유도</td></tr>
-                <tr><td><b>RISE (KB)</b></td><td>• 리브랜딩 기념 브랜드 다큐멘터리 광고<br/>• 밸류업 동행 자산안정성 웹세미나</td><td>기업 이미지 쇄신 중심 브랜딩 및 가치 배당주 안정적 운용 포커스로 보수적 장기 유입 유도</td></tr>
-                <tr><td><b>ACE (한국투자)</b></td><td>• 'ACE 반도체 TOP4' 심층 리서치 토크쇼<br/>• 인도 성장 시장 탐방 현지 밀착 VLOG</td><td>특정 섹터 압축 독점 상품군의 차별화 포인트를 정밀 전달하여 매니아층 확보</td></tr>
-            </tbody>
-        </table>
-
-        <div class="content-title" style="margin-top:4mm;">▶ 4. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
-        
-        <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
-            <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 삼성자산운용 (KODEX)</span>
-            <ul style="margin-top:0.5mm; padding-left:4mm;">
-                <li><b>현재 주력 ETF 상품:</b> {sec2_data['kodex']['prod']}</li>
-                <li><b>핵심 투자 테마:</b> {sec2_data['kodex']['theme']}</li>
-                <li><b>주력 판단 근거:</b> {sec2_data['kodex']['reason']}</li>
-            </ul>
-        </div>
-
-        <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
-            <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 미래에셋자산운용 (TIGER)</span>
-            <ul style="margin-top:0.5mm; padding-left:4mm;">
-                <li><b>현재 주력 ETF 상품:</b> {sec2_data['tiger']['prod']}</li>
-                <li><b>핵심 투자 테마:</b> {sec2_data['tiger']['theme']}</li>
-                <li><b>주력 판단 근거:</b> {sec2_data['tiger']['reason']}</li>
-            </ul>
-        </div>
-
-        <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
-            <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ KB자산운용 (RISE)</span>
-            <ul style="margin-top:0.5mm; padding-left:4mm;">
-                <li><b>현재 주력 ETF 상품:</b> {sec2_data['rise']['prod']}</li>
-                <li><b>핵심 투자 테마:</b> {sec2_data['rise']['theme']}</li>
-                <li><b>주력 판단 근거:</b> {sec2_data['rise']['reason']}</li>
-            </ul>
-        </div>
-
-        <div>
-            <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 한국투자신탁운용 (ACE)</span>
-            <ul style="margin-top:0.5mm; padding-left:4mm;">
-                <li><b>현재 주력 ETF 상품:</b> {sec2_data['ace']['prod']}</li>
-                <li><b>핵심 투자 테마:</b> {sec2_data['ace']['theme']}</li>
-                <li><b>주력 판단 근거:</b> {sec2_data['ace']['reason']}</li>
-            </ul>
-        </div>
-    </div>
-
-    <div class="section-container">
-        <div class="section-title">👥 Section 3. 투자자별 순매수 수급 강도 입체 시각화 리포트 (Top 15 전수)</div>
-        <div style="font-size:9pt; background-color:#F9FAFB; border-left:3px solid #1E40AF; padding:1.5mm 2.5mm; color:#374151; margin-bottom:2.5mm;">
-            <b>📊 분석 대상 기간:</b> <span style='color:#1E40AF; font-weight:bold;'>{analysis_period}</span><br/>
-            <span style='font-size:8pt; color:#6B7280;'>• {excel_summary}</span>
-        </div>
-        
-        <div class="content-title" style="margin-bottom:1.5mm;">[🎯 주요 타겟 자산군별 순매수 강도 시각화 차트]</div>
-        <div style="background-color:#FFFFFF; border:1px solid #E5E7EB; padding:3mm; border-radius:4px;">
-            {section3_chart_html}
-        </div>
-    </div>
-
-    <div class="page-break"></div>
-
-    <div class="section-container">
-        <div class="section-title">📈 Section 4. 주간 수익률 퍼포먼스 & 차주 주목 테마 ETF 라인업</div>
-        <table style="width:100%; border:none;">
-            <tr>
-                <td style="width:48%; border:none; padding:0;">
-                    <div class="content-title">[주간 수익률 TOP {top_n_count} ETF 전체 리스트]</div>
-                    <table>
-                        <thead><tr><th>KODEX ETF 종목명</th><th>주간 수익률</th></tr></thead>
-                        <tbody>{top_n_return_html}</tbody>
-                    </table>
-                </td>
-                <td style="width:4%; border:none;"></td>
-                <td style="width:48%; border:none; padding:0;">
-                    <div class="content-title">[주간 주요 테마별 평균 수익률 전체 테이블]</div>
-                    <table>
-                        <thead><tr><th>시장 핵심 분석 테마 섹터</th><th>평균 수익률</th></tr></thead>
-                        <tbody>{theme_return_html}</tbody>
-                    </table>
-                </td>
-            </tr>
-        </table>
-    </div>
-
-    <div class="section-container">
-        <div class="section-title">📱 Section 5. 네이버 데이터랩 트렌드 변동 & 마케팅 뉴스 및 AI 최종 인사이트</div>
-        
-        <div style="border: 1px solid #DBEAFE; background-color: #EFF6FF; padding: 4mm; margin-bottom: 4mm; border-radius: 6px;">
-            <div style="font-weight: bold; color: #1E40AF; font-size: 10pt; margin-bottom: 2mm;">📢 KODEX 주간 마케팅 및 보도 트렌드 종합 요약 (에이전트 실시간 연동)</div>
-            <ul style="margin: 0; padding-left: 5mm; line-height: 1.6;">
-                {kodex_press_dynamic_html}
-            </ul>
-        </div>
-
-        <table style="width: 100%; border-collapse: collapse; margin-top: 1mm; border: none;">
-            <tr style="border: none;">
-                <td style="width: 50%; vertical-align: top; padding-right: 4mm; border: none;">
-                    <div class="content-title">[ 📊 네이버 데이터랩 검색 트렌드 변동 그래프 ]</div>
-                    <div style="margin-top: 2mm; display: block; width: 100%;">
-                        {datalab_box_chart_html}
-                    </div>
-                    <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2mm; text-align: center; font-size: 7.5pt; color: #6B7280; border-radius: 4px; margin-top: 2mm; clear: both;">
-                        * 우측 분홍색 바(■) 길이는 최대 검색량 대비 상대적 트래픽 강도를 뜻함
-                    </div>
-                </td>
+            <div class="section-container">
+                <div class="section-title">🎯 Section 1. 시장 트렌드 & 실시간 뉴스 키워드 빈도</div>
+                <p style="margin: 0.5mm 0;">• <span class="badge-up">🚀 라이징 테마:</span> {rising_theme}</p>
+                <p style="margin: 0.5mm 0;">• <span class="badge-down">📉 하락/정체 테마:</span> {falling_theme}</p>
+                <p style="margin: 0.5mm 0;">• <b>🧭 관심 자산군 변화 추이:</b> {trend_text}</p>
                 
-                <td style="width: 50%; vertical-align: top; border: none; padding-left: 2mm;">
-                    <div class="content-title">💡 2. 자산 배분 전략 및 에이전트 AI 종합 인사이트</div>
-                    
-                    <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 3mm; margin-bottom: 2.5mm; border-radius: 6px;">
-                        <div style="font-weight: bold; color: #BE185D; font-size: 8.5pt; margin-bottom: 1mm;">🎯 핵심 전략 01</div>
-                        <div style="font-size: 8pt; color: #374151; line-height: 1.4;">{pdf_insights[0]}</div>
-                    </div>
-                    
-                    <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 3mm; margin-bottom: 2.5mm; border-radius: 6px;">
-                        <div style="font-weight: bold; color: #B45309; font-size: 8.5pt; margin-bottom: 1mm;">💰 핵심 전략 02</div>
-                        <div style="font-size: 8pt; color: #374151; line-height: 1.4;">{pdf_insights[1]}</div>
-                    </div>
-                    
-                    <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 3mm; margin-bottom: 2.5mm; border-radius: 6px;">
-                        <div style="font-weight: bold; color: #047857; font-size: 8.5pt; margin-bottom: 1mm;">🌏 핵심 전략 03</div>
-                        <div style="font-size: 8pt; color: #374151; line-height: 1.4;">{pdf_insights[2]}</div>
-                    </div>
-                </td>
-            </tr>
-        </table>
-    </div>
+                <div class="content-title">[실시간 뉴스 핵심 키워드 언급 강도 인디케이터]</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 30%;">추출 키워드</th>
+                            <th style="width: 20%;">뉴스 노출 언급량</th>
+                            <th style="width: 50%;">트래픽 모멘텀 비주얼라이저</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {section1_graph_html}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="section-container">
+                <div class="section-title">📺 Section 2. 자산운용사 마케팅 동향 및 공식 미디어/리테일 채널 입체 분석</div>
+                
+                <div class="content-title">▶ 1. 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 22%;">자산운용사 (브랜드)</th>
+                            <th style="width: 63%;">핵심 마케팅 타겟 키워드 및 타겟팅 스코어</th>
+                            <th style="width: 15%;">캠페인 집중도</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><b>삼성자산운용 (KODEX)</b></td><td>AI 테크, 미국 반도체, 월배당 고배당, 연금투자 안정성 밸류체인 유입 소구</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
+                        <tr><td><b>미래에셋자산운용 (TIGER)</b></td><td>글로벌 혁신기술, 나스닥 핵심 성장주, 개인 투자 수급 집중형 직관 테마 마케팅</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
+                        <tr><td><b>KB자산운용 (RISE)</b></td><td>정부 밸류업 프로그램 수혜주, 저평가 가치 배당주, 국채 자산배분 안정성 소구</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
+                        <tr><td><b>한국투자신탁운용 (ACE)</b></td><td>글로벌 원천 반도체 TOP4, 빅테크 소프트웨어 독점주, 신흥국(인도 등) 시장 타겟팅</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
+                    </tbody>
+                </table>
 
-    <div class="footer-text">
-        본 인텔리전스 금융 보고서는 대시보드 내부 세션 메모리와 연동되어 실시간 복사·인쇄되었으며, 투자 참고용 요약본입니다.
-    </div>
-</body>
-</html>
-"""
+                <div class="content-title" style="margin-top:3mm;">▶ 2. 4대 주요 증권사별 리테일 영업 채널 상품 소구 동향</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 25%;">대형 리테일 증권사</th>
+                            <th style="width: 75%;">영업점 창구 및 MTS 홈화면 주력 매칭 추천 ETF 테마 동향</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><b>삼성증권</b></td><td>패밀리오피스 및 자산가 그룹 대상 절세 연금 포트폴리오 다변화를 위한 미국 반도체 및 인컴 자산 매칭 유도</td></tr>
+                        <tr><td><b>미래에셋증권</b></td><td>연금저축 및 퇴직연금(IRP) 디지털 독자층 타겟형 미국 독점 AI 기술주 및 커버드콜 결합형 상품 전면 배치</td></tr>
+                        <tr><td><b>키움증권</b></td><td>리테일 개인 주식 투자 헤비 트레이더 대상 일간 거래량 최상위 테크 레버리지 및 섹터 회전 가이드 중심 수급 유도</td></tr>
+                        <tr><td><b>한국투자증권</b></td><td>글로벌 지수 압축 독점 자산군 장기 적립식 가이드 제공 및 엔화 노출형 미국채 자산군 중심의 매크로 헷징 제안</td></tr>
+                    </tbody>
+                </table>
+            </div>
 
-# ======================================================================
-# 📑 3. PDF 컴파일 및 원래 Streamlit 다운로드 버튼 작동 구역
-# ======================================================================
-pdf_buffer = BytesIO()
-pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
+            <div class="page-break"></div>
 
-if pisa_status.err:
-    st.error("PDF 컴파일 에러 발생")
-else:
-    pdf_buffer.seek(0)
-    pdf_data = pdf_buffer.getvalue()
+            <div class="section-container">
+                <div class="content-title">▶ 3. 4대 운용사 오피셜 유튜브 채널 콘텐츠 포커싱 점검</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 25%;">운용사</th>
+                            <th style="width: 35%;">최근 2주간 업로드 핵심 콘텐츠 유형</th>
+                            <th style="width: 40%;">뉴미디어 트래픽 유입 포인트 분석</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><b>KODEX (삼성)</b></td><td>• 펀드매니저가 직접 출연하는 AI ETF 설명회<br/>• 쇼츠 기반 연금 투자 세제 혜택 가이드</td><td>전문가 신뢰성 중심의 정밀 분석 영상 배치로 고액 자산가 및 장기 투자 인컴족 락인 유도</td></tr>
+                        <tr><td><b>TIGER (미래에셋)</b></td><td>• 유명 주식 유튜버 콜라보 시황 브리핑<br/>• 미국 테크 밸류체인 인포그래픽 모션그래픽</td><td>트렌디한 비주얼과 인플루언서 수급을 무기로 2040 젊은 스마트 트레이더층 대량 유입 유도</td></tr>
+                        <tr><td><b>RISE (KB)</b></td><td>• 리브랜딩 기념 브랜드 다큐멘터리 광고<br/>• 밸류업 동행 자산안정성 웹세미나</td><td>기업 이미지 쇄신 중심 브랜딩 및 가치 배당주 안정적 운용 포커스로 보수적 장기 유입 유도</td></tr>
+                        <tr><td><b>ACE (한국투자)</b></td><td>• 'ACE 반도체 TOP4' 심층 리서치 토크쇼<br/>• 인도 성장 시장 탐방 현지 밀착 VLOG</td><td>특정 섹터 압축 독점 상품군의 차별화 포인트를 정밀 전달하여 매니아층 확보</td></tr>
+                    </tbody>
+                </table>
+
+                <div class="content-title" style="margin-top:4mm;">▶ 4. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
+                
+                <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
+                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 삼성자산운용 (KODEX)</span>
+                    <ul style="margin-top:0.5mm; padding-left:4mm;">
+                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['kodex']['prod']}</li>
+                        <li><b>핵심 투자 테마:</b> {sec2_data['kodex']['theme']}</li>
+                        <li><b>주력 판단 근거:</b> {sec2_data['kodex']['reason']}</li>
+                    </ul>
+                </div>
+
+                <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
+                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 미래에셋자산운용 (TIGER)</span>
+                    <ul style="margin-top:0.5mm; padding-left:4mm;">
+                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['tiger']['prod']}</li>
+                        <li><b>핵심 투자 테마:</b> {sec2_data['tiger']['theme']}</li>
+                        <li><b>주력 판단 근거:</b> {sec2_data['tiger']['reason']}</li>
+                    </ul>
+                </div>
+
+                <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
+                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ KB자산운용 (RISE)</span>
+                    <ul style="margin-top:0.5mm; padding-left:4mm;">
+                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['rise']['prod']}</li>
+                        <li><b>핵심 투자 테마:</b> {sec2_data['rise']['theme']}</li>
+                        <li><b>주력 판단 근거:</b> {sec2_data['rise']['reason']}</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 한국투자신탁운용 (ACE)</span>
+                    <ul style="margin-top:0.5mm; padding-left:4mm;">
+                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['ace']['prod']}</li>
+                        <li><b>핵심 투자 테마:</b> {sec2_data['ace']['theme']}</li>
+                        <li><b>주력 판단 근거:</b> {sec2_data['ace']['reason']}</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="section-container">
+                <div class="section-title">👥 Section 3. 투자자별 순매수 수급 강도 입체 시각화 리포트 (Top 15 전수)</div>
+                <div style="font-size:9pt; background-color:#F9FAFB; border-left:3px solid #1E40AF; padding:1.5mm 2.5mm; color:#374151; margin-bottom:2.5mm;">
+                    <b>📊 분석 대상 기간:</b> <span style='color:#1E40AF; font-weight:bold;'>{analysis_period}</span><br/>
+                    <span style='font-size:8pt; color:#6B7280;'>• {excel_summary}</span>
+                </div>
+                
+                <div class="content-title" style="margin-bottom:1.5mm;">[🎯 주요 타겟 자산군별 순매수 강도 시각화 차트]</div>
+                <div style="background-color:#FFFFFF; border:1px solid #E5E7EB; padding:3mm; border-radius:4px;">
+                    {section3_chart_html}
+                </div>
+            </div>
+            
+            <div class="page-break"></div>
+
+            <div class="section-container">
+                <div class="section-title">📈 Section 4. 주간 수익률 퍼포먼스 & 차주 주목 테마 ETF 라인업</div>
+                <table style="width:100%; border:none;">
+                    <tr>
+                        <td style="width:48%; border:none; padding:0;">
+                            <div class="content-title">[주간 수익률 TOP {top_n_count} ETF 전체 리스트]</div>
+                            <table>
+                                <thead><tr><th>KODEX ETF 종목명</th><th>주간 수익률</th></tr></thead>
+                                <tbody>{top_n_return_html}</tbody>
+                            </table>
+                        </td>
+                        <td style="width:4%; border:none;"></td>
+                        <td style="width:48%; border:none; padding:0;">
+                            <div class="content-title">[주간 주요 테마별 평균 수익률 전체 테이블]</div>
+                            <table>
+                                <thead><tr><th>시장 핵심 분석 테마 섹터</th><th>평균 수익률</th></tr></thead>
+                                <tbody>{theme_return_html}</tbody>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            
+            <div class="section-container">
+                <div class="section-title">📱 Section 5. 네이버 데이터랩 트렌드 변동 & 마케팅 뉴스 및 AI 최종 인사이트</div>
+                
+                <div class="content-title">▶ 1. KODEX 브랜드 및 타겟 키워드 마케팅 뉴스 모니터링 원문</div>
+                <p style="color:#4B5563; font-size:8.5pt; margin-bottom:2mm; padding-left:0.5mm;">{marketing_news_text}</p>
+                
+                <div style="background-color:#EFF6FF; border: 1px solid #BFDBFE; padding:3.5mm; border-radius:6px; margin-bottom:3mm;">
+                    <div style="font-weight:bold; color:#1E40AF; font-size:10pt; margin-bottom:2mm;">📢 KODEX 주간 마케팅 및 보도 트렌드 종합 요약 (에이전트 실시간 연동)</div>
+                    <ul style="padding-left:4mm; margin:0; line-height:1.5;">
+                        {kodex_press_dynamic_html}
+                    </ul>
+                </div>
+                
+                <table style="width:100%; border:none;">
+                    <tr>
+                        <td style="width:50%; border:none; padding:0;">
+                            <div class="content-title">[ 📊 네이버 데이터랩 검색 트렌드 변동 그래프 ]</div>
+                            <div style="margin-top:2mm;">
+                                {datalab_box_chart_html}
+                            </div>
+                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2mm; text-align: center; font-size: 7.5pt; color: #6B7280; border-radius: 4px; margin-top: 1.5mm;">
+                                * 우측 분홍색 바(■) 길이는 최대 검색량 대비 상대적 트래픽 강도를 뜻함
+                            </div>
+                        </td>
+                        <td style="width:4%; border:none;"></td>
+                        <td style="width:46%; border:none; padding:0;">
+                            <div class="content-title">💡 2. 자산 배분 전략 및 에이전트 AI 종합 인사이트</div>
+                            <div style="background-color:#F9FAFB; border:1px solid #E5E7EB; padding:3mm; border-radius:4px; font-size:8pt; line-height:1.5; color:#1F2937;">
+                                {ai_insight_text}
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            
+            <div class="footer-text">
+                본 인텔리전스 금융 보고서는 대시보드 내부 세션 메모리와 연동되어 실시간 복사·인쇄되었으며, 투자 참고용 확정 요약본입니다.
+            </div>
+        </body>
+        </html>
+        """
+        
+        pdf_buffer = BytesIO()
+        pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
+        
+        if pisa_status.err:
+            st.error("PDF 생성에 실패했습니다.")
+        else:
+            pdf_buffer.seek(0)
+            pdf_data = pdf_buffer.getvalue()
 
     try:
         if pdf_data:
             st.download_button(
                 label="📄 PDF 리포트 다운로드",
                 data=pdf_data,
-                file_name="KODEX_Intelligence_Report.pdf",
+                file_name=f"KODEX_Perfect_Sync_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",
                 use_container_width=True
             )
