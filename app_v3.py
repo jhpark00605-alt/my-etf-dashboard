@@ -992,7 +992,7 @@ def render_section_4():
         # 1) 선택 기간 수익률 TOP N (차트 + 표)
         # --------------------------------------------------------
         # 💡 타이틀도 사용자가 고른 기간이 동적으로 표시되도록 업그레이드했습니다.
-        st.markdown(f"### 🏆({period_opt}) 수익률 TOP {top_n}")
+        st.markdown(f"### 🏆{period_opt} 수익률 TOP {top_n}")
         
         if not df_rate.empty and "수익률(%)" in df_rate.columns:
             top_df = df_rate.head(top_n)
@@ -1032,7 +1032,7 @@ def render_section_4():
         # --------------------------------------------------------
         # 2) 테마별 수익률 현황 (동적 기간 실시간 계산 적용)
         # --------------------------------------------------------
-        st.markdown(f"### 🗂️({period_opt}) 주요 테마별 평균 수익률 현황")
+        st.markdown(f"### 🗂️{period_opt} 주요 테마별 평균 수익률 현황")
         
         if not df_theme.empty:
             col_th1, col_th2 = st.columns([3, 2])
