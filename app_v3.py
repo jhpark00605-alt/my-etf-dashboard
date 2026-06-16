@@ -1438,8 +1438,8 @@ with st.container(border=True):
         def _pick_box(label, name, bg, point, accent):
             return f"""
             <div style="flex:1; border:2px solid {accent}; border-radius:8px; padding:4mm; background-color:#FAFAFA; min-width:0;">
-                <div style="font-weight:bold; color:{accent}; font-size:9.5pt; margin-bottom:1.5mm;">{label}</div>
-                <div style="font-size:10pt; font-weight:bold; color:#1E3A8A; margin-bottom:3mm; border-bottom:1px solid #E5E7EB; padding-bottom:2mm;">{name}</div>
+                <div style="font-weight:bold; color:{accent}; font-size:9pt; margin-bottom:1.5mm;">{label}</div>
+                <div style="font-size:10pt; font-weight:bold; color:#1E3A8A; padding:2mm 0; margin-bottom:2mm; border-top:1px solid {accent}; border-bottom:1px solid {accent};">{name}</div>
                 <div style="font-size:8pt; color:#374151; margin-bottom:1.5mm;"><b>▪ 선정 배경:</b> {bg}</div>
                 <div style="font-size:8pt; color:#374151;"><b>▪ 투자 포인트:</b> {point}</div>
             </div>
@@ -1450,7 +1450,7 @@ with st.container(border=True):
             p2 = picks.get('pick2', {})
             p3 = picks.get('pick3', {})
             gemini_pick_html = f"""
-            <div style="display:flex; gap:4mm; margin-top:2mm;">
+            <div style="display:flex; flex-direction:row; gap:4mm; margin-top:2mm; align-items:stretch;">
                 {_pick_box(p1.get('label','🌟 주도주 모멘텀'), p1.get('name','—'), p1.get('bg',''), p1.get('point',''), '#1D4ED8')}
                 {_pick_box(p2.get('label','📈 테마 순환매 수혜'), p2.get('name','—'), p2.get('bg',''), p2.get('point',''), '#047857')}
                 {_pick_box(p3.get('label','🛡️ 리스크 헤지형'), p3.get('name','—'), p3.get('bg',''), p3.get('point',''), '#B45309')}
