@@ -960,7 +960,7 @@ else:
 # 👥 [Section 3] 투자자 데이터 분석 + DiD 기반 마케팅 순수 인과효과 평가 (고도화 완본)
 # ==============================================================================
 with st.container(border=True):
-    st.header("👥 Section 3. 투자자 데이터 분석 및 DiD 기반 마케팅 순수 인과효과 측정")
+    st.header("👥 Section 3. 투자자 데이터 분석 및 이벤트 효과 분석")
     st.caption("이중차분법(Difference-in-Differences)을 활용하여 시장 및 섹터 자체의 노이즈를 제거한 오직 '마케팅 이벤트만의 순수 자금 유입 효과'를 추적합니다.")
     st.markdown("<br>", unsafe_allow_html=True)
 
