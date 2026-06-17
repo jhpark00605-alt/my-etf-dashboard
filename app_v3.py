@@ -1073,7 +1073,7 @@ with st.container(border=True):
             }), use_container_width=True, hide_index=True)
 
             # ==================================================================
-            # 🔗 [대시보드 최종 완본] 데이터 연산 필터 해제 및 카드 디자인 일원화
+            # 🔗 [대시보드 최종 완본] 데이터 연산 필터 해제 및 진단 기준 가이드라인 추가
             # ==================================================================
             st.markdown("<br><hr>", unsafe_allow_html=True)
             st.markdown("### 🧬 운용사별 이벤트&순매수와 상관관계 분석")
@@ -1104,7 +1104,7 @@ with st.container(border=True):
                         })
                         continue
 
-                    # 🔍 [해결 조치] 상단 연산 파트에서 글자 수를 50자로 자르던 if문 안전장치를 완전히 제거했습니다!
+                    # 🔍 상단 연산 파트 글자 수 제한 필터 완벽 해제
                     event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
 
                     # 마케팅 상품 키워드 추출
@@ -1165,7 +1165,27 @@ with st.container(border=True):
 
                 df_final_report = pd.DataFrame(summary_report_rows)
 
+                # 💡 [수정 및 반영 위치] 리포트 타이틀 바로 아래에 가이드 바 레이아웃 배치
                 st.markdown("<br>#### ✍️ DiD 분석 기반 이벤트 성과 분석", unsafe_allow_html=True)
+                
+                st.markdown("""
+                <div style='
+                    background-color: #F8FAFC; 
+                    border: 1px solid #E2E8F0; 
+                    border-radius: 6px; 
+                    padding: 3.5mm 4.5mm; 
+                    margin-bottom: 5mm; 
+                    font-size: 8.5pt; 
+                    color: #475569;
+                    line-height: 1.6;
+                '>
+                    <b>💡 DiD 진단 기준 안내 :</b><br/>
+                    🟢 <b>효용성 탁월 :</b> DiD 스코어 &gt; +0.05%p (시장 평균을 뛰어넘는 순수 유입)<br/>
+                    🟡 <b>효용성 보통 :</b> -0.05%p ≦ DiD 스코어 ≦ +0.05%p 이면서 실제 누적 순매수액 &gt; 0 (시장 호재 편승)<br/>
+                    🔴 <b>효용성 없음 :</b> DiD 스코어 &lt; -0.05%p (이벤트 개최에도 경쟁사 대조군 대비 자금 이탈)<br/>
+                    ⚪ <b>판단 불가 :</b> 푸쉬 종목의 수급 반응이 없거나 매칭 데이터 부재 (시장 무반응)
+                </div>
+                """, unsafe_allow_html=True)
                 
                 c1, c2 = st.columns(2)
                 c3, c4 = st.columns(2)
@@ -1184,7 +1204,6 @@ with st.container(border=True):
                     target_col = [c1, c2, c3, c4][idx]
                     event_titles_full = row['진행 중인 주요 이벤트']
                     
-                    # 진단 결과에 맞춘 하단 상태 바 색상 추출기
                     diag_text = row['최종 마케팅 효용 판단']
                     if "🟢" in diag_text: diag_bg, diag_border, diag_txt = "#DCFCE7", "#22C55E", "#15803D"
                     elif "🟡" in diag_text: diag_bg, diag_border, diag_txt = "#FEF9C3", "#EAB308", "#A16207"
@@ -1192,7 +1211,6 @@ with st.container(border=True):
                     else: diag_bg, diag_border, diag_txt = "#F1F5F9", "#94A3B8", "#475569"
 
                     with target_col:
-                        # 🎨 [UX 업그레이드] 카드 박스 내부에 '진단 결과 뱃지'까지 통합 빌드하여 깔끔하게 마감
                         st.markdown(f"""
                         <div style='
                             background-color: {style_config["bg"]}; 
@@ -1235,7 +1253,6 @@ with st.container(border=True):
                         </div>
                         """, unsafe_allow_html=True)
 
-            # 🛠️ [교정 구역] try 문과 정확히 들여쓰기 라인을 일치시켰습니다.
         except Exception as e:
             st.error(f"데이터 연산 처리 중 에러 발생: {e}")
                             
