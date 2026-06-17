@@ -891,7 +891,71 @@ else:
     # 내 코드 내의 진짜 수집 변수인 hp_results 데이터를 PDF용 세션에 실시간 주입합니다.
     st.session_state['homepage_data'] = hp_results
 
-    # ==============================================================================
+# ==============================================================================
+# 🔍 [네이버 API 엔진] 4대 운용사별 ETF 이벤트 수집 함수 (secrets 매칭 반영 버전)
+# ==============================================================================
+def fetch_all_etf_events():
+    import requests
+    import re
+    from datetime import datetime, timedelta
+
+    # 1. 💡 [수정] 대문자 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 형태로 다이렉트 매칭
+    try:
+        naver_id = st.secrets["NAVER_CLIENT_ID"]
+        naver_secret = st.secrets["NAVER_CLIENT_SECRET"]
+    except Exception as e:
+        # secrets.toml 설정 변수명이 매칭되지 않을 때 경고 출력
+        st.error("⚠️ Streamlit Secrets에 NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET 설정이 누락되었거나 이름이 다릅니다.")
+        return []
+
+    brands = {"KODEX": "삼성자산운용", "TIGER": "미래에셋자산운용", "ACE": "한국투자신탁운용", "RISE": "KB자산운용"}
+    url = "https://openapi.naver.com/v1/search/blog.json"
+    headers = {"X-Naver-Client-Id": naver_id, "X-Naver-Client-Secret": naver_secret}
+    
+    all_processed_events = []
+    one_month_ago = datetime.now() - timedelta(days=30)
+    etf_pattern = re.compile(r'\b(KODEX|TIGER|ACE|RISE)\s?([A-Za-z0-9가-힣&·\+]+(?:\s+[A-Za-z0-9가-힣&·\+]+){0,3})')
+
+    for brand, company in brands.items():
+        params = {"query": f"{brand} 이벤트", "display": 50, "sort": "sim"}
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            items = response.json().get("items", [])
+        except: 
+            continue
+
+        for item in items:
+            post_date_str = item.get("postdate", "")
+            if not post_date_str: 
+                continue
+            try:
+                post_date = datetime.strptime(post_date_str, "%Y%m%d")
+            except:
+                continue
+            
+            # 최근 30일 데이터만 필터링
+            if post_date >= one_month_ago:
+                title = item.get("title", "").replace("<b>", "").replace("</b>", "")
+                description = item.get("description", "").replace("<b>", "").replace("</b>", "")
+                
+                raw_matches = etf_pattern.findall(title + " " + description)
+                cleaned_matches = []
+                for b, prod in raw_matches:
+                    prod_clean = prod.split("이벤트")[0].split("인증")[0].split("참여")[0].strip()
+                    if len(prod_clean) > 1: 
+                        cleaned_matches.append(f"{b} {prod_clean}")
+                
+                extracted_products = ", ".join(list(set(cleaned_matches))) if cleaned_matches else f"{brand} 관련 상품"
+
+                all_processed_events.append({
+                    "운용사": company, 
+                    "브랜드": brand, 
+                    "제목": title, 
+                    "🎯 유도 ETF 종목": extracted_products
+                })
+                
+    return all_processed_events
+# ==============================================================================
 # 📊 SECTION 2-B. 운용사별 이벤트-순매수 연관성 분석 (팀원 코드 합치기)
 # ==============================================================================
 st.markdown("<br>", unsafe_allow_html=True)
