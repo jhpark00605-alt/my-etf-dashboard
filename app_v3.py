@@ -1978,6 +1978,18 @@ with st.container(border=True):
         # ----------------------------------------------------------------------
         # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
         # ----------------------------------------------------------------------
+        # 1. html_string 시작 바로 윗줄에 이 코드를 붙여넣으세요.
+        homepage_session = st.session_state.get('homepage_data', [])
+    
+        if homepage_session:
+            # 홈페이지 스크리닝 데이터가 있으면 한 줄씩 bullet point(•) 형태로 예쁘게 결합합니다.
+            part_d_text = "<br>".join([
+                f"• <b>{item.get('brand', item.get('company', ''))}</b>: {item.get('main_copy', '메인 카피 없음')} ({item.get('trend_summary', '트렌드 요약 없음')})" 
+                for item in homepage_session
+            ])
+        else:
+            part_d_text = "실시간 공식 홈페이지 스크리닝 데이터가 존재하지 않습니다."
+        
         html_string = f"""
         <html>
         <head>
@@ -2132,14 +2144,11 @@ with st.container(border=True):
                     <tr>
                         <td style="border:1px solid #E5E7EB; background-color:#F9FAFB; padding:3.5mm; border-radius:6px;">
                             <div style="font-size:8pt; color:#374151; line-height:1.5;">
-                                {sec2_data['part_d']}
-                            </div>
+                                {part_d_text}  </div>
                         </td>
                     </tr>
                 </table>
                 </div> ```
-
-이렇게 수정하시면 블로그 4분할 카드형 리포트 바로 아래에 가로로 길게 홈페이지 실시간 스크리닝 요약이 깔끔한 박스 형태로 연달아 출력됩니다!
             </div>
 
             <div class="section-container">
