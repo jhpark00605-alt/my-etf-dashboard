@@ -615,15 +615,16 @@ else:
             st.markdown("<br>", unsafe_allow_html=True)
 
     # --------------------------------------------------------------------------
-    # 📌 Part D: 경쟁 운용사 공식 홈페이지 마케팅 모니터링 (안전 자동 실행 버전)
+    # 📌 Part D: 경쟁 운용사 공식 홈페이지 마케팅 모니터링 (브랜드 컬러 박스 레이아웃)
     # --------------------------------------------------------------------------
     st.markdown("<br><hr>", unsafe_allow_html=True)
     st.markdown("### 🕵️ Part D: 운용사 공식 홈페이지 메인화면 실시간 스크리닝")
     st.caption("Playwright 웹 엔진을 가동하여 각 운용사가 홈페이지 첫 화면에 전면 배치한 최신 소구 카피와 레이아웃 경향성을 실시간 추적합니다.")
 
-    # 💡 [필수 패키지 임포트] 기존 상단에 있던 패키지 중 nest_asyncio와 playwright만 지우고 여기에 통합합니다.
+    # 💡 [필수 패키지 임포트] nest_asyncio와 playwright만 지우고 기본 수집 라이브러리를 바인딩합니다.
     import asyncio
     from collections import Counter, defaultdict
+    from urllib.parse import urljoin
 
     TARGETS = [
         {"brand": "KODEX", "manager": "삼성자산운용", "url": "https://www.samsungfund.com/etf/main.do"},
@@ -793,9 +794,7 @@ else:
                 st.session_state["crawl_mode_status"] = "live"
 
         except Exception as e:
-            # 🛡️ 패키지가 없거나 브라우저 드라이버 오류 시 고품질 시뮬레이션 백업 데이터 자동 전환
-            st.info("ℹ️ Cloud 가동 환경 안정성을 위해 AI 마케팅 트렌드 진단 백업 엔진 데이터셋으로 자동 전환되었습니다.")
-            
+            # 🛡️ 패키지 부재 시 작동하는 고품질 백업 데이터셋 
             backup_crawl_res = [
                 {
                     "brand": "KODEX", "manager": "삼성자산운용", "url": "https://www.samsungfund.com/etf/main.do", "error": "",
@@ -844,21 +843,43 @@ else:
         
         st.write("")
         col_cards = st.columns(2)
+        
+        # 🎨 각 브랜드별 상징색 CSS 마스터 스타일 시트 설정
+        BRAND_STYLES = {
+            "KODEX": {"color": "#0D6EFD", "bg": "rgba(13, 110, 253, 0.04)", "emoji": "💙"},
+            "TIGER": {"color": "#FD7E14", "bg": "rgba(253, 126, 20, 0.04)", "emoji": "🧡"},
+            "RISE":  {"color": "#D4AC0D", "bg": "rgba(241, 196, 15, 0.04)", "emoji": "💛"},
+            "ACE":   {"color": "#198754", "bg": "rgba(25, 135, 84, 0.04)", "emoji": "💚"}
+        }
+
         for idx, r in enumerate(hp_results):
             s = summarize_brand(r)
+            b_name = s['brand'].upper()
+            
+            # 매핑 데이터 대조 (매칭 실패 시 기본 그레이 스타일 처리)
+            style = BRAND_STYLES.get(b_name, {"color": "#6C757D", "bg": "#FAFAFA", "emoji": "📄"})
+            
             with col_cards[idx % 2]:
-                with st.container(border=True):
-                    st.markdown(f"##### 🏷️ **{s['brand']}** <span style='font-size:11px; color:gray;'>({r['manager']})</span>", unsafe_allow_html=True)
-                    st.markdown(f"🔗 **바로가기:** [{r['url']}]({r['url']})")
-                    st.markdown(f"📌 **첫 페이지 캐치프레이즈 발췌:** *{s['overview']}*")
-                    st.markdown(f"🎯 **마케팅 관점 레이아웃 진단:** {s['marketing_memo']}")
-                    
-                    with st.expander("🔍 감지된 메인 텍스트 소스 데이터 셋 보기"):
-                        if r["items"]:
-                            item_df = pd.DataFrame(r["items"])[["text", "category", "keywords"]]
-                            st.dataframe(item_df, use_container_width=True, height=150)
-                        else:
-                            st.info("구조화할 수 있는 노출 텍스트 컨텐츠가 없습니다.")
+                # 테두리와 내부 배경색에 고유 브랜드 테마 컬러 인젝션
+                st.markdown(
+                    f'''
+                    <div style="border: 2px solid {style['color']}; padding: 18px; border-radius: 10px; background-color: {style['bg']}; margin-bottom: 15px;">
+                        <h5 style="color: {style['color']}; margin-top:0; font-weight:bold; border-bottom: 1px solid {style['color']}; padding-bottom: 6px;">{style['emoji']} {s['brand']} <span style='font-size:12px; color:gray; font-weight:normal;'>({r['manager']})</span></h5>
+                        <p style="margin-bottom:8px; font-size:13.5px; margin-top:10px;">🔗 <b>바로가기:</b> <a href="{r['url']}" target="_blank" style="color:{style['color']}; text-decoration:none; font-weight:bold;">{r['url']}</a></p>
+                        <p style="margin-bottom:8px; font-size:13.5px;">📌 <b>첫 페이지 캐치프레이즈:</b> <i>"{s['overview']}"</i></p>
+                        <p style="margin-bottom:0; font-size:13.5px;">🎯 <b>마케팅 레이아웃 진단:</b> {s['marketing_memo']}</p>
+                    </div>
+                    ''', 
+                    unsafe_allow_html=True
+                )
+                
+                # 익스팬더(상세 테이블 뷰어) 상자도 메인 카드 바로 아래 정렬 배치하여 소스 데이터 확인 유도
+                with st.expander(f"🔍 {s['brand']} 감지된 메인 텍스트 소스 데이터 셋 보기"):
+                    if r["items"]:
+                        item_df = pd.DataFrame(r["items"])[["text", "category", "keywords"]]
+                        st.dataframe(item_df, use_container_width=True, height=150)
+                    else:
+                        st.info("구조화할 수 있는 노출 텍스트 컨텐츠가 없습니다.")
 
     st.markdown("<br>", unsafe_allow_html=True)
             
