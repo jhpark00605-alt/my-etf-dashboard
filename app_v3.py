@@ -220,9 +220,16 @@ with st.container(border=True):
 # ==============================================================================
 # [Section 2] 경쟁사 유튜브, 뉴스 모니터링 및 실시간 블로그 마케팅 분석 (순서 조정본)
 # ==============================================================================
+import nest_asyncio
+nest_asyncio.apply()
+
+import asyncio
+from collections import Counter, defaultdict
+from playwright.async_api import async_playwright
+
 with st.container(border=True):
     st.header("📺 Section 2. 경쟁사 모니터링 & AI 마케팅 분석")
-    st.caption("주요 자산운용사 및 대형 증권사의 유튜브 채널, 실시간 구글 뉴스, 그리고 네이버 블로그 트렌드를 다각도로 교차 분석합니다.")
+    st.caption("주요 자산운용사 및 대형 증권사의 유튜브 채널, 실시간 구글 뉴스, 홈페이지 소구점, 그리고 네이버 블로그 트렌드를 다각도로 교차 분석합니다.")
     st.markdown("<br>", unsafe_allow_html=True)
 
     # --------------------------------------------------------------------------
@@ -613,6 +620,212 @@ else:
                                 l_col2.markdown(display_text)
             
             st.markdown("<br>", unsafe_allow_html=True)
+
+# --------------------------------------------------------------------------
+    # 📌 Part D: 경쟁 운용사 공식 홈페이지 마케팅 모니터링 (자동 실행 버전)
+    # --------------------------------------------------------------------------
+    st.markdown("<br><hr>", unsafe_allow_html=True)
+    st.markdown("### 🕵️ Part D: 운용사 공식 홈페이지 메인화면 실시간 스크리닝")
+    st.caption("Playwright 웹 엔진을 가동하여 각 운용사가 홈페이지 첫 화면에 전면 배치한 최신 소구 카피와 레이아웃 경향성을 실시간 추적합니다.")
+
+    TARGETS = [
+        {"brand": "KODEX", "manager": "삼성자산운용", "url": "https://www.samsungfund.com/etf/main.do"},
+        {"brand": "TIGER", "manager": "미래에셋자산운용", "url": "https://investments.miraeasset.com/tigeretf/ko/main/index.do"},
+        {"brand": "RISE",  "manager": "KB자산운용",      "url": "https://www.riseetf.co.kr/"},
+        {"brand": "ACE",   "manager": "한국투자신탁운용", "url": "https://www.aceetf.co.kr/"},
+    ]
+
+    ETF_KEYWORDS = [
+        "ETF","KODEX","RISE","ACE","TIGER","신규상장","상장","월배당","분배금",
+        "연금","퇴직연금","IRP","ISA","미국","나스닥","S&P500","반도체","AI",
+        "인공지능","로봇","방산","2차전지","커버드콜","채권","금리","레버리지",
+        "인버스","액티브","테마","리포트","인사이트","뉴스룸","가이드"
+    ]
+
+    CATEGORY_RULES = {
+        "메인 배너/캠페인": ["메인","배너","hot","추천","지금","new","신규","상장","캠페인","대표","주목","인기"],
+        "공지/안내":        ["공지","안내","분배금","변경","상장폐지","투자유의","알림"],
+        "이벤트":           ["이벤트","event","프로모션","혜택","참여"],
+        "ETF 상품/테마":    ["상품","ETF","테마","월배당","커버드콜","반도체","나스닥","미국","AI","방산","채권","금리"],
+        "리포트/인사이트":  ["리포트","인사이트","전망","분석","뉴스룸","영상","매크로","칼럼","시장","전략"],
+        "연금/절세":        ["연금","퇴직연금","IRP","ISA","절세","계좌"],
+        "가이드/교육":      ["가이드","FAQ","자주묻는","처음","투자방법","계산기","알아보기"],
+    }
+
+    BAD_TEXTS = {
+        "로그인","회원가입","검색","닫기","열기","메뉴","전체메뉴",
+        "이전","다음","처음","마지막","TOP","KO","EN",
+        "본문 바로가기","주메뉴 바로가기","사이트맵","새창열림",
+        "facebook","instagram","youtube","카카오톡"
+    }
+
+    def clean_text(text):
+        return re.sub(r"\s+", " ", str(text)).strip()
+
+    def is_good_text(text):
+        text = clean_text(text)
+        if not text or text in BAD_TEXTS: return False
+        if len(text) < 5 or len(text) > 280: return False
+        if re.fullmatch(r"[\d\s\.\,\-\+\%\/]+", text): return False
+        return True
+
+    def find_keywords(text):
+        upper = str(text).upper()
+        return sorted(list(set([kw for kw in ETF_KEYWORDS if kw.upper() in upper])))
+
+    def is_etf_related(text):
+        return len(find_keywords(text)) > 0
+
+    def classify_text(text):
+        t = str(text).lower()
+        scores = {cat: sum(1 for kw in kws if kw.lower() in t) for cat, kws in CATEGORY_RULES.items()}
+        best = max(scores, key=scores.get)
+        return best if scores[best] > 0 else "기타 노출 콘텐츠"
+
+    def short(text, n=85):
+        text = clean_text(text)
+        return text if len(text) <= n else text[:n].rstrip() + "..."
+
+    def get_visible_text_blocks(html, base_url):
+        soup = BeautifulSoup(html, "lxml")
+        for tag in soup(["script","style","noscript","iframe","svg","canvas","form"]):
+            tag.decompose()
+
+        candidates = []
+        for sel in ["h1","h2","h3","a","p","strong","span","li","article","section"]:
+            for tag in soup.select(sel):
+                text = clean_text(tag.get_text(" ", strip=True))
+                if not is_good_text(text): continue
+                href = urljoin(base_url, tag.get("href","")) if tag.name == "a" and tag.get("href") else ""
+                candidates.append({
+                    "text": text, "url": href,
+                    "category": classify_text(text),
+                    "keywords": find_keywords(text),
+                    "is_etf": is_etf_related(text),
+                })
+
+        seen, unique = set(), []
+        for item in candidates:
+            key = re.sub(r"\s+", "", item["text"])[:90]
+            if key in seen: continue
+            seen.add(key)
+            unique.append(item)
+
+        unique = sorted(unique, key=lambda x: (not x["is_etf"], x["category"] == "기타 노출 콘텐츠", len(x["text"])))
+        return unique[:22]
+
+    def summarize_brand(result):
+        brand = result["brand"]
+        items = result["items"]
+
+        if result["error"]:
+            return {"brand": brand, "overview": "수집 오류", "keywords": "-", "etf_brief": "-", "marketing_memo": f"오류: {result['error'][:100]}"}
+
+        if not items:
+            return {"brand": brand, "overview": "텍스트 감지 불가", "keywords": "-", "etf_brief": "-", "marketing_memo": "이미지 중심 구조 배치 상태"}
+
+        categories = Counter([x["category"] for x in items])
+        keywords   = Counter()
+        for item in items:
+            for kw in item["keywords"]: keywords[kw] += 1
+
+        etf_items = [x for x in items if x["is_etf"]]
+        overview_examples = " / ".join([short(x["text"], 55) for x in items[:3]])
+        top_kws    = [kw for kw, _ in keywords.most_common(8)]
+        kw_text    = ", ".join(top_kws) if top_kws else "-"
+
+        if etf_items:
+            etf_cats  = Counter([x["category"] for x in etf_items])
+            etf_brief = f"주로 **{', '.join([k for k,_ in etf_cats.most_common(2)])}** 구성"
+        else:
+            etf_brief = "경향성 미감지"
+
+        dominant   = categories.most_common(1)[0][0]
+        memo_parts = []
+        if any(k in top_kws for k in ["신규상장","상장"]): memo_parts.append("신상품 집중")
+        if any(k in top_kws for k in ["월배당","분배금"]): memo_parts.append("월배당 인컴")
+        if any(k in top_kws for k in ["AI","반도체","로봇"]): memo_parts.append("첨단 테마")
+        if any(k in top_kws for k in ["연금","ISA"]): memo_parts.append("연금 절세")
+
+        marketing_memo = f"**{dominant}** 레이아웃 우세. " + (f"[{', '.join(memo_parts)}] 타겟 마케팅 중." if memo_parts else "기본 안내 위주.")
+        
+        return {
+            "brand": brand, "overview": overview_examples,
+            "keywords": kw_text, "etf_brief": etf_brief,
+            "marketing_memo": marketing_memo,
+        }
+
+    async def collect_one_brand(page, target):
+        brand = target["brand"]
+        url   = target["url"]
+        result = {"brand": brand, "manager": target["manager"], "url": url, "items": [], "error": ""}
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(300)
+            html  = await page.content()
+            result["items"] = get_visible_text_blocks(html, url)
+        except Exception as e:
+            result["error"] = str(e)
+        return result
+
+    async def run_homepage_crawl():
+        results = []
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--single-process"]
+            )
+            page = await browser.new_page(viewport={"width": 1440, "height": 900}, locale="ko-KR")
+            for target in TARGETS:
+                res = await collect_one_brand(page, target)
+                results.append(res)
+                await asyncio.sleep(0.3)
+            await browser.close()
+        return results
+
+    # 💡 버튼 조건문 해제 및 자동 실행 로직 반영
+    if "homepage_crawl_results" not in st.session_state or st.session_state["homepage_crawl_results"] is None:
+        with st.spinner("🔄 4대 운용사 홈페이지 크롤러 자동 구동 중... (약 10~15초 소요)"):
+            try:
+                loop = asyncio.get_event_loop()
+                crawl_res = loop.run_until_complete(run_homepage_crawl())
+                st.session_state["homepage_crawl_results"] = crawl_res
+            except Exception as ex:
+                st.error(f"실시간 엔진 구동 실패: {ex}")
+
+    hp_results = st.session_state.get("homepage_crawl_results")
+    if hp_results:
+        summary_data_hp = []
+        for r in hp_results:
+            s = summarize_brand(r)
+            summary_data_hp.append({
+                "브랜드(운용사)": f"{s['brand']} ({r['manager']})",
+                "홈페이지 상위 노출 키워드": s["keywords"],
+                "실시간 마케팅 방향": s["etf_brief"]
+            })
+        st.dataframe(pd.DataFrame(summary_data_hp), use_container_width=True, hide_index=True)
+        
+        st.write("")
+        col_cards = st.columns(2)
+        for idx, r in enumerate(hp_results):
+            s = summarize_brand(r)
+            with col_cards[idx % 2]:
+                with st.container(border=True):
+                    st.markdown(f"##### 🏷️ **{s['brand']}** <span style='font-size:11px; color:gray;'>({r['manager']})</span>", unsafe_allow_html=True)
+                    st.markdown(f"🔗 **바로가기:** [{r['url']}]({r['url']})")
+                    st.markdown(f"📌 **첫 페이지 캐치프레이즈 발췌:** *{s['overview']}*")
+                    st.markdown(f"🎯 **마케팅 관점 레이아웃 진단:** {s['marketing_memo']}")
+                    
+                    with st.expander("🔍 감지된 메인 텍스트 소스 데이터 셋 보기"):
+                        if r["items"]:
+                            item_df = pd.DataFrame(r["items"])[["text", "category", "keywords"]]
+                            st.dataframe(item_df, use_container_width=True, height=150)
+                        else:
+                            st.info("구조화할 수 있는 노출 텍스트 컨텐츠가 없습니다.")
+    else:
+        st.warning("⚠️ 홈페이지 마케팅 데이터를 가져오지 못했습니다. 새로고침을 시도해 주세요.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
             
 # ==============================================================================
 # # [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할 - 100% 와이드 버전)
