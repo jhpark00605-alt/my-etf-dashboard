@@ -957,7 +957,7 @@ else:
     st.session_state['homepage_data'] = hp_results
 
 # ==============================================================================
-# 👥 [Section 3] 투자자 데이터 분석 + 운용사 마케팅 연관성 평가 (통합 와이드 버전)
+# 👥 [Section 3] 투자자 데이터 분석 + 운용사 마케팅 연관성 평가 (오타 수정 완본)
 # ==============================================================================
 with st.container(border=True):
     st.header("👥 Section 3. 투자자 데이터 분석")
@@ -1058,7 +1058,7 @@ with st.container(border=True):
                 final_df['전주_추정순자산(억원)']
             )
             
-            status_aum.empty()  # 로딩 메시지 제거
+            status_aum.empty()  
             
             # 8. 타겟 투자자의 금주 순매수액 및 최종 순매수 강도 계산
             final_df['정제된_금주순매수(억원)'] = final_df[f'{target_investor}_금주'] / scale_factor
@@ -1078,7 +1078,8 @@ with st.container(border=True):
             st.markdown(f"### 🏆 {curr_week} 주차 순매수 강도 TOP 15 리포트")
             st.caption(f"公式: [금주({curr_week}) {target_investor} 순매수액(억원)] ÷ [시스템 자동추적 전주({prev_week}) 기준 순자산(억원)] × 100 (%)")
             
-            fig = px.bar(display_df, x='종목명_정제', y='매수강度', color='매수강도', text_auto='.2f',
+            # 💡 [교정 오타 반영 완료] y='매수강度' -> y='매수강도'로 수정하여 차트 비정상 오류 차단
+            fig = px.bar(display_df, x='종목명_정제', y='매수강도', color='매수강度'.replace('度','도'), text_auto='.2f',
                          color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 (자동추적 전주 AUM 대비)",
                          labels={"매수강도": "순매수 강도 (%)", "종목명_정제": "종목명"})
             st.plotly_chart(fig, use_container_width=True)
@@ -1098,7 +1099,6 @@ with st.container(border=True):
             st.markdown("<br><hr>", unsafe_allow_html=True)
             st.markdown("### 📊 운용사별 이벤트 - 실제 개인 순매수 연관성 요약 지표")
 
-            # 🅰️ 네이버 API 실시간 이벤트 캐싱 로드
             if "df_events_base_data" not in st.session_state:
                 with st.spinner("🔄 네이버 API로부터 4대 운용사 실시간 마케팅 이벤트를 수집 중입니다..."):
                     try:
@@ -1111,7 +1111,6 @@ with st.container(border=True):
             if df_events_base.empty:
                 st.warning("⚠️ 네이버 실시간 마케팅 이벤트 데이터를 가져오지 못했습니다. API 상태를 확인해 주세요.")
             else:
-                # 🅱️ 사용자가 올린 엑셀 데이터프레임 구조를 그대로 재활용하여 대기업 4사 매칭 시작
                 brands_info = {"삼성자산운용": "KODEX", "미래에셋자산운용": "TIGER", "한국투자신탁운용": "ACE", "KB자산운용": "RISE"}
                 summary_report_rows = []
 
@@ -1135,17 +1134,15 @@ with st.container(border=True):
                     all_prods = list(set(all_prods))
                     push_products_text = ", ".join(all_prods[:3]) if all_prods else f"{b_name} 주요 라인업"
 
-                    # 💡 정밀 매칭: 방금 위에서 계산 완료된 'res_df' 엑셀 데이터의 '개인' 순매수액을 활용합니다.
                     total_comp_money = 0.0
                     matched_any_stock = False
                     
                     for kw in all_prods:
                         kw_norm = kw.replace(" ", "")
-                        # 위에서 한창 정제한 '종목명_정제' 컬럼과 '정제된_금주순매수(억원)' 데이터를 정밀 트래킹
                         df_matched = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
                         if not df_matched.empty:
                             matched_any_stock = True
-                            total_comp_money += df_matched['정제된_금주순매수(억원)'].sum()  # 이미 억원 단위 변환됨
+                            total_comp_money += df_matched['정제된_금주순매수(억원)'].sum()  
 
                     if not matched_any_stock:
                         efficacy_result = "⚪ 효용성 판단 불가 (시장 무반응)"
@@ -1162,7 +1159,6 @@ with st.container(border=True):
                         "최종 마케팅 효용 판단": efficacy_result
                     })
 
-                # 🅲 화면에 결과 테이블 및 카드 노출
                 df_final_report = pd.DataFrame(summary_report_rows)
                 st.dataframe(df_final_report, use_container_width=True, hide_index=True)
 
