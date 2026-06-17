@@ -881,17 +881,14 @@ else:
                     else:
                         st.info("구조화할 수 있는 노출 텍스트 컨텐츠가 없습니다.")
 
+    # ----------------------------------------------------------------------
+    # 🎯 [수정 완료 정답 코드] 
+    # if hp_results: 조건문과 수직 라인을 똑같이 맞춰서 작성합니다. (앞 공백 4칸)
+    # ----------------------------------------------------------------------
     st.markdown("<br>", unsafe_allow_html=True)
     
-if 'homepage_data' not in st.session_state:
-    st.session_state['homepage_data'] = []
-
-# 만약 코드가 실행되면서 실시간으로 변수가 생성되었다면 세션에 업데이트
-try:
-    if 'homepage_data' in locals() or 'homepage_data' in globals():
-        st.session_state['homepage_data'] = homepage_data
-except NameError:
-    pass # 변수가 없어도 에러를 뿜지 않고 부드럽게 넘어갑니다.
+    # 내 코드 내의 진짜 수집 변수인 hp_results 데이터를 PDF용 세션에 실시간 주입합니다.
+    st.session_state['homepage_data'] = hp_results
             
 # ==============================================================================
 # # [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할 - 100% 와이드 버전)
@@ -1721,14 +1718,45 @@ with st.container(border=True):
             sec2_data[com_key]['theme'] = res.get('marketing_theme', sec2_data[com_key]['theme'])
             sec2_data[com_key]['reason'] = res.get('reasoning', sec2_data[com_key]['reason'])
 
-        homepage_session = st.session_state.get('homepage_data', []) # 본인의 Part D 세션 데이터 이름
+        # ----------------------------------------------------------------------
+        # 🕵️ [수정구역] Part D. 실시간 홈페이지 스크리닝 데이터 4대 항목 테이블 행(Row) 동적 생성
+        # ----------------------------------------------------------------------
+        homepage_session = st.session_state.get('homepage_data', [])
+        
+        part_d_table_rows = ""
         if homepage_session:
-            part_d_text = "<br>".join([f"• <b>{item['brand']}</b>: {item.get('main_copy', '데이터 없음')} ({item.get('trend_summary', '')})" for item in homepage_session])
+            for r in homepage_session:
+                # 대시보드 Part D 화면을 그릴 때 썼던 함수(summarize_brand)를 그대로 호출해 실시간 데이터를 낚아챕니다.
+                s = summarize_brand(r)
+                
+                brand_name = f"{s['brand']} ({r.get('manager', '')})"
+                keywords = s.get('keywords', '-')
+                direction = s.get('etf_brief', '-')       # 실시간 마케팅 방향
+                catchphrase = s.get('overview', '-')       # 첫페이지 캐치프레이즈
+                layout = s.get('marketing_memo', '-')     # 마케팅 레이아웃 진단
+                
+                # PDF 인쇄 시 지저분하게 표기되는 마크다운 강조 기호(**) 제거 정제
+                layout_clean = layout.replace("**", "")
+                direction_clean = direction.replace("**", "")
+                
+                # 4대 항목을 격자형 표(Row) 형태로 실시간 바인딩
+                part_d_table_rows += f"""
+                <tr>
+                    <td style="border: 1px solid #E5E7EB; padding: 2.2mm; font-weight: bold; background-color: #F9FAFB; font-size: 8pt;">{brand_name}</td>
+                    <td style="border: 1px solid #E5E7EB; padding: 2.2mm; font-size: 7.5pt; line-height: 1.4;">{keywords}</td>
+                    <td style="border: 1px solid #E5E7EB; padding: 2.2mm; font-size: 7.5pt; line-height: 1.4;">{direction_clean}</td>
+                    <td style="border: 1px solid #E5E7EB; padding: 2.2mm; font-size: 7.5pt; color: #1D4ED8; line-height: 1.4;">{catchphrase}</td>
+                    <td style="border: 1px solid #E5E7EB; padding: 2.2mm; font-size: 7.5pt; color: #4B5563; line-height: 1.4;">{layout_clean}</td>
+                </tr>
+                """
         else:
-            part_d_text = "실시간 홈페이지 스크리닝 데이터가 존재하지 않습니다."
-
-        # 딕셔너리에 'part_d' 키를 만들어서 가공한 텍스트를 저장해둡니다.
-        sec2_data['part_d'] = part_d_text
+            part_d_table_rows = """
+            <tr>
+                <td colspan="5" style="border: 1px solid #E5E7EB; padding: 5mm; text-align: center; color: #9CA3AF; font-size: 8pt;">
+                    실시간 공식 홈페이지 스크리닝 데이터가 존재하지 않습니다. (대시보드에서 분석을 먼저 수행해 주세요)
+                </td>
+            </tr>
+            """
 
         # ----------------------------------------------------------------------
         # 👥 SECTION 3. 투자자별 순매수 수급 강도
@@ -2142,13 +2170,18 @@ with st.container(border=True):
                     </tr>
                 </table> <div class="content-title" style="margin-top:4mm;">▶ 5. 운용사 공식 홈페이지 메인화면 실시간 스크리닝 요약</div>
                 
-                <table style="width:100%; border-collapse:collapse; margin-top:2mm;">
-                    <tr>
-                        <td style="border:1px solid #E5E7EB; background-color:#F9FAFB; padding:3.5mm; border-radius:6px;">
-                            <div style="font-size:8pt; color:#374151; line-height:1.5;">
-                                {part_d_text}  </div>
-                        </td>
-                    </tr>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 2mm; table-layout: fixed;">
+                    <thead>
+                        <tr style="background-color: #1E3A8A; color: white;">
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 18%; font-weight: bold; text-align: center;">브랜드(운용사)</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 22%; font-weight: bold; text-align: center;">홈페이지 상위 노출 키워드</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 20%; font-weight: bold; text-align: center;">실시간 마케팅 방향</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 23%; font-weight: bold; text-align: center;">첫페이지 캐치프레이즈</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 17%; font-weight: bold; text-align: center;">마케팅 레이아웃 진단</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {part_d_table_rows}  </tbody>
                 </table>
                 </div> ```
             </div>
