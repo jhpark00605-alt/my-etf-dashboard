@@ -1989,6 +1989,8 @@ with st.container(border=True):
             ])
         else:
             part_d_text = "실시간 공식 홈페이지 스크리닝 데이터가 존재하지 않습니다."
+
+        sec2_data['part_d'] = part_d_text
         
         html_string = f"""
         <html>
