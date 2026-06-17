@@ -957,11 +957,11 @@ else:
     st.session_state['homepage_data'] = hp_results
 
 # ==============================================================================
-# 👥 [Section 3] 투자자 데이터 분석 + 운용사 마케팅 연관성 평가 (오타 수정 완본)
+# 👥 [Section 3] 투자자 데이터 분석 + DiD 기반 마케팅 순수 인과효과 평가 (고도화 완본)
 # ==============================================================================
 with st.container(border=True):
-    st.header("👥 Section 3. 투자자 데이터 분석 및 이벤트와 순매수 간 상관관계 분석")
-    st.caption("엑셀 파일을 끌어다 놓으면 확인 버튼 없이 실시간 AUM과 교차 검증된 투자자별 순매수 강도가 즉시 업데이트됩니다.")
+    st.header("👥 Section 3. 투자자 데이터 분석 및 DiD 기반 마케팅 순수 인과효과 측정")
+    st.caption("이중차분법(Difference-in-Differences)을 활용하여 시장 및 섹터 자체의 노이즈를 제거한 오직 '마케팅 이벤트만의 순수 자금 유입 효과'를 추적합니다.")
     st.markdown("<br>", unsafe_allow_html=True)
 
     st.subheader("📊 주차별 순매수 강도 분석 결과")
@@ -1027,66 +1027,45 @@ with st.container(border=True):
                     df_target[col] = pd.to_numeric(df_target[col], errors='coerce').fillna(0)
             
             df_curr['금주_총순매수(억원)'] = df_curr[available_cols].sum(axis=1) / scale_factor
+            df_prev['전주_총순매수(억원)'] = df_prev[available_cols].sum(axis=1) / scale_factor
             
-            # 5. 전주 데이터와 금주 데이터 1차 병합
-            merged_df = pd.merge(
-                df_prev[['💡매칭키', '종목명_정제', target_investor]], 
-                df_curr[['💡매칭키', target_investor, '금주_총순매수(억원)']], 
-                on='💡매칭키', 
-                suffixes=('_전주', '_금주')
-            )
+            # 5. 전주 및 금주 데이터 결합 및 매수강도 계산 기본판 준비
+            # 기본 매수강도 정의를 위해 전주 추정 자산 결합
+            df_curr_with_naver = pd.merge(df_curr, df_naver, on='💡매칭키', how='left')
+            df_curr_with_naver['네이버실제자산(억원)'] = df_curr_with_naver['네이버실제자산(억원)'].fillna(0)
+            df_curr_with_naver['전주_추정순자산(억원)'] = df_curr_with_naver['네이버실제자산(억원)'] - df_curr_with_naver['금주_총순매수(억원)']
+            df_curr_with_naver['전주_추정순자산(억원)'] = np.where(df_curr_with_naver['전주_추정순자산(억원)'] < 50.0, 800.0, df_curr_with_naver['전주_추정순자산(억원)'])
             
-            # 6. 네이버 실시간 실제 자산 결합 및 보정
-            final_df = pd.merge(merged_df, df_naver, on='💡매칭키', how='left')
+            # 전주 타겟 투자자 금액 정제 및 전주 매수강도 계산용 자산 결합
+            df_prev_target = df_prev[['💡매칭키', target_investor]].rename(columns={target_investor: '전주_타겟매수액'})
+            df_prev_target['정제된_전주순매수(억원)'] = df_prev_target['전주_타겟매수액'] / scale_factor
             
-            for idx, row in final_df.iterrows():
-                if pd.isna(row['네이버실제자산(억원)']) or row['네이버실제자산(억원)'] == 0:
-                    ex_key = str(row['💡매칭키'])
-                    if ex_key:
-                        match_sub = df_naver[df_naver['💡매칭키'].apply(lambda x: ex_key in str(x) or str(x) in ex_key)]
-                        if not match_sub.empty:
-                            final_df.at[idx, '네이버실제자산(억원)'] = match_sub['네이버실제자산(억원)'].values[0]
+            # 최종 마스터 프레임 빌드
+            final_df = pd.merge(df_curr_with_naver, df_prev_target, on='💡매칭키', how='left').fillna(0)
+            final_df['정제된_금주순매수(억원)'] = final_df[target_investor] / scale_factor
             
-            final_df['네이버실제자산(억원)'] = final_df['네이버실제자산(억원)'].fillna(0)
+            # 주차별 매수강도(%) 도출
+            final_df['금주_매수강도'] = (final_df['정제된_금주순매수(억원)'] / final_df['전주_추정순자산(억원)']) * 100
+            final_df['전주_매수강도'] = (final_df['정제된_전주순매수(억원)'] / final_df['전주_추정순자산(억원)']) * 100 # 동질성 기준 전주 자산 대비 계산
+            final_df['매수강도'] = final_df['금주_매수강도'] # 시각화용 하위 호환 매칭
             
-            # 7. 전주 기준 추정 순자산 역산
-            final_df['전주_추정순자산(억원)'] = final_df['네이버실제자산(억원)'] - final_df['금주_총순매수(억원)']
-            
-            final_df['전주_추정순자산(억원)'] = np.where(
-                final_df['전주_추정순자산(억원)'] < 50.0, 
-                np.where(final_df['네이버실제자산(억원)'] > 50.0, final_df['네이버실제자산(억원)'], 800.0), 
-                final_df['전주_추정순자산(억원)']
-            )
+            res_df = final_df.sort_values(by='금주_매수강도', ascending=False)
+            st.session_state['res_df'] = res_df 
             
             status_aum.empty()  
             
-            # 8. 타겟 투자자의 금주 순매수액 및 최종 순매수 강도 계산
-            final_df['정제된_금주순매수(억원)'] = final_df[f'{target_investor}_금주'] / scale_factor
-            final_df['매수강도'] = (final_df['정제된_금주순매수(억원)'] / final_df['전주_추정순자산(억원)']) * 100
-            
-            res_df = final_df.sort_values(by='매수강도', ascending=False)
-            st.session_state['res_df'] = res_df 
-            
-            top_bought_etfs = ", ".join(res_df['종목명_정제'].head(5).tolist())
-            if "global_context" not in st.session_state:
-                st.session_state.global_context = ""
-            st.session_state.global_context += f"[엑셀 순매수 강도 분석 결과]\n타겟 투자자 {target_investor}가 {prev_week}차 AUM 대비 {curr_week}차에 가장 강하게 순매수 중인 자산 리스트: {top_bought_etfs}\n\n"
-            
-            # 9. 화면 시각화 출력 (상위 15개 제한)
+            # 6. 화면 시각화 출력 (상위 15개 제한)
             display_df = res_df.head(15) 
-            
             st.markdown(f"### 🏆 {curr_week} 주차 순매수 강도 TOP 15 리포트")
             st.caption(f"公式: [금주({curr_week}) {target_investor} 순매수액(억원)] ÷ [시스템 자동추적 전주({prev_week}) 기준 순자산(억원)] × 100 (%)")
             
-            # 💡 [교정 오타 반영 완료] y='매수강度' -> y='매수강도'로 수정하여 차트 비정상 오류 차단
-            fig = px.bar(display_df, x='종목명_정제', y='매수강도', color='매수강度'.replace('度','도'), text_auto='.2f',
+            fig = px.bar(display_df, x='종목명_정제', y='금주_매수강도', color='금주_매수강도', text_auto='.2f',
                          color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 (자동추적 전주 AUM 대비)",
-                         labels={"매수강도": "순매수 강도 (%)", "종목명_정제": "종목명"})
+                         labels={"금주_매수강도": "순매수 강도 (%)", "종목명_정제": "종목명"})
             st.plotly_chart(fig, use_container_width=True)
             
-            df_display = res_df[['종목명_정제', '전주_추정순자산(억원)', '정제된_금주순매수(억원)', '매수강도']].copy()
+            df_display = res_df[['종목명_정제', '전주_추정순자산(억원)', '정제된_금주순매수(억원)', '금주_매수강도']].copy()
             df_display.columns = ['종목명', f'{prev_week} 기준 순자산(억원)', f'{curr_week} {target_investor} 순매수(억원)', '순매수 강도 (%)']
-            
             st.dataframe(df_display.style.format({
                 f'{prev_week} 기준 순자산(억원)': '{:,.1f}',
                 f'{curr_week} {target_investor} 순매수(억원)': '{:,.1f}',
@@ -1094,10 +1073,11 @@ with st.container(border=True):
             }), use_container_width=True, hide_index=True)
 
             # ==================================================================
-            # 🔗 [연동 구역] 팀원분의 운용사 이벤트 - 순매수 연관성분석 엔진 작동
+            # 🔗 [대시보드 최종 완본] 데이터 연산 필터 해제 및 카드 디자인 일원화
             # ==================================================================
             st.markdown("<br><hr>", unsafe_allow_html=True)
-            st.markdown("### 📊 운용사별 이벤트 - 실제 개인 순매수 연관성 요약 지표")
+            st.markdown("### 🧬 운용사별 이벤트&순매수와 상관관계 분석")
+            st.caption("※ DiD(이중차분 스코어) = (마케팅 상품의 수급 강도 변화량) - (동일 자산군 내 경쟁사 대조군의 수급 강도 변화량)")
 
             if "df_events_base_data" not in st.session_state:
                 with st.spinner("🔄 네이버 API로부터 4대 운용사 실시간 마케팅 이벤트를 수집 중입니다..."):
@@ -1120,13 +1100,14 @@ with st.container(border=True):
                     if df_comp_ev.empty:
                         summary_report_rows.append({
                             "운용사 (브랜드)": f"{comp_name} ({b_name})", "진행 중인 주요 이벤트": "확인 가능한 최근 이벤트 없음",
-                            "마케팅 푸쉬 종목": "이력 없음", "실제 개인 누적 순매수액": "0 원", "최종 마케팅 효용 판단": "⚪ 데이터 없음"
+                            "마케팅 푸쉬 종목": "이력 없음", "실제 개인 누적 순매수액": "0 원", "DiD 순수 마케팅 효과": "0.000%p", "최종 마케팅 효용 판단": "⚪ 데이터 없음"
                         })
                         continue
 
+                    # 🔍 [해결 조치] 상단 연산 파트에서 글자 수를 50자로 자르던 if문 안전장치를 완전히 제거했습니다!
                     event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
-                    if len(event_titles) > 50: event_titles = event_titles[:47] + "..."
 
+                    # 마케팅 상품 키워드 추출
                     all_prods = []
                     for _, r in df_comp_ev.iterrows():
                         if "관련 상품" in r["🎯 유도 ETF 종목"]: continue
@@ -1134,55 +1115,130 @@ with st.container(border=True):
                     all_prods = list(set(all_prods))
                     push_products_text = ", ".join(all_prods[:3]) if all_prods else f"{b_name} 주요 라인업"
 
+                    # 🧬 핵심 DiD(이중차분) 연산 파트
+                    treatment_diffs = [] 
+                    control_diffs = []   
                     total_comp_money = 0.0
                     matched_any_stock = False
-                    
+
                     for kw in all_prods:
                         kw_norm = kw.replace(" ", "")
-                        df_matched = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
-                        if not df_matched.empty:
+                        df_treat = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
+                        
+                        if not df_treat.empty:
                             matched_any_stock = True
-                            total_comp_money += df_matched['정제된_금주순매수(억원)'].sum()  
+                            total_comp_money += df_treat['정제된_금주순매수(억원)'].sum()
+                            t_diff = (df_treat['금주_매수강도'] - df_treat['전주_매수강도']).mean()
+                            treatment_diffs.append(t_diff)
+                            
+                            core_keyword = kw_norm.replace(b_name, "") 
+                            if len(core_keyword) >= 2: 
+                                df_ctrl = res_df[
+                                    (res_df['종목명_정제'].str.replace(" ", "").str.contains(core_keyword, na=False)) & 
+                                    (~res_df['종목명_정제'].str.contains(b_name, na=False))
+                                ]
+                                if not df_ctrl.empty:
+                                    c_diff = (df_ctrl['금주_매수강도'] - df_ctrl['전주_매수강도']).mean()
+                                    control_diffs.append(c_diff)
+
+                    avg_t_diff = np.mean(treatment_diffs) if treatment_diffs else 0.0
+                    avg_c_diff = np.mean(control_diffs) if control_diffs else 0.0
+                    did_score = avg_t_diff - avg_c_diff 
 
                     if not matched_any_stock:
                         efficacy_result = "⚪ 효용성 판단 불가 (시장 무반응)"
-                    elif total_comp_money > 0:
-                        efficacy_result = "🟢 효용성 높음 (성공적인 자금 유입)"
+                    elif did_score > 0.05:
+                        efficacy_result = "🟢 효용성 탁월 (시장 평균 뛰어넘는 순수 유입)"
+                    elif did_score > -0.05 and total_comp_money > 0:
+                        efficacy_result = "🟡 효용성 보통 (시장 호재에 따른 동반 상승)"
                     else:
-                        efficacy_result = "🔴 효용성 없음 (홍보했으나 순매도 이탈)"
+                        efficacy_result = "🔴 효용성 없음 (이벤트에도 경쟁사 대비 이탈)"
 
                     summary_report_rows.append({
                         "운용사 (브랜드)": f"{comp_name} ({b_name})",
                         "진행 중인 주요 이벤트": event_titles,
                         "마케팅 푸쉬 종목": push_products_text,
                         "실제 개인 누적 순매수액": f"{total_comp_money:,.2f} 억 원" if matched_any_stock else "0 원",
+                        "DiD 순수 마케팅 효과": f"{did_score:+.3f}%p",
                         "최종 마케팅 효용 판단": efficacy_result
                     })
 
                 df_final_report = pd.DataFrame(summary_report_rows)
-                st.dataframe(df_final_report, use_container_width=True, hide_index=True)
 
-                st.markdown("<br>#### ✍️ 운용사별 최종 성과 직관 요약", unsafe_allow_html=True)
+                st.markdown("<br>#### ✍️ DiD 분석 기반 이벤트 성과 분석", unsafe_allow_html=True)
+                
                 c1, c2 = st.columns(2)
                 c3, c4 = st.columns(2)
 
-                for idx, row in df_final_report.iterrows():
-                    target_col = [c1, c2, c3, c4][idx]
-                    with target_col:
-                        with st.container(border=True):
-                            st.markdown(f"##### **{row['운용사 (브랜드)']}**")
-                            st.markdown(f"• **📣 진행 이벤트:** {row['진행 중인 주요 이벤트']}")
-                            st.markdown(f"• **🎯 집중 푸쉬 종목:** `{row['마케팅 푸쉬 종목']}`")
-                            st.markdown(f"• **💰 개인 순매수 결산:** **{row['실제 개인 누적 순매수액']}**")
-                            
-                            if "🟢" in row['최종 마케팅 효용 판단']: st.success(f"**결론:** {row['최종 마케팅 효용 판단']}")
-                            elif "🔴" in row['최종 마케팅 효용 판단']: st.error(f"**결론:** {row['최종 마케팅 효용 판단']}")
-                            else: st.info(f"**결론:** {row['최종 마케팅 효용 판단']}")
+                color_mapping = {
+                    "삼성자산운용 (KODEX)": {"bg": "#EFF6FF", "border": "#3B82F6", "text": "#1E40AF", "badge": "#DBEAFE"},
+                    "미래에셋자산운용 (TIGER)": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C", "badge": "#FFEDD5"},
+                    "한국투자신탁운용 (ACE)": {"bg": "#F0FDF4", "border": "#22C55E", "text": "#166534", "badge": "#DCFCE7"},
+                    "KB자산운용 (RISE)": {"bg": "#FEFCE8", "border": "#EAB308", "text": "#A16207", "badge": "#FEF9C3"}
+                }
 
+                for idx, row in df_final_report.iterrows():
+                    comp_key = row['운용사 (브랜드)']
+                    style_config = color_mapping.get(comp_key, {"bg": "#F8FAFC", "border": "#CBD5E1", "text": "#334155", "badge": "#F1F5F9"})
+                    
+                    target_col = [c1, c2, c3, c4][idx]
+                    event_titles_full = row['진행 중인 주요 이벤트']
+                    
+                    # 진단 결과에 맞춘 하단 상태 바 색상 추출기
+                    diag_text = row['최종 마케팅 효용 판단']
+                    if "🟢" in diag_text: diag_bg, diag_border, diag_txt = "#DCFCE7", "#22C55E", "#15803D"
+                    elif "🟡" in diag_text: diag_bg, diag_border, diag_txt = "#FEF9C3", "#EAB308", "#A16207"
+                    elif "🔴" in diag_text: diag_bg, diag_border, diag_txt = "#FEE2E2", "#EF4444", "#B91C1C"
+                    else: diag_bg, diag_border, diag_txt = "#F1F5F9", "#94A3B8", "#475569"
+
+                    with target_col:
+                        # 🎨 [UX 업그레이드] 카드 박스 내부에 '진단 결과 뱃지'까지 통합 빌드하여 깔끔하게 마감
+                        st.markdown(f"""
+                        <div style='
+                            background-color: {style_config["bg"]}; 
+                            border: 2px solid {style_config["border"]}; 
+                            border-radius: 8px; 
+                            padding: 4.5mm; 
+                            margin-bottom: 4mm;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+                            min-height: 250px;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: space-between;
+                        '>
+                            <div>
+                                <h5 style='margin-top: 0; color: {style_config["text"]}; font-weight: bold; border-bottom: 1px solid {style_config["border"]}80; padding-bottom: 2mm; margin-bottom: 3mm;'>
+                                    🏢 {comp_key}
+                                </h5>
+                                <p style='margin: 2.5mm 0; font-size: 9.5pt; color: #2D3748; line-height: 1.55;'>
+                                    📣 <b>진행 이벤트:</b> {event_titles_full}
+                                </p>
+                                <p style='margin: 2.5mm 0; font-size: 9.5pt; color: #2D3748; line-height: 1.4;'>
+                                    🎯 <b>집중 푸쉬 종목:</b> <code style='background-color: {style_config["badge"]}; padding: 0.5mm 1.5mm; border-radius: 4px; border: 1px solid {style_config["border"]}40; color: #1A202C;'>{row['마케팅 푸쉬 종목']}</code>
+                                </p>
+                                <p style='margin: 2.5mm 0; font-size: 10pt; color: #1E293B;'>
+                                    📈 <b>마케팅 순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{row['DiD 순수 마케팅 효과']}</span>
+                                </p>
+                            </div>
+                            <div style='
+                                margin-top: 4mm; 
+                                padding: 2.5mm; 
+                                background-color: {diag_bg}; 
+                                border: 1px solid {diag_border}; 
+                                border-radius: 6px; 
+                                font-size: 9pt; 
+                                font-weight: bold; 
+                                color: {diag_txt};
+                            '>
+                                📝 진단: {diag_text}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+            # 🛠️ [교정 구역] try 문과 정확히 들여쓰기 라인을 일치시켰습니다.
         except Exception as e:
             st.error(f"데이터 연산 처리 중 에러 발생: {e}")
-    else:
-        st.info("💡 위 데이터 드롭 영역에 엑셀 파일을 업로드해 주시면 순매수 강도 분석과 마케팅 연관성 평가 결과가 자동으로 실시간 빌드됩니다.")
+                            
 
 # ============================================================
 # ⚙️ FUNETF API 설정 (기존 설정 유지)
@@ -1949,7 +2005,7 @@ with st.container(border=True):
                 </div>
                 """
         # ======================================================================
-        # 🔗 [글자색 교정 완본] 헤더 영역의 글자색을 완전한 흰색(#FFFFFF)으로 변경
+        # 🔗 [텍스트 제한 해제 완본] 이벤트명 자르지 않고 전체 출력 처리
         # ======================================================================
         marketing_report_html = ""
         df_events_base_data = st.session_state.get("df_events_base_data", [])
@@ -1962,73 +2018,128 @@ with st.container(border=True):
                 df_events_base = pd.DataFrame(df_events_base_data)
                 brands_info = {"삼성자산운용": "KODEX", "미래에셋자산운용": "TIGER", "한국투자신탁운용": "ACE", "KB자산운용": "RISE"}
                 
+                # 상단 타이틀 바
                 marketing_report_html += """
-                <div style='margin-top: 6mm; margin-bottom: 2mm; padding: 2mm; background-color: #F8FAFC; border-left: 3px solid #1E40AF;'>
-                    <div style='font-size: 10pt; font-weight: bold; color: #1E40AF;'>📊 운용사 마케팅 이벤트 - 순매수 상관관계 결산</div>
+                <div style='margin-top: 6mm; margin-bottom: 4mm; padding: 2.5mm; background-color: #F8FAFC; border-left: 3px solid #1E40AF;'>
+                    <div style='font-size: 10pt; font-weight: bold; color: #1E40AF;'>[분석] 운용사별 이벤트 - 인과관계 검증 리포트 (DiD 인텔리전스)</div>
                 </div>
-                <table style='width: 100%; border-collapse: collapse; margin-top: 2mm; font-size: 8pt; border: 1px solid #CBD5E1;'>
-                    <thead>
-                        <tr style='background-color: #1E40AF; text-align: left; font-weight: bold;'>
-                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 25%; color: #FFFFFF; font-weight: bold;'>운용사 (브랜드)</th>
-                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 35%; color: #FFFFFF; font-weight: bold;'>마케팅 푸쉬 종목 (이벤트)</th>
-                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 20%; color: #FFFFFF; font-weight: bold;'>개인 순매수 결산</th>
-                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 20%; color: #FFFFFF; font-weight: bold;'>최종 마케팅 효용</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                <table style='width: 100%; border-collapse: collapse; border: none;'>
                 """
                 
+                # 운용사별 테두리 및 배경색 설정
+                color_mapping = {
+                    "삼성자산운용": {"bg": "#EFF6FF", "border": "#3B82F6", "text": "#1E40AF"},
+                    "미래에셋자산운용": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C"},
+                    "한국투자신탁운용": {"bg": "#F0FDF4", "border": "#22C55E", "text": "#166534"},
+                    "KB자산운용": {"bg": "#FEFCE8", "border": "#EAB308", "text": "#A16207"}
+                }
+                
+                boxes_html = []
                 for comp_name, b_name in brands_info.items():
                     df_comp_ev = df_events_base[df_events_base["운용사"] == comp_name]
+                    style_config = color_mapping.get(comp_name, {"bg": "#F8FAFC", "border": "#CBD5E1", "text": "#334155"})
                     
                     if df_comp_ev.empty:
-                        marketing_report_html += f"""
-                        <tr style='background-color: #FFFFFF;'>
-                            <td style='padding: 2mm; border: 1px solid #CBD5E1; font-weight: bold; color:#1F2937;'>{comp_name} ({b_name})</td>
-                            <td style='padding: 2mm; border: 1px solid #CBD5E1; color: #64748B; font-style: italic;'>확인 가능한 최근 이벤트 없음</td>
-                            <td style='padding: 2mm; border: 1px solid #CBD5E1; color:#1F2937;'>0 원</td>
-                            <td style='padding: 2mm; border: 1px solid #CBD5E1; color: #64748B;'>⚪ 데이터 없음</td>
-                        </tr>
+                        box_item = f"""
+                        <table style='width: 96%; background-color: #F8FAFC; border: 1.5px solid #CBD5E1; border-collapse: collapse; margin: 1.5mm; min-height: 44mm;'>
+                            <tr>
+                                <td style='padding: 4mm; vertical-align: top; border: none;'>
+                                    <div style='font-size: 9pt; font-weight: bold; color: #475569; border-bottom: 1px solid #CBD5E1; padding-bottom: 1.5mm; margin-bottom: 3mm;'>▶ {comp_name} ({b_name})</div>
+                                    <div style='font-size: 8pt; color: #64748B; font-style: italic; margin-top: 4mm;'>최근 마케팅 이벤트 이력이 존재하지 않습니다.</div>
+                                </td>
+                            </tr>
+                        </table>
                         """
+                        boxes_html.append(box_item)
                         continue
+                        
+                    # 🔍 [수정] 글자수 조건문(if len > 40)을 제거하여 이벤트 제목이 끝까지 나오도록 변경
+                    event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
+                    event_titles = event_titles.replace("&gt;", ">").replace("&lt;", "<")
                         
                     all_prods = []
                     for _, r in df_comp_ev.iterrows():
                         if "관련 상품" in r["🎯 유도 ETF 종목"]: continue
                         all_prods.extend([k.strip() for k in r["🎯 유도 ETF 종목"].split(",") if k.strip()])
                     all_prods = list(set(all_prods))
-                    push_products_text = ", ".join(all_prods[:2]) if all_prods else f"{b_name} 주요 라인업"
                     
+                    push_products_text = ", ".join(all_prods[:2]) if all_prods else f"{b_name} 주요 라인업"
+                    push_products_text = push_products_text.replace("&gt;", ">").replace("&lt;", "<")
+                    
+                    # DiD 연산
+                    treatment_diffs = []
+                    control_diffs = []
                     total_comp_money = 0.0
                     matched_any_stock = False
                     
-                    if not target_agent_df.empty:
-                        for kw in all_prods:
-                            kw_norm = kw.replace(" ", "")
-                            df_matched = target_agent_df[target_agent_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
-                            if not df_matched.empty:
-                                matched_any_stock = True
-                                total_comp_money += df_matched['정제된_금주순매수(억원)'].sum()
-                            
-                    if not matched_any_stock:
-                        efficacy_result = "<span style='color:#64748B;'>⚪ 무반응</span>"
-                    elif total_comp_money > 0:
-                        efficacy_result = "<span style='color:#16A34A; font-weight:bold;'>🟢 효용 높음</span>"
-                    else:
-                        efficacy_result = "<span style='color:#DC2626; font-weight:bold;'>🔴 효용 없음</span>"
+                    for kw in all_prods:
+                        kw_norm = kw.replace(" ", "")
+                        df_treat = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
                         
-                    money_str = f"{total_comp_money:,.1f} 억 원" if matched_any_stock else "0 원"
+                        if not df_treat.empty:
+                            matched_any_stock = True
+                            total_comp_money += df_treat['정제된_금주순매수(억원)'].sum()
+                            t_diff = (df_treat['금주_매수강도'] - df_treat['전주_매수강도']).mean()
+                            treatment_diffs.append(t_diff)
+                            
+                            core_keyword = kw_norm.replace(b_name, "")
+                            if len(core_keyword) >= 2:
+                                df_ctrl = res_df[
+                                    (res_df['종목명_정제'].str.replace(" ", "").str.contains(core_keyword, na=False)) & 
+                                    (~res_df['종목명_정제'].str.contains(b_name, na=False))
+                                ]
+                                if not df_ctrl.empty:
+                                    c_diff = (df_ctrl['금주_매수강도'] - df_ctrl['전주_매수강도']).mean()
+                                    control_diffs.append(c_diff)
+                                    
+                    avg_t_diff = np.mean(treatment_diffs) if treatment_diffs else 0.0
+                    avg_c_diff = np.mean(control_diffs) if control_diffs else 0.0
+                    did_score = avg_t_diff - avg_c_diff
                     
-                    marketing_report_html += f"""
-                    <tr style='background-color: #FFFFFF;'>
-                        <td style='padding: 2mm; border: 1px solid #CBD5E1; font-weight: bold; color:#1F2937;'>{comp_name} ({b_name})</td>
-                        <td style='padding: 2mm; border: 1px solid #CBD5E1; color:#374151;'>{push_products_text}</td>
-                        <td style='padding: 2mm; border: 1px solid #CBD5E1; font-weight: bold; color:#1F2937;'>{money_str}</td>
-                        <td style='padding: 2mm; border: 1px solid #CBD5E1;'>{efficacy_result}</td>
-                    </tr>
+                    if not matched_any_stock:
+                        efficacy_result = "시장 무반응"
+                    elif did_score > 0.05:
+                        efficacy_result = "효용 탁월 (시장 평균 상회)"
+                    elif did_score > -0.05 and total_comp_money > 0:
+                        efficacy_result = "보통 (시장 호재 편승)"
+                    else:
+                        efficacy_result = "효용 없음 (경쟁사 대비 이탈)"
+                        
+                    # 테이블 기반 단일 통박스 (line-height를 주어 여러 줄이 되어도 가독성 유지)
+                    box_item = f"""
+                    <table style='width: 96%; background-color: {style_config["bg"]}; border: 2px solid {style_config["border"]}; border-collapse: collapse; margin: 1.5mm; min-height: 44mm;'>
+                        <tr>
+                            <td style='padding: 4mm; vertical-align: top; border: none;'>
+                                <div style='font-size: 9pt; font-weight: bold; color: {style_config["text"]}; border-bottom: 1px solid {style_config["border"]}80; padding-bottom: 1.5mm; margin-bottom: 2.5mm;'>
+                                    [운용사] {comp_name} ({b_name})
+                                </div>
+                                <div style='font-size: 8pt; color: #2D3748; line-height: 1.5;'>
+                                    - <b>이벤트:</b> {event_titles}<br/>
+                                    - <b>푸쉬 종목:</b> {push_products_text}<br/>
+                                    - <b>순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{did_score:+.3f}%p</span>
+                                </div>
+                                <div style='font-size: 8pt; font-weight: bold; color: #1A202C; margin-top: 3.5mm; padding-top: 2mm; border-top: 1px dashed {style_config["border"]}60;'>
+                                    [진단 결과] {efficacy_result}
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
                     """
-                    
-                marketing_report_html += "</tbody></table>"
+                    boxes_html.append(box_item)
+                
+                # 2x2 메인 레이아웃 정렬
+                marketing_report_html += f"""
+                <tr>
+                    <td style='width: 50%; border: none; vertical-align: top;'>{boxes_html[0]}</td>
+                    <td style='width: 50%; border: none; vertical-align: top;'>{boxes_html[1]}</td>
+                </tr>
+                <tr>
+                    <td style='width: 50%; border: none; vertical-align: top;'>{boxes_html[2]}</td>
+                    <td style='width: 50%; border: none; vertical-align: top;'>{boxes_html[3]}</td>
+                </tr>
+                </table>
+                """
+                
                 section3_chart_html += marketing_report_html
         except Exception as marketing_err:
             pass
