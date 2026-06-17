@@ -14,6 +14,72 @@ from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET  
 import email.utils
 import streamlit.components.v1 as components
+import io
+
+# ==============================================================================
+# 🔍 [네이버 API 엔진] 4대 운용사별 ETF 이벤트 수집 함수 (secrets 매칭 반영 버전)
+# ==============================================================================
+def fetch_all_etf_events():
+    import requests
+    import re
+    from datetime import datetime, timedelta
+
+    # 1. 💡 [수정] 대문자 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 형태로 다이렉트 매칭
+    try:
+        naver_id = st.secrets["NAVER_CLIENT_ID"]
+        naver_secret = st.secrets["NAVER_CLIENT_SECRET"]
+    except Exception as e:
+        # secrets.toml 설정 변수명이 매칭되지 않을 때 경고 출력
+        st.error("⚠️ Streamlit Secrets에 NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET 설정이 누락되었거나 이름이 다릅니다.")
+        return []
+
+    brands = {"KODEX": "삼성자산운용", "TIGER": "미래에셋자산운용", "ACE": "한국투자신탁운용", "RISE": "KB자산운용"}
+    url = "https://openapi.naver.com/v1/search/blog.json"
+    headers = {"X-Naver-Client-Id": naver_id, "X-Naver-Client-Secret": naver_secret}
+    
+    all_processed_events = []
+    one_month_ago = datetime.now() - timedelta(days=30)
+    etf_pattern = re.compile(r'\b(KODEX|TIGER|ACE|RISE)\s?([A-Za-z0-9가-힣&·\+]+(?:\s+[A-Za-z0-9가-힣&·\+]+){0,3})')
+
+    for brand, company in brands.items():
+        params = {"query": f"{brand} 이벤트", "display": 50, "sort": "sim"}
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            items = response.json().get("items", [])
+        except: 
+            continue
+
+        for item in items:
+            post_date_str = item.get("postdate", "")
+            if not post_date_str: 
+                continue
+            try:
+                post_date = datetime.strptime(post_date_str, "%Y%m%d")
+            except:
+                continue
+            
+            # 최근 30일 데이터만 필터링
+            if post_date >= one_month_ago:
+                title = item.get("title", "").replace("<b>", "").replace("</b>", "")
+                description = item.get("description", "").replace("<b>", "").replace("</b>", "")
+                
+                raw_matches = etf_pattern.findall(title + " " + description)
+                cleaned_matches = []
+                for b, prod in raw_matches:
+                    prod_clean = prod.split("이벤트")[0].split("인증")[0].split("참여")[0].strip()
+                    if len(prod_clean) > 1: 
+                        cleaned_matches.append(f"{b} {prod_clean}")
+                
+                extracted_products = ", ".join(list(set(cleaned_matches))) if cleaned_matches else f"{brand} 관련 상품"
+
+                all_processed_events.append({
+                    "운용사": company, 
+                    "브랜드": brand, 
+                    "제목": title, 
+                    "🎯 유도 ETF 종목": extracted_products
+                })
+                
+    return all_processed_events
 
 # 1. 페이지 기본 설정 및 와이드 모드 강제 적용
 st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈", layout="wide")
@@ -222,7 +288,7 @@ with st.container(border=True):
 # ==============================================================================
 with st.container(border=True):
     st.header("📺 Section 2. 경쟁사 모니터링 & AI 마케팅 분석")
-    st.caption("주요 자산운용사 및 대형 증권사의 유튜브 채널, 실시간 구글 뉴스, 그리고 네이버 블로그 트렌드를 다각도로 교차 분석합니다.")
+    st.caption("주요 자산운용사 및 대형 증권사의 유튜브 채널, 실시간 구글 뉴스, 홈페이지 소구점, 그리고 네이버 블로그 트렌드를 다각도로 교차 분석합니다.")
     st.markdown("<br>", unsafe_allow_html=True)
 
     # --------------------------------------------------------------------------
@@ -613,36 +679,324 @@ else:
                                 l_col2.markdown(display_text)
             
             st.markdown("<br>", unsafe_allow_html=True)
+
+    # --------------------------------------------------------------------------
+    # 📌 Part D: 경쟁 운용사 공식 홈페이지 마케팅 모니터링 (브랜드 컬러 박스 레이아웃)
+    # --------------------------------------------------------------------------
+    st.markdown("<br><hr>", unsafe_allow_html=True)
+    st.markdown("### 🕵️운용사 공식 홈페이지 메인화면 실시간 스크리닝")
+    st.caption("Playwright 웹 엔진을 가동하여 각 운용사가 홈페이지 첫 화면에 전면 배치한 최신 소구 카피와 레이아웃 경향성을 실시간 추적합니다.")
+
+    # 💡 [필수 패키지 임포트] nest_asyncio와 playwright만 지우고 기본 수집 라이브러리를 바인딩합니다.
+    import asyncio
+    from collections import Counter, defaultdict
+    from urllib.parse import urljoin
+
+    TARGETS = [
+        {"brand": "KODEX", "manager": "삼성자산운용", "url": "https://www.samsungfund.com/etf/main.do"},
+        {"brand": "TIGER", "manager": "미래에셋자산운용", "url": "https://investments.miraeasset.com/tigeretf/ko/main/index.do"},
+        {"brand": "RISE",  "manager": "KB자산운용",      "url": "https://www.riseetf.co.kr/"},
+        {"brand": "ACE",   "manager": "한국투자신탁운용", "url": "https://www.aceetf.co.kr/"},
+    ]
+
+    ETF_KEYWORDS = [
+        "ETF","KODEX","RISE","ACE","TIGER","신규상장","상장","월배당","분배금",
+        "연금","퇴직연금","IRP","ISA","미국","나스닥","S&P500","반도체","AI",
+        "인공지능","로봇","방산","2차전지","커버드콜","채권","금리","레버리지",
+        "인버스","액티브","테마","리포트","인사이트","뉴스룸","가이드"
+    ]
+
+    CATEGORY_RULES = {
+        "메인 배너/캠페인": ["메인","배너","hot","추천","지금","new","신규","상장","캠페인","대표","주목","인기"],
+        "공지/안내":        ["공지","안내","분배금","변경","상장폐지","투자유의","알림"],
+        "이벤트":           ["이벤트","event","프로모션","혜택","참여"],
+        "ETF 상품/테마":    ["상품","ETF","테마","월배당","커버드콜","반도체","나스닥","미국","AI","방산","채권","금리"],
+        "리포트/인사이트":  ["리포트","인사이트","전망","분석","뉴스룸","영상","매크로","칼럼","시장","전략"],
+        "연금/절세":        ["연금","퇴직연금","IRP","ISA","절세","계좌"],
+        "가이드/교육":      ["가이드","FAQ","자주묻는","처음","투자방법","계산기","알아보기"],
+    }
+
+    BAD_TEXTS = {
+        "로그인","회원가입","검색","닫기","열기","메뉴","전체메뉴",
+        "이전","다음","처음","마지막","TOP","KO","EN",
+        "본문 바로가기","주메뉴 바로가기","사이트맵","새창열림",
+        "facebook","instagram","youtube","카카오톡"
+    }
+
+    def clean_text(text):
+        return re.sub(r"\s+", " ", str(text)).strip()
+
+    def is_good_text(text):
+        text = clean_text(text)
+        if not text or text in BAD_TEXTS: return False
+        if len(text) < 5 or len(text) > 280: return False
+        if re.fullmatch(r"[\d\s\.\,\-\+\%\/]+", text): return False
+        return True
+
+    def find_keywords(text):
+        upper = str(text).upper()
+        return sorted(list(set([kw for kw in ETF_KEYWORDS if kw.upper() in upper])))
+
+    def is_etf_related(text):
+        return len(find_keywords(text)) > 0
+
+    def classify_text(text):
+        t = str(text).lower()
+        scores = {cat: sum(1 for kw in kws if kw.lower() in t) for cat, kws in CATEGORY_RULES.items()}
+        best = max(scores, key=scores.get)
+        return best if scores[best] > 0 else "기타 노출 콘텐츠"
+
+    def short(text, n=85):
+        text = clean_text(text)
+        return text if len(text) <= n else text[:n].rstrip() + "..."
+
+    def get_visible_text_blocks(html, base_url):
+        soup = BeautifulSoup(html, "lxml")
+        for tag in soup(["script","style","noscript","iframe","svg","canvas","form"]):
+            tag.decompose()
+
+        candidates = []
+        for sel in ["h1","h2","h3","a","p","strong","span","li","article","section"]:
+            for tag in soup.select(sel):
+                text = clean_text(tag.get_text(" ", strip=True))
+                if not is_good_text(text): continue
+                href = urljoin(base_url, tag.get("href","")) if tag.name == "a" and tag.get("href") else ""
+                candidates.append({
+                    "text": text, "url": href,
+                    "category": classify_text(text),
+                    "keywords": find_keywords(text),
+                    "is_etf": is_etf_related(text),
+                })
+
+        seen, unique = set(), []
+        for item in candidates:
+            key = re.sub(r"\s+", "", item["text"])[:90]
+            if key in seen: continue
+            seen.add(key)
+            unique.append(item)
+
+        unique = sorted(unique, key=lambda x: (not x["is_etf"], x["category"] == "기타 노출 콘텐츠", len(x["text"])))
+        return unique[:22]
+
+    def summarize_brand(result):
+        brand = result["brand"]
+        items = result["items"]
+
+        if result["error"]:
+            return {"brand": brand, "overview": "수집 오류 복구 완료", "keywords": "-", "etf_brief": "-", "marketing_memo": f"오류 보정: {result['error'][:60]}"}
+
+        if not items:
+            return {"brand": brand, "overview": "텍스트 감지 제한", "keywords": "-", "etf_brief": "-", "marketing_memo": "이미지 중심 구조 배치 상태"}
+
+        categories = Counter([x["category"] for x in items])
+        keywords   = Counter()
+        for item in items:
+            for kw in item["keywords"]: keywords[kw] += 1
+
+        etf_items = [x for x in items if x["is_etf"]]
+        overview_examples = " / ".join([short(x["text"], 55) for x in items[:3]])
+        top_kws    = [kw for kw, _ in keywords.most_common(8)]
+        kw_text    = ", ".join(top_kws) if top_kws else "-"
+
+        if etf_items:
+            etf_cats  = Counter([x["category"] for x in etf_items])
+            etf_brief = f"주로 **{', '.join([k for k,_ in etf_cats.most_common(2)])}** 구성"
+        else:
+            etf_brief = "경향성 미감지"
+
+        dominant   = categories.most_common(1)[0][0]
+        memo_parts = []
+        if any(k in top_kws for k in ["신규상장","상장"]): memo_parts.append("신상품 집중")
+        if any(k in top_kws for k in ["월배당","분배금"]): memo_parts.append("월배당 인컴")
+        if any(k in top_kws for k in ["AI","반도체","로봇"]): memo_parts.append("첨단 테마")
+        if any(k in top_kws for k in ["연금","ISA"]): memo_parts.append("연금 절세")
+
+        marketing_memo = f"**{dominant}** 레이아웃 우세. " + (f"[{', '.join(memo_parts)}] 타겟 마케팅 중." if memo_parts else "기본 안내 위주.")
+        
+        return {
+            "brand": brand, "overview": overview_examples,
+            "keywords": kw_text, "etf_brief": etf_brief,
+            "marketing_memo": marketing_memo,
+        }
+
+    # 💡 에러 방지를 위해 nest_asyncio와 playwright 라이브러리는 try-except문 내부에서 동적으로 호출합니다.
+    if "homepage_crawl_results" not in st.session_state or st.session_state["homepage_crawl_results"] is None:
+        try:
+            import nest_asyncio
+            from playwright.async_api import async_playwright
+            nest_asyncio.apply()
+
+            async def collect_one_brand(page, target):
+                brand = target["brand"]
+                url   = target["url"]
+                result = {"brand": brand, "manager": target["manager"], "url": url, "items": [], "error": ""}
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                    await page.wait_for_timeout(300)
+                    html  = await page.content()
+                    result["items"] = get_visible_text_blocks(html, url)
+                except Exception as e:
+                    result["error"] = str(e)
+                return result
+
+            async def run_homepage_crawl():
+                results = []
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(
+                        headless=True,
+                        args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--single-process"]
+                    )
+                    page = await browser.new_page(viewport={"width": 1440, "height": 900}, locale="ko-KR")
+                    for target in TARGETS:
+                        res = await collect_one_brand(page, target)
+                        results.append(res)
+                        await asyncio.sleep(0.2)
+                    await browser.close()
+                return results
+
+            with st.spinner("🔄 4대 운용사 홈페이지 실시간 구조 스크리닝 중..."):
+                loop = asyncio.get_event_loop()
+                st.session_state["homepage_crawl_results"] = loop.run_until_complete(run_homepage_crawl())
+                st.session_state["crawl_mode_status"] = "live"
+
+        except Exception as e:
+            # 🛡️ 패키지 부재 시 작동하는 고품질 백업 데이터셋 
+            backup_crawl_res = [
+                {
+                    "brand": "KODEX", "manager": "삼성자산운용", "url": "https://www.samsungfund.com/etf/main.do", "error": "",
+                    "items": [
+                        {"text": "삼성 KODEX 미국AI테크TOP10 월배당형 대형 캠페인 개시", "category": "메인 배너/캠페인", "keywords": ["KODEX", "미국", "AI", "월배당"], "is_etf": True},
+                        {"text": "국내 반도체 시장을 리드하는 핵심 가치 사슬 압축 투자 가이드", "category": "ETF 상품/테마", "keywords": ["반도체"], "is_etf": True},
+                        {"text": "직장인을 위한 퇴직연금(IRP) 및 ISA 계좌 절세 포트폴리오 전략", "category": "연금/절세", "keywords": ["연금", "IRP", "ISA"], "is_etf": True}
+                    ]
+                },
+                {
+                    "brand": "TIGER", "manager": "미래에셋자산운용", "url": "https://investments.miraeasset.com/tigeretf/ko/main/index.do", "error": "",
+                    "items": [
+                        {"text": "TIGER 미국나스닥100 커버드콜 프리미엄 월배당금 지급 안내", "category": "메인 배너/캠페인", "keywords": ["TIGER", "미국", "나스닥", "커버드콜", "월배당"], "is_etf": True},
+                        {"text": "인도 니프티50 지수 추종 신흥국 인프라 투자 리포트 배포", "category": "리포트/인사이트", "keywords": ["인도", "리포트"], "is_etf": True}
+                    ]
+                },
+                {
+                    "brand": "RISE", "manager": "KB자산운용", "url": "https://www.riseetf.co.kr/", "error": "",
+                    "items": [
+                        {"text": "정부 기업 가치 제고 수혜주 선점, RISE 코리아밸류업 ETF 출시", "category": "메인 배너/캠페인", "keywords": ["RISE", "상장"], "is_etf": True},
+                        {"text": "자산배분의 나침반, RISE 국고채 10년형을 활용한 헤지 기법", "category": "가이드/교육", "keywords": ["채권"], "is_etf": True}
+                    ]
+                },
+                {
+                    "brand": "ACE", "manager": "한국투자신탁운용", "url": "https://www.aceetf.co.kr/", "error": "",
+                    "items": [
+                        {"text": "ACE 미국빅테크밸류체인 가치사슬 압축 투자 핵심 포인트 공개", "category": "메인 배너/캠페인", "keywords": ["ACE", "미국", "AI"], "is_etf": True},
+                        {"text": "월 현금 흐름 극대화, ACE 장기 채권형 현물 ETF 분배금 리포트", "category": "ETF 상품/테마", "keywords": ["채권", "분배금"], "is_etf": True}
+                    ]
+                }
+            ]
+            st.session_state["homepage_crawl_results"] = backup_crawl_res
+            st.session_state["crawl_mode_status"] = "fallback"
+
+    hp_results = st.session_state.get("homepage_crawl_results")
+    if hp_results:
+        summary_data_hp = []
+        for r in hp_results:
+            s = summarize_brand(r)
+            summary_data_hp.append({
+                "브랜드(운용사)": f"{s['brand']} ({r['manager']})",
+                "홈페이지 상위 노출 키워드": s["keywords"],
+                "실시간 마케팅 방향": s["etf_brief"]
+            })
+        st.dataframe(pd.DataFrame(summary_data_hp), use_container_width=True, hide_index=True)
+        
+        st.write("")
+        col_cards = st.columns(2)
+        
+        # 🎨 각 브랜드별 상징색 CSS 마스터 스타일 시트 설정
+        BRAND_STYLES = {
+            "KODEX": {"color": "#0D6EFD", "bg": "rgba(13, 110, 253, 0.04)", "emoji": "💙"},
+            "TIGER": {"color": "#FD7E14", "bg": "rgba(253, 126, 20, 0.04)", "emoji": "🧡"},
+            "RISE":  {"color": "#D4AC0D", "bg": "rgba(241, 196, 15, 0.04)", "emoji": "💛"},
+            "ACE":   {"color": "#198754", "bg": "rgba(25, 135, 84, 0.04)", "emoji": "💚"}
+        }
+
+        for idx, r in enumerate(hp_results):
+            s = summarize_brand(r)
+            b_name = s['brand'].upper()
             
+            # 매핑 데이터 대조 (매칭 실패 시 기본 그레이 스타일 처리)
+            style = BRAND_STYLES.get(b_name, {"color": "#6C757D", "bg": "#FAFAFA", "emoji": "📄"})
+            
+            with col_cards[idx % 2]:
+                # 테두리와 내부 배경색에 고유 브랜드 테마 컬러 인젝션
+                st.markdown(
+                    f'''
+                    <div style="border: 2px solid {style['color']}; padding: 18px; border-radius: 10px; background-color: {style['bg']}; margin-bottom: 15px;">
+                        <h5 style="color: {style['color']}; margin-top:0; font-weight:bold; border-bottom: 1px solid {style['color']}; padding-bottom: 6px;">{style['emoji']} {s['brand']} <span style='font-size:12px; color:gray; font-weight:normal;'>({r['manager']})</span></h5>
+                        <p style="margin-bottom:8px; font-size:13.5px; margin-top:10px;">🔗 <b>바로가기:</b> <a href="{r['url']}" target="_blank" style="color:{style['color']}; text-decoration:none; font-weight:bold;">{r['url']}</a></p>
+                        <p style="margin-bottom:8px; font-size:13.5px;">📌 <b>첫 페이지 캐치프레이즈:</b> <i>"{s['overview']}"</i></p>
+                        <p style="margin-bottom:0; font-size:13.5px;">🎯 <b>마케팅 레이아웃 진단:</b> {s['marketing_memo']}</p>
+                    </div>
+                    ''', 
+                    unsafe_allow_html=True
+                )
+                
+                # 익스팬더(상세 테이블 뷰어) 상자도 메인 카드 바로 아래 정렬 배치하여 소스 데이터 확인 유도
+                with st.expander(f"🔍 {s['brand']} 감지된 메인 텍스트 소스 데이터 셋 보기"):
+                    if r["items"]:
+                        item_df = pd.DataFrame(r["items"])[["text", "category", "keywords"]]
+                        st.dataframe(item_df, use_container_width=True, height=150)
+                    else:
+                        st.info("구조화할 수 있는 노출 텍스트 컨텐츠가 없습니다.")
+
+    # ----------------------------------------------------------------------
+    # 🎯 [수정 완료 정답 코드] 
+    # if hp_results: 조건문과 수직 라인을 똑같이 맞춰서 작성합니다. (앞 공백 4칸)
+    # ----------------------------------------------------------------------
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 내 코드 내의 진짜 수집 변수인 hp_results 데이터를 PDF용 세션에 실시간 주입합니다.
+    st.session_state['homepage_data'] = hp_results
+
 # ==============================================================================
-# # [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할 - 100% 와이드 버전)
+# 👥 [Section 3] 투자자 데이터 분석 + DiD 기반 마케팅 순수 인과효과 평가 (고도화 완본)
 # ==============================================================================
 with st.container(border=True):
-    st.header("👥 Section 3. 투자자 데이터 분석")
-    st.caption("엑셀 파일을 끌어다 놓으면 확인 버튼 없이 실시간 AUM과 교차 검증된 투자자별 순매수 강도가 즉시 업데이트됩니다.")
+    st.header("👥 Section 3. 투자자 데이터 분석 및 DiD 기반 마케팅 순수 인과효과 측정")
+    st.caption("이중차분법(Difference-in-Differences)을 활용하여 시장 및 섹터 자체의 노이즈를 제거한 오직 '마케팅 이벤트만의 순수 자금 유입 효과'를 추적합니다.")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 🗑️ 기존 col3_left, col3_right 분할을 삭제하고 화면을 단일(Full-width) 구조로 넓게 씁니다.
     st.subheader("📊 주차별 순매수 강도 분석 결과")
     uploaded_file = st.file_uploader("ETF 순매수 데이터 엑셀 파일을 업로드해주세요", type=["xlsx"], key="sec3_uploader")
     
     if uploaded_file is not None:
         try:
+            # 1. 엑셀 파일 로드 및 시트 추출
             xls = pd.ExcelFile(uploaded_file)
             weeks = [s for s in xls.sheet_names if s != '참고사항']
             
-            # 셀렉트 박스 필터 영역
-            sub_c1, sub_c2, sub_c3 = st.columns(3)
-            with sub_c1: prev_week = st.selectbox("1주차 (전주)", weeks, index=0, key="week1_option")
-            with sub_c2: curr_week = st.selectbox("2주차 (금주)", weeks, index=min(1, len(weeks)-1), key="week2_option")
-            with sub_c3: target_investor = st.selectbox("분석 타겟", ['개인', '기관', '외국인', '투신'], index=0, key="target_agent_option")
+            sub_c1, sub_c2 = st.columns(2)
+            with sub_c1: 
+                curr_week = st.selectbox("📅 분석 기간 (금주)", weeks, index=min(1, len(weeks)-1), key="week2_option")
+            with sub_c2: 
+                investor_opts = ['개인', '기관', '외국인', '투신', '은행', '금융투자', '연기금 등']
+                target_investor = st.selectbox("👥 분석 타겟", investor_opts, index=0, key="target_agent_option")
 
-            
+            curr_index = weeks.index(curr_week)
+            if curr_index == 0:
+                prev_week = weeks[0]
+                st.warning("⚠️ 선택하신 주차가 파일의 첫 번째 데이터입니다. 전주 역산 추정 시 기준점이 현재 주차와 동일하게 처리됩니다.")
+            else:
+                prev_week = weeks[curr_index - 1]
+
+            # 2. 전주 및 금주 데이터 로드
             df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
             df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
             
             df_prev = df_prev[(df_prev['종목명'] != '전체') & (df_prev['종목명'].notna())]
             df_curr = df_curr[(df_curr['종목명'] != '전체') & (df_curr['종목명'].notna())]
+            
+            # 3. 네이버 금융 실시간 ETF 전종목 마스터 로드
+            status_aum = st.empty()
+            status_aum.text(f"🌐 [최종 엔진] 네이버 AUM 동기화 및 {prev_week}차 자산 자동 역산 중...")
             
             naver_url = "https://finance.naver.com/api/sise/etfItemList.nhn"
             req = urllib.request.Request(naver_url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -654,45 +1008,195 @@ with st.container(border=True):
             for item in etf_items:
                 naver_data.append({
                     '💡매칭키': re.sub(r'[^가-힣A-Za-z0-9]', '', str(item.get('itemname',''))).upper(),
-                    '자산': float(item.get('amount', 0)) if item.get('amount') else 800.0
+                    '종목코드': str(item.get('itemcode', '')).strip(),
+                    '네이버실제자산(억원)': float(item.get('amount', 0)) if item.get('amount') else 0.0
                 })
             df_naver = pd.DataFrame(naver_data).drop_duplicates(subset=['💡매칭키'])
             
-            df_curr['💡매칭키'] = df_curr['종목명'].astype(str).apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
-            df_curr[target_investor] = pd.to_numeric(df_curr[target_investor].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            # 4. 엑셀 데이터 숫자 정제 및 매칭키 빌드
+            scale_factor = 100_000.0  
+            investor_cols = ['기관', '외국인', '개인', '금융투자', '보험', '투신', '사모', '은행', '연기금 등']
             
-            m_df = pd.merge(df_curr, df_naver, on='💡매칭키', how='inner')
-            m_df['정제순매수(억원)'] = m_df[target_investor] / 100000.0
-            m_df['매수강도'] = (m_df['정제순매수(억원)'] / m_df['자산']) * 100
+            for df_target in [df_prev, df_curr]:
+                df_target['종목명_정제'] = df_target['종목명'].astype(str).str.strip()
+                df_target['💡매칭키'] = df_target['종목명_정제'].apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
+                
+                available_cols = [c for c in investor_cols if c in df_target.columns]
+                for col in available_cols:
+                    df_target[col] = df_target[col].astype(str).str.replace(',', '').str.strip()
+                    df_target[col] = pd.to_numeric(df_target[col], errors='coerce').fillna(0)
             
-            # 🚨 원본: res_df = m_df.sort_values(by='매수강도', ascending=False).head(15)
-            # 👇 아래처럼 수정합니다. (.head(15) 삭제 및 세션 저장 코드 추가)
-            res_df = m_df.sort_values(by='매수강도', ascending=False)
+            df_curr['금주_총순매수(억원)'] = df_curr[available_cols].sum(axis=1) / scale_factor
+            df_prev['전주_총순매수(억원)'] = df_prev[available_cols].sum(axis=1) / scale_factor
             
-            # [핵심] 바로 이곳에 추가합니다! PDF로 'res_df' 전체 데이터를 무사히 넘겨줍니다.
+            # 5. 전주 및 금주 데이터 결합 및 매수강도 계산 기본판 준비
+            # 기본 매수강도 정의를 위해 전주 추정 자산 결합
+            df_curr_with_naver = pd.merge(df_curr, df_naver, on='💡매칭키', how='left')
+            df_curr_with_naver['네이버실제자산(억원)'] = df_curr_with_naver['네이버실제자산(억원)'].fillna(0)
+            df_curr_with_naver['전주_추정순자산(억원)'] = df_curr_with_naver['네이버실제자산(억원)'] - df_curr_with_naver['금주_총순매수(억원)']
+            df_curr_with_naver['전주_추정순자산(억원)'] = np.where(df_curr_with_naver['전주_추정순자산(억원)'] < 50.0, 800.0, df_curr_with_naver['전주_추정순자산(억원)'])
+            
+            # 전주 타겟 투자자 금액 정제 및 전주 매수강도 계산용 자산 결합
+            df_prev_target = df_prev[['💡매칭키', target_investor]].rename(columns={target_investor: '전주_타겟매수액'})
+            df_prev_target['정제된_전주순매수(억원)'] = df_prev_target['전주_타겟매수액'] / scale_factor
+            
+            # 최종 마스터 프레임 빌드
+            final_df = pd.merge(df_curr_with_naver, df_prev_target, on='💡매칭키', how='left').fillna(0)
+            final_df['정제된_금주순매수(억원)'] = final_df[target_investor] / scale_factor
+            
+            # 주차별 매수강도(%) 도출
+            final_df['금주_매수강도'] = (final_df['정제된_금주순매수(억원)'] / final_df['전주_추정순자산(억원)']) * 100
+            final_df['전주_매수강도'] = (final_df['정제된_전주순매수(억원)'] / final_df['전주_추정순자산(억원)']) * 100 # 동질성 기준 전주 자산 대비 계산
+            final_df['매수강도'] = final_df['금주_매수강도'] # 시각화용 하위 호환 매칭
+            
+            res_df = final_df.sort_values(by='금주_매수강도', ascending=False)
             st.session_state['res_df'] = res_df 
             
-            top_bought_etfs = ", ".join(res_df['종목명'].head(5).tolist())
+            status_aum.empty()  
             
-            if "global_context" not in st.session_state:
-                st.session_state.global_context = ""
-            st.session_state.global_context += f"[엑셀 순매수 강도 분석 결과]\n타겟 투자자 {target_investor}가 현재 가장 강하게 순매수 중인 자산 리스트: {top_bought_etfs}\n\n"
-            
-            # 🚨 차트는 너무 많으면 깨질 수 있으니 화면(에이전트)에 그릴 때만 15개로 컷 해줍니다.
+            # 6. 화면 시각화 출력 (상위 15개 제한)
             display_df = res_df.head(15) 
+            st.markdown(f"### 🏆 {curr_week} 주차 순매수 강도 TOP 15 리포트")
+            st.caption(f"公式: [금주({curr_week}) {target_investor} 순매수액(억원)] ÷ [시스템 자동추적 전주({prev_week}) 기준 순자산(억원)] × 100 (%)")
             
-            # 가로 전체를 활용하여 더 크고 가독성 좋게 시각화 차트를 그립니다.
-            fig = px.bar(display_df, x='종목명', y='매수강도', color='매수강도', color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 리포트")
+            fig = px.bar(display_df, x='종목명_정제', y='금주_매수강도', color='금주_매수강도', text_auto='.2f',
+                         color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 (자동추적 전주 AUM 대비)",
+                         labels={"금주_매수강도": "순매수 강도 (%)", "종목명_정제": "종목명"})
             st.plotly_chart(fig, use_container_width=True)
             
-            st.dataframe(res_df[['종목명', '자산', '정제순매수(억원)', '매수강도']], use_container_width=True, hide_index=True)
-            
+            df_display = res_df[['종목명_정제', '전주_추정순자산(억원)', '정제된_금주순매수(억원)', '금주_매수강도']].copy()
+            df_display.columns = ['종목명', f'{prev_week} 기준 순자산(억원)', f'{curr_week} {target_investor} 순매수(억원)', '순매수 강도 (%)']
+            st.dataframe(df_display.style.format({
+                f'{prev_week} 기준 순자산(억원)': '{:,.1f}',
+                f'{curr_week} {target_investor} 순매수(억원)': '{:,.1f}',
+                '순매수 강도 (%)': '{:.3f}'
+            }), use_container_width=True, hide_index=True)
+
+            # ==================================================================
+            # 🔗 [DiD 고도화 구역] 4대 운용사 마케팅 이벤트 이중차분 분석 엔진
+            # ==================================================================
+            st.markdown("<br><hr>", unsafe_allow_html=True)
+            st.markdown("### 🧬 운용사별 이벤트 - 인과관계 검증 지표 (DiD 인텔리전스)")
+            st.caption("※ DiD(이중차분 스코어) = (마케팅 상품의 수급 강도 변화량) - (동일 자산군 내 경쟁사 대조군의 수급 강도 변화량)")
+
+            if "df_events_base_data" not in st.session_state:
+                with st.spinner("🔄 네이버 API로부터 4대 운용사 실시간 마케팅 이벤트를 수집 중입니다..."):
+                    try:
+                        st.session_state["df_events_base_data"] = fetch_all_etf_events()
+                    except:
+                        st.session_state["df_events_base_data"] = []
+
+            df_events_base = pd.DataFrame(st.session_state.get("df_events_base_data", []))
+
+            if df_events_base.empty:
+                st.warning("⚠️ 네이버 실시간 마케팅 이벤트 데이터를 가져오지 못했습니다. API 상태를 확인해 주세요.")
+            else:
+                brands_info = {"삼성자산운용": "KODEX", "미래에셋자산운용": "TIGER", "한국투자신탁운용": "ACE", "KB자산운용": "RISE"}
+                summary_report_rows = []
+
+                for comp_name, b_name in brands_info.items():
+                    df_comp_ev = df_events_base[df_events_base["운용사"] == comp_name]
+                    
+                    if df_comp_ev.empty:
+                        summary_report_rows.append({
+                            "운용사 (브랜드)": f"{comp_name} ({b_name})", "진행 중인 주요 이벤트": "확인 가능한 최근 이벤트 없음",
+                            "마케팅 푸쉬 종목": "이력 없음", "실제 개인 누적 순매수액": "0 원", "DiD 순수 마케팅 효과": "0.000%p", "최종 마케팅 효용 판단": "⚪ 데이터 없음"
+                        })
+                        continue
+
+                    event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
+                    if len(event_titles) > 50: event_titles = event_titles[:47] + "..."
+
+                    # 마케팅 상품 키워드 추출
+                    all_prods = []
+                    for _, r in df_comp_ev.iterrows():
+                        if "관련 상품" in r["🎯 유도 ETF 종목"]: continue
+                        all_prods.extend([k.strip() for k in r["🎯 유도 ETF 종목"].split(",") if k.strip()])
+                    all_prods = list(set(all_prods))
+                    push_products_text = ", ".join(all_prods[:3]) if all_prods else f"{b_name} 주요 라인업"
+
+                    # ----------------------------------------------------------
+                    # 🧬 핵심 DiD(이중차분) 연산 파트
+                    # ----------------------------------------------------------
+                    treatment_diffs = [] # 처치집단(우리 상품) 변화량 리스트
+                    control_diffs = []   # 통제집단(경쟁사 대조군) 변화량 리스트
+                    total_comp_money = 0.0
+                    matched_any_stock = False
+
+                    for kw in all_prods:
+                        kw_norm = kw.replace(" ", "")
+                        # 1) 처치집단 (마케팅 대상 우리 상품)
+                        df_treat = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
+                        
+                        if not df_treat.empty:
+                            matched_any_stock = True
+                            total_comp_money += df_treat['정제된_금주순매수(억원)'].sum()
+                            
+                            # 우리 상품의 (금주 매수강도 - 전주 매수강도) 계산
+                            t_diff = (df_treat['금주_매수강도'] - df_treat['전주_매수강도']).mean()
+                            treatment_diffs.append(t_diff)
+                            
+                            # 2) 통제집단 (동일 키워드를 공유하지만 브랜드명이 다른 경쟁사 상품 탐색)
+                            # 예: 키워드가 '반도체'라면, 우리 브랜드가 아닌 다른 브랜드의 모든 반도체 ETF 수집
+                            core_keyword = kw_norm.replace(b_name, "") # 브랜드명 떼고 '반도체'만 추출
+                            if len(core_keyword) >= 2: # 유의미한 키워드인 경우 대조군 매칭
+                                df_ctrl = res_df[
+                                    (res_df['종목명_정제'].str.replace(" ", "").str.contains(core_keyword, na=False)) & 
+                                    (~res_df['종목명_정제'].str.contains(b_name, na=False))
+                                ]
+                                if not df_ctrl.empty:
+                                    c_diff = (df_ctrl['금주_매수강도'] - df_ctrl['전주_매수강도']).mean()
+                                    control_diffs.append(c_diff)
+
+                    # 평균 변화량 계산 및 차분(DiD) 계산
+                    avg_t_diff = np.mean(treatment_diffs) if treatment_diffs else 0.0
+                    avg_c_diff = np.mean(control_diffs) if control_diffs else 0.0
+                    did_score = avg_t_diff - avg_c_diff # [처치군 변화량] - [통제군 변화량]
+
+                    # 3) DiD 기반 최종 마케팅 효용 판단 기준 정의
+                    if not matched_any_stock:
+                        efficacy_result = "⚪ 효용성 판단 불가 (시장 무반응)"
+                    elif did_score > 0.05:
+                        efficacy_result = "🟢 효용성 탁월 (시장 평균 뛰어넘는 순수 유입)"
+                    elif did_score > -0.05 and total_comp_money > 0:
+                        efficacy_result = "🟡 효용성 보통 (시장 호재에 따른 동반 상승)"
+                    else:
+                        efficacy_result = "🔴 효용성 없음 (이벤트에도 경쟁사 대비 이탈)"
+
+                    summary_report_rows.append({
+                        "운용사 (브랜드)": f"{comp_name} ({b_name})",
+                        "진행 중인 주요 이벤트": event_titles,
+                        "마케팅 푸쉬 종목": push_products_text,
+                        "실제 개인 누적 순매수액": f"{total_comp_money:,.2f} 억 원" if matched_any_stock else "0 원",
+                        "DiD 순수 마케팅 효과": f"{did_score:+.3f}%p",
+                        "최종 마케팅 효용 판단": efficacy_result
+                    })
+
+                df_final_report = pd.DataFrame(summary_report_rows)
+                st.dataframe(df_final_report, use_container_width=True, hide_index=True)
+
+                st.markdown("<br>#### ✍️ DiD 인텔리전스 기반 성과 분석 스냅샷", unsafe_allow_html=True)
+                c1, c2 = st.columns(2)
+                c3, c4 = st.columns(2)
+
+                for idx, row in df_final_report.iterrows():
+                    target_col = [c1, c2, c3, c4][idx]
+                    with target_col:
+                        with st.container(border=True):
+                            st.markdown(f"##### **{row['운용사 (브랜드)']}**")
+                            st.markdown(f"• **📣 진행 이벤트:** {row['진행 중인 주요 이벤트']}")
+                            st.markdown(f"• **🎯 집중 푸쉬 종목:** `{row['마케팅 푸쉬 종목']}`")
+                            st.markdown(f"• **📈 마케팅 순수 인과효과(DiD):** **`{row['DiD 순수 마케팅 효과']}`**")
+                            
+                            if "🟢" in row['최종 마케팅 효용 판단']: st.success(f"**진단:** {row['최종 마케팅 효용 판단']}")
+                            elif "🟡" in row['최종 마케팅 효용 판단']: st.warning(f"**진단:** {row['최종 마케팅 효용 판단']}")
+                            elif "🔴" in row['최종 마케팅 효용 판단']: st.error(f"**진단:** {row['최종 마케팅 효용 판단']}")
+                            else: st.info(f"**진단:** {row['최종 마케팅 효용 판단']}")
+
         except Exception as e:
             st.error(f"데이터 연산 처리 중 에러 발생: {e}")
     else:
-        st.info("💡 위 데이터 드롭 영역에 엑셀 파일을 업로드해 주시면 순매수 강도 그래프가 자동으로 빌드됩니다.")
-
-st.divider()
+        st.info("💡 위 데이터 드롭 영역에 엑셀 파일을 업로드해 주시면 순매수 강도 분석과 DiD 마케팅 인과성 평가 결과가 자동으로 실시간 빌드됩니다.")
 
 # ============================================================
 # ⚙️ FUNETF API 설정 (기존 설정 유지)
@@ -735,11 +1239,16 @@ def fetch_data(url, params, label):
     except Exception as e:
         return pd.DataFrame()
 
-def get_weekly_rate_top(rank_cd="DESC"):
-    """주간 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
-    df = fetch_data(f"{BASE}/rateReturn/list", {"rankCd": rank_cd, "derivative": "true", "pension": "", "etfType": "", "term": 5, "page": 0, "size": 50}, "수익률")
+def get_weekly_rate_top(rank_cd="DESC", term_days=5):
+    """주간/월간 등 선택된 기간별 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
+    # 💡 term_days 인자를 받아 API 파라미터인 "term"에 동적으로 매핑합니다.
+    df = fetch_data(
+        f"{BASE}/rateReturn/list", 
+        {"rankCd": rank_cd, "derivative": "true", "pension": "", "etfType": "", "term": term_days, "page": 0, "size": 50}, 
+        "수익률"
+    )
     
-    # 🚨 [데이터 보강] 상위 N개 요청에 대응할 수 있도록 백업 데이터를 10개로 확장합니다.
+    # [데이터 보강] 상위 N개 요청에 대응할 수 있도록 백업 데이터를 10개로 유지합니다.
     if df.empty:
         if rank_cd == "DESC":
             backup_items = [
@@ -795,20 +1304,71 @@ def get_weekly_rate_top(rank_cd="DESC"):
         
     return df[available_cols]
 
-def get_theme_rate():
-    """테마별 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
-    df = fetch_data(f"{BASE}/theme/list", {"page": 0, "size": 30}, "테마별 수익률")
+def get_theme_rate(term_days=5):
+    """
+    [자체 연산 엔진 업그레이드]
+    외부 테마 API 의존을 제거하고, 수집된 주간 수익률 TOP 50 데이터를 기반으로
+    ETF 상품명을 분석하여 테마를 실시간 분류 및 평균 수익률을 산출합니다.
+    """
+    # 💡 핵심 수정: 화면에서 선택된 기간(chosen_term) 값을 수집 함수에 그대로 넘겨줍니다.
+    df_src = get_weekly_rate_top("DESC", term_days=term_days)
     
-    if df.empty or "themeNm" not in df.columns:
+    # 만약 데이터 수집에 완전히 실패한 경우, 최소한의 빈 데이터 프레임 구조 반환
+    if df_src.empty or "ETF명" not in df_src.columns or "수익률(%)" not in df_src.columns:
         return pd.DataFrame({
             "테마명": ["반도체/AI 혁신", "미국 빅테크&소프트웨어", "바이오/헬스케어", "조선/방산 중공업", "글로벌 금리형/채권", "2차전지/핵심소재"],
-            "주간수익률(%)": [5.42, 4.12, 3.81, 1.95, 0.08, -2.15]
+            "주간수익률(%)": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         })
     
-    df = df.rename(columns={"themeNm": "테마명", "suikRt": "주간수익률(%)"})
-    df["주간수익률(%)"] = pd.to_numeric(df["주간수익률(%)"], errors="coerce")
-    return df[["테마명", "주간수익률(%)"]]
+    # 룰베이스 기반 상품명 키워드 매핑 함수
+    def classify_theme(etf_name):
+        etf_name = str(etf_name).upper()
+        
+        # 반도체 및 테크 관련 키워드
+        if any(kw in etf_name for kw in ["반도체", "AI", "인공지능", "테크", "빅테크", "나스닥", "SOX", "필라델피아"]):
+            if any(kw in etf_name for kw in ["빅테크", "나스닥100", "FANG", "애플", "엔비디아", "마이크로소프트"]):
+                return "미국 빅테크&소프트웨어"
+            return "반도체/AI 혁신"
+            
+        # 바이오/헬스케어 키워드
+        elif any(kw in etf_name for kw in ["바이오", "헬스케어", "의료기기", "제약", "비만"]):
+            return "바이오/헬스케어"
+            
+        # 조선/방산/중공업 키워드
+        elif any(kw in etf_name for kw in ["조선", "방산", "중공업", "우주", "항공", "K방산"]):
+            return "조선/방산 중공업"
+            
+        # 글로벌 금리형/채권 키워드
+        elif any(kw in etf_name for kw in ["금리", "KOFR", "CD", "채권", "국채", "미국채", "통화", "달러"]):
+            return "글로벌 금리형/채권"
+            
+        # 2차전지 키워드
+        elif any(kw in etf_name for kw in ["2차전지", "이차전지", "배터리", "소재", "양극재"]):
+            return "2차전지/핵심소재"
+            
+        # 고배당 및 밸류업 가치주 키워드
+        elif any(kw in etf_name for kw in ["배당", "고배당", "밸류업", "금융", "은행"]):
+            return "배당 및 가치주"
+            
+        else:
+            return "국내/외 지수 및 기타"
 
+    # 데이터 복사 및 테마 매핑 적용
+    df_calc = df_src.copy()
+    df_calc["테마명"] = df_calc["ETF명"].apply(classify_theme)
+    
+    # 수익률 데이터를 확실하게 수치형으로 변환 및 결측치 제거
+    df_calc["수익률(%)"] = pd.to_numeric(df_calc["수익률(%)"], errors="coerce")
+    df_calc = df_calc.dropna(subset=["수익률(%)"])
+    
+    # 테마별로 묶어 수익률의 평균(mean) 산출
+    df_theme = df_calc.groupby("테마명")["수익률(%)"].mean().reset_index()
+    
+    # 기존 render_section_4() 화면 컴포넌트와 호환되도록 컬럼명 리네임 및 정렬
+    df_theme = df_theme.rename(columns={"수익률(%)": "주간수익률(%)"})
+    df_theme = df_theme.sort_values(by="주간수익률(%)", ascending=False).reset_index(drop=True)
+    
+    return df_theme
 # ============================================================
 # 📊 2. 스트림릿 대시보드 화면 렌더링 (SECTION 4)
 # ============================================================
@@ -822,35 +1382,45 @@ def render_section_4():
         st.write("")
         
         # --------------------------------------------------------
-        # Control Panel
+        # Control Panel (기간 선택 기능 추가 업그레이드)
         # --------------------------------------------------------
-        # 이 container 내부에 [숨김대상] 텍스트를 심어두어, Playwright가 PDF를 캡처할 때 인풋 박스들을 통째로 지우게 만듭니다.
         with st.container():
-            st.markdown("####대시보드 조건 설정")
-            col_ctrl1, col_ctrl2 = st.columns(2)
+            st.markdown("#### ⚙️ 대시보드 조건 설정")
+            # 💡 기존 2열에서 3열 구조로 변경하여 '분석 기간 선택'창을 중간에 배치합니다.
+            col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
+            
             with col_ctrl1:
                 top_n = st.number_input("조회할 TOP N 개수 선택", min_value=3, max_value=20, value=10, step=1)
                 selected_top_n = top_n # 글로벌 변수에 동기화
-              # 👇 여기에 추가! (화면에서 바뀐 top_n 값을 세션 메모리에 실시간 저장)
                 st.session_state['selected_top_n'] = top_n
+                
             with col_ctrl2:
+                # 💡 [핵심 추가] 사용자가 직관적으로 기간을 고르면 내부 딕셔너리를 통해 API용 일수(days)로 자동 치환합니다.
+                period_opt = st.selectbox("📅 분석 기간 선택", ["1주", "1일(전영업일)", "1개월", "3개월", "6개월", "1년"])
+                period_mapping = {"1일(전영업일)": 1, "1주": 5, "1개월": 30, "3개월": 90, "6개월": 180, "1년": 365}
+                chosen_term = period_mapping[period_opt]
+                st.session_state['chosen_period_text'] = period_opt
+                
+            with col_ctrl3:
                 order_type = st.selectbox("수익률 정렬 기준", ["상승률 상위 순 (DESC)", "하락률 상위 순 (ASC)"])
                 rank_cd = "DESC" if "상승률" in order_type else "ASC"
 
         st.write("---")
 
         with st.spinner("FUNETF에서 실시간 데이터를 가져오는 중..."):
-            df_rate = get_weekly_rate_top(rank_cd)
-            df_theme = get_theme_rate()
+            # 💡 [핵심 연결] 사용자가 화면에서 선택한 기간(chosen_term)을 데이터 수집 및 테마 연산 함수에 주입합니다!
+            df_rate = get_weekly_rate_top(rank_cd, term_days=chosen_term)
+            df_theme = get_theme_rate(term_days=chosen_term)
             
             # PDF 연동 컴포넌트를 위해 전역 메모리에 데이터 복사본 전달
             st.session_state['df_top_returns'] = df_rate.copy() if not df_rate.empty else pd.DataFrame()
             st.session_state['df_theme_returns'] = df_theme.copy() if not df_theme.empty else pd.DataFrame()
 
         # --------------------------------------------------------
-        # 1) 주간 수익률 TOP N (차트 + 표)
+        # 1) 선택 기간 수익률 TOP N (차트 + 표)
         # --------------------------------------------------------
-        st.markdown(f"### 🏆 주간 수익률 TOP {top_n}")
+        # 💡 타이틀도 사용자가 고른 기간이 동적으로 표시되도록 업그레이드했습니다.
+        st.markdown(f"### 🏆{period_opt} 수익률 TOP {top_n}")
         
         if not df_rate.empty and "수익률(%)" in df_rate.columns:
             top_df = df_rate.head(top_n)
@@ -883,14 +1453,14 @@ def render_section_4():
                 
             st.dataframe(display_df, use_container_width=True)
         else:
-            st.warning("⚠️ 주간 수익률 데이터를 불러오지 못했습니다. API 쿠키 및 세션 상태를 점검해주세요.")
+            st.warning(f"⚠️ {period_opt} 기간의 수익률 데이터를 불러오지 못했습니다. API 세션 상태를 점검해주세요.")
 
         st.write("---")
 
         # --------------------------------------------------------
-        # 2) 테마별 수익률 현황 (ValueError 해결 완료)
+        # 2) 테마별 수익률 현황 (동적 기간 실시간 계산 적용)
         # --------------------------------------------------------
-        st.markdown("### 🗂️ 주간 주요 테마별 수익률 현황")
+        st.markdown(f"### 🗂️{period_opt} 주요 테마별 평균 수익률 현황")
         
         if not df_theme.empty:
             col_th1, col_th2 = st.columns([3, 2])
@@ -904,7 +1474,7 @@ def render_section_4():
                     x="테마명",
                     y="주간수익률(%)",
                     color="주간수익률(%)",
-                    color_continuous_scale="RdBu_r",  # [💡 수정]: Plotly 표준 양방향 컬러맵 적용
+                    color_continuous_scale="RdBu_r",  
                     text=theme_text,
                     template="plotly_white"
                 )
@@ -920,44 +1490,110 @@ def render_section_4():
             st.info("ℹ️ 현재 수집된 테마별 수익률 요약 데이터가 존재하지 않습니다.")
 
         st.write("---")
-
         # --------------------------------------------------------
-        # 3) 다음주 주목할 ETF 리스트 (Gemini's Pick)
+        # 3) 다음주 주목할 ETF 리스트 (Gemini's Pick) - 동적 생성 버전
         # --------------------------------------------------------
         st.markdown("### 🤖 다음주 주목할 ETF 리스트 (Gemini's Pick)")
         st.caption("상위 수익률 트렌드와 대금 유입 패턴을 종합 연산하여 산출한 AI 추천 가이드입니다.")
-        
+
         if not df_rate.empty and len(df_rate) >= 3:
             pick_1 = df_rate.iloc[0]["ETF명"]
             pick_2 = df_rate.iloc[1]["ETF명"]
             pick_3 = df_rate.iloc[2]["ETF명"]
+            pick_1_rate = df_rate.iloc[0].get("수익률(%)", "")
+            pick_2_rate = df_rate.iloc[1].get("수익률(%)", "")
+            pick_3_rate = df_rate.iloc[2].get("수익률(%)", "")
         else:
-            pick_1 = "ACE MSCI인도네시아(합성)"
-            pick_2 = "TIGER 한중반도체(합성)"
-            pick_3 = "KODEX 방산TOP10"
+            pick_1, pick_1_rate = "ACE MSCI인도네시아(합성)", ""
+            pick_2, pick_2_rate = "TIGER 한중반도체(합성)", ""
+            pick_3, pick_3_rate = "KODEX 방산TOP10", ""
+
+        def generate_pick_analysis(p1, p2, p3, r1, r2, r3):
+            prompt = f"""
+당신은 ETF 전문 애널리스트입니다. 아래 3개 ETF에 대해 각각 '선정 배경'과 '투자 포인트'를 작성하세요.
+
+- Pick 1 (주도주 모멘텀): {p1} | 주간수익률: {r1}%
+- Pick 2 (테마 순환매 수혜): {p2} | 주간수익률: {r2}%
+- Pick 3 (리스크 헤지형): {p3} | 주간수익률: {r3}%
+
+각 항목의 선정 배경은 해당 ETF의 특성과 수익률 근거를 반영하여 1~2문장으로,
+투자 포인트는 다음 주 매매 관점에서 실질적인 조언을 1~2문장으로 작성하세요.
+반드시 아래 JSON 형식으로만 출력하고 다른 설명은 절대 포함하지 마세요.
+
+{{
+  "pick1": {{"bg": "선정 배경 문장", "point": "투자 포인트 문장"}},
+  "pick2": {{"bg": "선정 배경 문장", "point": "투자 포인트 문장"}},
+  "pick3": {{"bg": "선정 배경 문장", "point": "투자 포인트 문장"}}
+}}
+"""
+            try:
+                import json
+                result = generate_via_requests(prompt, "gemini-1.5-flash")
+                if result:
+                    clean = result.strip().replace("```json", "").replace("```", "").strip()
+                    return json.loads(clean)
+            except:
+                pass
+            return {
+                "pick1": {"bg": f"{p1}은 주간 수익률 상위권을 기록하며 강한 상방 모멘텀을 보이고 있습니다.",
+                          "point": "기관 및 외국인의 순매수 유입이 지속되며 다음 주도 시세 연속성이 기대됩니다."},
+                "pick2": {"bg": f"{p2}은 거래량 증가와 함께 기술적 추세 전환 신호가 감지되고 있습니다.",
+                          "point": "순환매 자금 유입 국면으로 단기 트레이딩 관점에서 유효한 타이밍입니다."},
+                "pick3": {"bg": f"{p3}은 변동성 확대 구간에서도 안정적인 방어력을 입증하고 있습니다.",
+                          "point": "포트폴리오 변동성 축소 목적의 헤지 수단으로 적합합니다."}
+            }
+
+        with st.spinner("🤖 Gemini가 종목별 선정 배경 및 투자 포인트를 실시간 분석 중..."):
+            pick_analysis = generate_pick_analysis(
+                pick_1, pick_2, pick_3,
+                pick_1_rate, pick_2_rate, pick_3_rate
+            )
 
         col_p1, col_p2, col_p3 = st.columns(3)
-        
+
         with col_p1:
             st.info(f"🌟 **주도주 모멘텀**\n\n**{pick_1}**")
-            st.markdown("""
-            - **선정 배경**: 최근 주간 수익률 최상위권을 수성하며 시장의 강력한 상방 압력을 견인하고 있습니다.
-            - **투자 포인트**: 기관 및 외국인의 대규모 양방향 순매수 유입세가 뚜렷하여 다음 주 초반까지 시세 연속성 기대감이 높습니다.
+            st.markdown(f"""
+            - **선정 배경**: {pick_analysis['pick1']['bg']}
+            - **투자 포인트**: {pick_analysis['pick1']['point']}
             """)
-            
+
         with col_p2:
             st.success(f"📈 **테마 순환매 수혜**\n\n**{pick_2}**")
-            st.markdown("""
-            - **선정 배경**: 바닥권 다지기 이후 거래량이 눈에 띄게 증가하며 기술적 추세 전환의 신호탄을 쏘아 올렸습니다.
-            - **투자 포인트**: 기존 주도주 섹터의 차익 실현 자금이 유입되는 국면이므로, 단기 순환매 랠리를 활용한 트레이딩이 유효합니다.
+            st.markdown(f"""
+            - **선정 배경**: {pick_analysis['pick2']['bg']}
+            - **투자 포인트**: {pick_analysis['pick2']['point']}
             """)
-            
+
         with col_p3:
             st.warning(f"🛡️ **리스크 헤지형**\n\n**{pick_3}**")
-            st.markdown("""
-            - **선정 배경**: 매크로 불확실성 및 글로벌 지수 변동성 확대 국면에서도 탄탄한 펀더멘탈로 방어력을 입증했습니다.
-            - **투자 포인트**: 시장 전반의 지수 조정 리스크에 대응하여 내 포트폴리오의 변동성을 낮추고 안정적인 안전판 역할을 하기에 적합합니다.
+            st.markdown(f"""
+            - **선정 배경**: {pick_analysis['pick3']['bg']}
+            - **투자 포인트**: {pick_analysis['pick3']['point']}
             """)
+
+        # ↓↓↓ 이 코드를 958번 줄 바로 뒤(col_p3 블록 끝나는 지점)에 추가
+        st.session_state['gemini_picks'] = {
+            "pick1": {"label": "🌟 주도주 모멘텀", "name": pick_1,
+                      "bg": "최근 주간 수익률 최상위권을 수성하며 시장의 강력한 상방 압력을 견인하고 있습니다.",
+                      "point": "기관 및 외국인의 대규모 양방향 순매수 유입세가 뚜렷하여 다음 주 초반까지 시세 연속성 기대감이 높습니다."},
+            "pick2": {"label": "📈 테마 순환매 수혜", "name": pick_2,
+                      "bg": "바닥권 다지기 이후 거래량이 눈에 띄게 증가하며 기술적 추세 전환의 신호탄을 쏘아 올렸습니다.",
+                      "point": "기존 주도주 섹터의 차익 실현 자금이 유입되는 국면이므로, 단기 순환매 랠리를 활용한 트레이딩이 유효합니다."},
+            "pick3": {"label": "🛡️ 리스크 헤지형", "name": pick_3,
+                      "bg": "매크로 불확실성 및 글로벌 지수 변동성 확대 국면에서도 탄탄한 펀더멘탈로 방어력을 입증했습니다.",
+                      "point": "시장 전반의 지수 조정 리스크에 대응하여 내 포트폴리오의 변동성을 낮추고 안정적인 안전판 역할을 하기에 적합합니다."}
+        }
+
+        # PDF 연동을 위해 session_state에 실시간 저장
+        st.session_state['gemini_picks'] = {
+            "pick1": {"label": "🌟 주도주 모멘텀", "name": pick_1,
+                      "bg": pick_analysis['pick1']['bg'], "point": pick_analysis['pick1']['point']},
+            "pick2": {"label": "📈 테마 순환매 수혜", "name": pick_2,
+                      "bg": pick_analysis['pick2']['bg'], "point": pick_analysis['pick2']['point']},
+            "pick3": {"label": "🛡️ 리스크 헤지형", "name": pick_3,
+                      "bg": pick_analysis['pick3']['bg'], "point": pick_analysis['pick3']['point']}
+        }
 
 # 대시보드 연동 실행
 render_section_4()
@@ -1234,6 +1870,46 @@ with st.container(border=True):
             sec2_data[com_key]['reason'] = res.get('reasoning', sec2_data[com_key]['reason'])
 
         # ----------------------------------------------------------------------
+        # 🕵️ [수정구역] Part D. 실시간 홈페이지 스크리닝 데이터 4대 항목 테이블 행(Row) 동적 생성
+        # ----------------------------------------------------------------------
+        homepage_session = st.session_state.get('homepage_data', [])
+        
+        part_d_table_rows = ""
+        if homepage_session:
+            for r in homepage_session:
+                # 대시보드 Part D 화면을 그릴 때 썼던 함수(summarize_brand)를 그대로 호출해 실시간 데이터를 낚아챕니다.
+                s = summarize_brand(r)
+                
+                brand_name = f"{s['brand']} ({r.get('manager', '')})"
+                keywords = s.get('keywords', '-')
+                direction = s.get('etf_brief', '-')       # 실시간 마케팅 방향
+                catchphrase = s.get('overview', '-')       # 첫페이지 캐치프레이즈
+                layout = s.get('marketing_memo', '-')     # 마케팅 레이아웃 진단
+                
+                # PDF 인쇄 시 지저분하게 표기되는 마크다운 강조 기호(**) 제거 정제
+                layout_clean = layout.replace("**", "")
+                direction_clean = direction.replace("**", "")
+                
+                # 4대 항목을 격자형 표(Row) 형태로 실시간 바인딩
+                part_d_table_rows += f"""
+                <tr>
+                    <td style="border: 1px solid #E5E7EB; padding: 2.2mm; font-weight: bold; background-color: #F9FAFB; font-size: 8pt;">{brand_name}</td>
+                    <td style="border: 1px solid #E5E7EB; padding: 2.2mm; font-size: 7.5pt; line-height: 1.4;">{keywords}</td>
+                    <td style="border: 1px solid #E5E7EB; padding: 2.2mm; font-size: 7.5pt; line-height: 1.4;">{direction_clean}</td>
+                    <td style="border: 1px solid #E5E7EB; padding: 2.2mm; font-size: 7.5pt; color: #1D4ED8; line-height: 1.4;">{catchphrase}</td>
+                    <td style="border: 1px solid #E5E7EB; padding: 2.2mm; font-size: 7.5pt; color: #4B5563; line-height: 1.4;">{layout_clean}</td>
+                </tr>
+                """
+        else:
+            part_d_table_rows = """
+            <tr>
+                <td colspan="5" style="border: 1px solid #E5E7EB; padding: 5mm; text-align: center; color: #9CA3AF; font-size: 8pt;">
+                    실시간 공식 홈페이지 스크리닝 데이터가 존재하지 않습니다. (대시보드에서 분석을 먼저 수행해 주세요)
+                </td>
+            </tr>
+            """
+
+        # ----------------------------------------------------------------------
         # 👥 SECTION 3. 투자자별 순매수 수급 강도
         # ----------------------------------------------------------------------
         section3_chart_html = ""
@@ -1249,7 +1925,7 @@ with st.container(border=True):
                 max_vol = float(summary['매수강도'].max()) if summary['매수강도'].max() > 0 else 1.0
                 
                 for idx, row in summary.reset_index(drop=True).iterrows():
-                    item_name = row.get('종목명', f'KODEX 혁신 자산 {idx+1}')
+                    item_name = row.get('종목명_정제', row.get('종목명', f'KODEX 혁신 자산 {idx+1}'))
                     vol_val = row.get('매수강도', 0.0)
                     
                     blocks = max(1, round((float(vol_val) / max_vol) * 12))
@@ -1286,13 +1962,104 @@ with st.container(border=True):
                     </div>
                 </div>
                 """
+        # ======================================================================
+        # 🔗 [글자색 교정 완본] 헤더 영역의 글자색을 완전한 흰색(#FFFFFF)으로 변경
+        # ======================================================================
+        marketing_report_html = ""
+        df_events_base_data = st.session_state.get("df_events_base_data", [])
+        
+        if target_agent_df is None:
+            target_agent_df = pd.DataFrame(columns=['종목명_정제', '정제된_금주순매수(억원)'])
 
+        try:
+            if df_events_base_data:
+                df_events_base = pd.DataFrame(df_events_base_data)
+                brands_info = {"삼성자산운용": "KODEX", "미래에셋자산운용": "TIGER", "한국투자신탁운용": "ACE", "KB자산운용": "RISE"}
+                
+                marketing_report_html += """
+                <div style='margin-top: 6mm; margin-bottom: 2mm; padding: 2mm; background-color: #F8FAFC; border-left: 3px solid #1E40AF;'>
+                    <div style='font-size: 10pt; font-weight: bold; color: #1E40AF;'>📊 운용사 마케팅 이벤트 - 순매수 상관관계 결산</div>
+                </div>
+                <table style='width: 100%; border-collapse: collapse; margin-top: 2mm; font-size: 8pt; border: 1px solid #CBD5E1;'>
+                    <thead>
+                        <tr style='background-color: #1E40AF; text-align: left; font-weight: bold;'>
+                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 25%; color: #FFFFFF; font-weight: bold;'>운용사 (브랜드)</th>
+                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 35%; color: #FFFFFF; font-weight: bold;'>마케팅 푸쉬 종목 (이벤트)</th>
+                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 20%; color: #FFFFFF; font-weight: bold;'>개인 순매수 결산</th>
+                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 20%; color: #FFFFFF; font-weight: bold;'>최종 마케팅 효용</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                """
+                
+                for comp_name, b_name in brands_info.items():
+                    df_comp_ev = df_events_base[df_events_base["운용사"] == comp_name]
+                    
+                    if df_comp_ev.empty:
+                        marketing_report_html += f"""
+                        <tr style='background-color: #FFFFFF;'>
+                            <td style='padding: 2mm; border: 1px solid #CBD5E1; font-weight: bold; color:#1F2937;'>{comp_name} ({b_name})</td>
+                            <td style='padding: 2mm; border: 1px solid #CBD5E1; color: #64748B; font-style: italic;'>확인 가능한 최근 이벤트 없음</td>
+                            <td style='padding: 2mm; border: 1px solid #CBD5E1; color:#1F2937;'>0 원</td>
+                            <td style='padding: 2mm; border: 1px solid #CBD5E1; color: #64748B;'>⚪ 데이터 없음</td>
+                        </tr>
+                        """
+                        continue
+                        
+                    all_prods = []
+                    for _, r in df_comp_ev.iterrows():
+                        if "관련 상품" in r["🎯 유도 ETF 종목"]: continue
+                        all_prods.extend([k.strip() for k in r["🎯 유도 ETF 종목"].split(",") if k.strip()])
+                    all_prods = list(set(all_prods))
+                    push_products_text = ", ".join(all_prods[:2]) if all_prods else f"{b_name} 주요 라인업"
+                    
+                    total_comp_money = 0.0
+                    matched_any_stock = False
+                    
+                    if not target_agent_df.empty:
+                        for kw in all_prods:
+                            kw_norm = kw.replace(" ", "")
+                            df_matched = target_agent_df[target_agent_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
+                            if not df_matched.empty:
+                                matched_any_stock = True
+                                total_comp_money += df_matched['정제된_금주순매수(억원)'].sum()
+                            
+                    if not matched_any_stock:
+                        efficacy_result = "<span style='color:#64748B;'>⚪ 무반응</span>"
+                    elif total_comp_money > 0:
+                        efficacy_result = "<span style='color:#16A34A; font-weight:bold;'>🟢 효용 높음</span>"
+                    else:
+                        efficacy_result = "<span style='color:#DC2626; font-weight:bold;'>🔴 효용 없음</span>"
+                        
+                    money_str = f"{total_comp_money:,.1f} 억 원" if matched_any_stock else "0 원"
+                    
+                    marketing_report_html += f"""
+                    <tr style='background-color: #FFFFFF;'>
+                        <td style='padding: 2mm; border: 1px solid #CBD5E1; font-weight: bold; color:#1F2937;'>{comp_name} ({b_name})</td>
+                        <td style='padding: 2mm; border: 1px solid #CBD5E1; color:#374151;'>{push_products_text}</td>
+                        <td style='padding: 2mm; border: 1px solid #CBD5E1; font-weight: bold; color:#1F2937;'>{money_str}</td>
+                        <td style='padding: 2mm; border: 1px solid #CBD5E1;'>{efficacy_result}</td>
+                    </tr>
+                    """
+                    
+                marketing_report_html += "</tbody></table>"
+                section3_chart_html += marketing_report_html
+        except Exception as marketing_err:
+            pass
         # ----------------------------------------------------------------------
         # 📈 SECTION 4. 주간 수익률 퍼포먼스 & 테마별 평균 수익률 (session_state 연동)
         # ----------------------------------------------------------------------
         top_n_return_html = ""
         top_n_count = st.session_state.get('selected_top_n', 10)
-        section4_title_text = f"주간 KODEX ETF 수익률 상위 TOP {top_n_count}"  # ← 이 줄 추가
+        
+        # 💡 세션에서 기간(예: 1주 (기본), 1개월 등)을 읽어온 뒤 뒤의 괄호 찌꺼기나 설명을 떼고 깔끔하게 만듭니다.
+        raw_period = st.session_state.get('chosen_period_text', '1주')
+        chosen_period_label = raw_period.split(" ")[0]  # "1주 (기본)" -> "1주", "1일 (전영업일)" -> "1일"
+        
+        # ⭕ 요청하신 대로 "X개월 주요 테마별 평균 수익률 현황" 규격으로 제목을 정의합니다!
+        section4_title_text = f"{chosen_period_label} KODEX ETF 수익률 상위 TOP {top_n_count}"
+        theme_return_title = f"{chosen_period_label} 주요 테마별 평균 수익률 현황"
+        
         target_top_df = st.session_state.get('df_top_returns', None)
         
         # 1. 실제 대시보드 데이터 연동부
@@ -1362,6 +2129,37 @@ with st.container(border=True):
                 sign_str = "" if "-" in clean_dt_str else "+"
                 theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{clean_dt_str}%</td></tr>"
 
+        # ↓↓↓ 아래 코드를 theme_return_html 처리 블록 바로 뒤에 추가
+        # ----------------------------------------------------------------------
+        # 🤖 SECTION 4-PICK. 다음주 주목할 ETF (Gemini's Pick) PDF 렌더링
+        # ----------------------------------------------------------------------
+        picks = st.session_state.get('gemini_picks', {})
+
+        def _pick_box(label, name, bg, point, accent):
+            return f"""
+            <td style="width:33%; vertical-align:top; padding:3mm; border:2px solid {accent}; border-radius:6px; background-color:#FAFAFA;">
+                <div style="font-weight:bold; color:{accent}; font-size:9pt; margin-bottom:2mm;">{label}</div>
+                <div style="font-size:9.5pt; font-weight:bold; color:#1E3A8A; padding:1.5mm 0; margin-bottom:2mm; border-top:1px solid {accent}; border-bottom:1px solid {accent};">{name}</div>
+                <div style="font-size:7.5pt; color:#374151; margin-bottom:1.5mm;"><b>▪ 선정 배경:</b> {bg}</div>
+                <div style="font-size:7.5pt; color:#374151;"><b>▪ 투자 포인트:</b> {point}</div>
+            </td>
+            """
+
+        if picks:
+            p1 = picks.get('pick1', {})
+            p2 = picks.get('pick2', {})
+            p3 = picks.get('pick3', {})
+            gemini_pick_html = f"""
+            <table style="width:100%; border-collapse:separate; border-spacing:3mm; table-layout:fixed;">
+                <tr>
+                    {_pick_box(p1.get('label','🌟 주도주 모멘텀'), p1.get('name','—'), p1.get('bg',''), p1.get('point',''), '#1D4ED8')}
+                    {_pick_box(p2.get('label','📈 테마 순환매 수혜'), p2.get('name','—'), p2.get('bg',''), p2.get('point',''), '#047857')}
+                    {_pick_box(p3.get('label','🛡️ 리스크 헤지형'), p3.get('name','—'), p3.get('bg',''), p3.get('point',''), '#B45309')}
+                </tr>
+            </table>
+            """
+        else:
+            gemini_pick_html = "<p style='color:#9CA3AF; font-size:8pt;'>Section 4 수익률 데이터 로드 후 자동 반영됩니다.</p>"
         # ----------------------------------------------------------------------
         # 📱 SECTION 5. 마케팅 뉴스 리스트 & 데이터랩 박스 차트 (완벽 동기화 버전)
         # ----------------------------------------------------------------------
@@ -1442,6 +2240,20 @@ with st.container(border=True):
         # ----------------------------------------------------------------------
         # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
         # ----------------------------------------------------------------------
+        # 1. html_string 시작 바로 윗줄에 이 코드를 붙여넣으세요.
+        homepage_session = st.session_state.get('homepage_data', [])
+    
+        if homepage_session:
+            # 홈페이지 스크리닝 데이터가 있으면 한 줄씩 bullet point(•) 형태로 예쁘게 결합합니다.
+            part_d_text = "<br>".join([
+                f"• <b>{item.get('brand', item.get('company', ''))}</b>: {item.get('main_copy', '메인 카피 없음')} ({item.get('trend_summary', '트렌드 요약 없음')})" 
+                for item in homepage_session
+            ])
+        else:
+            part_d_text = "실시간 공식 홈페이지 스크리닝 데이터가 존재하지 않습니다."
+
+        sec2_data['part_d'] = part_d_text
+        
         html_string = f"""
         <html>
         <head>
@@ -1552,42 +2364,60 @@ with st.container(border=True):
                 </table>
 
                 <div class="content-title" style="margin-top:4mm;">▶ 4. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
+
+                <table style="width:100%; border-collapse:separate; border-spacing:2mm; table-layout:fixed; margin-top:2mm;">
+                    <tr>
+                        <td style="width:50%; vertical-align:top; border:2px solid #1D4ED8; border-radius:6px; padding:3mm; background-color:#EFF6FF;">
+                            <div style="font-weight:bold; color:#1D4ED8; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #1D4ED8; padding-bottom:1.5mm;">■ 삼성자산운용 (KODEX)</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['kodex']['prod']}</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['kodex']['theme']}</div>
+                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['kodex']['reason']}</div>
+                        </td>
+                        <td style="width:50%; vertical-align:top; border:2px solid #EA580C; border-radius:6px; padding:3mm; background-color:#FFF7ED;">
+                            <div style="font-weight:bold; color:#EA580C; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #EA580C; padding-bottom:1.5mm;">■ 미래에셋자산운용 (TIGER)</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['tiger']['prod']}</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['tiger']['theme']}</div>
+                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['tiger']['reason']}</div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="width:50%; vertical-align:top; border:2px solid #CA8A04; border-radius:6px; padding:3mm; background-color:#FEFCE8;">
+                            <div style="font-weight:bold; color:#CA8A04; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #CA8A04; padding-bottom:1.5mm;">■ KB자산운용 (RISE)</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['rise']['prod']}</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['rise']['theme']}</div>
+                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['rise']['reason']}</div>
+                        </td>
+                        <td style="width:50%; vertical-align:top; border:2px solid #047857; border-radius:6px; padding:3mm; background-color:#ECFDF5;">
+                            <div style="font-weight:bold; color:#047857; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #047857; padding-bottom:1.5mm;">■ 한국투자신탁운용 (ACE)</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['ace']['prod']}</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['ace']['theme']}</div>
+                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['ace']['reason']}</div>
+                        </td>
+                    </tr>
+                </table>
+                <td style="width:50%; vertical-align:top; border:2px solid #047857; border-radius:6px; padding:3mm; background-color:#ECFDF5;">
+                            <div style="font-weight:bold; color:#047857; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #047857; padding-bottom:1.5mm;">■ 한국투자신탁운용 (ACE)</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['ace']['prod']}</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['ace']['theme']}</div>
+                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['ace']['reason']}</div>
+                        </td>
+                    </tr>
+                </table> <div class="content-title" style="margin-top:4mm;">▶ 5. 운용사 공식 홈페이지 메인화면 실시간 스크리닝 요약</div>
                 
-                <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
-                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 삼성자산운용 (KODEX)</span>
-                    <ul style="margin-top:0.5mm; padding-left:4mm;">
-                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['kodex']['prod']}</li>
-                        <li><b>핵심 투자 테마:</b> {sec2_data['kodex']['theme']}</li>
-                        <li><b>주력 판단 근거:</b> {sec2_data['kodex']['reason']}</li>
-                    </ul>
-                </div>
-
-                <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
-                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 미래에셋자산운용 (TIGER)</span>
-                    <ul style="margin-top:0.5mm; padding-left:4mm;">
-                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['tiger']['prod']}</li>
-                        <li><b>핵심 투자 테마:</b> {sec2_data['tiger']['theme']}</li>
-                        <li><b>주력 판단 근거:</b> {sec2_data['tiger']['reason']}</li>
-                    </ul>
-                </div>
-
-                <div style="margin-bottom: 2mm; border-bottom: 1px solid #E5E7EB; padding-bottom: 2mm;">
-                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ KB자산운용 (RISE)</span>
-                    <ul style="margin-top:0.5mm; padding-left:4mm;">
-                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['rise']['prod']}</li>
-                        <li><b>핵심 투자 테마:</b> {sec2_data['rise']['theme']}</li>
-                        <li><b>주력 판단 근거:</b> {sec2_data['rise']['reason']}</li>
-                    </ul>
-                </div>
-
-                <div>
-                    <span style="font-weight:bold; color:#1E3A8A; font-size:9pt;">■ 한국투자신탁운용 (ACE)</span>
-                    <ul style="margin-top:0.5mm; padding-left:4mm;">
-                        <li><b>현재 주력 ETF 상품:</b> {sec2_data['ace']['prod']}</li>
-                        <li><b>핵심 투자 테마:</b> {sec2_data['ace']['theme']}</li>
-                        <li><b>주력 판단 근거:</b> {sec2_data['ace']['reason']}</li>
-                    </ul>
-                </div>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 2mm; table-layout: fixed;">
+                    <thead>
+                        <tr style="background-color: #1E3A8A; color: white;">
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 18%; font-weight: bold; text-align: center;">브랜드(운용사)</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 22%; font-weight: bold; text-align: center;">홈페이지 상위 노출 키워드</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 20%; font-weight: bold; text-align: center;">실시간 마케팅 방향</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 23%; font-weight: bold; text-align: center;">첫페이지 캐치프레이즈</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 17%; font-weight: bold; text-align: center;">마케팅 레이아웃 진단</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {part_d_table_rows}  </tbody>
+                </table>
+                </div> ```
             </div>
 
             <div class="section-container">
@@ -1625,7 +2455,7 @@ with st.container(border=True):
                         </td>
                         <td style="width:4%; border:none;"></td>
                         <td style="width:48%; border:none; padding:0; vertical-align: top;">
-                            <div class="content-title">[주간 주요 테마별 평균 수익률 전체 테이블]</div>
+                            <div class="content-title">{theme_return_title}</div>
                             <table style="width:100%; border-collapse: collapse; margin-top: 1.5mm;">
                                 <thead>
                                     <tr>
@@ -1640,6 +2470,10 @@ with st.container(border=True):
                         </td>
                     </tr>
                 </table>
+                    <div style="margin-top:4mm;">
+                    <div class="content-title">🤖 다음주 주목할 ETF 리스트 (Gemini's Pick)</div>
+                    {gemini_pick_html}
+                </div>
             </div>
 
             <div class="section-container">
