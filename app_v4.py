@@ -1198,7 +1198,11 @@ with st.container(border=True):
                     # 출력을 분할된 4개의 칸에 순서대로 매칭
                     target_col = [c1, c2, c3, c4][idx]
                     
+                    # 🔍 [수정] 대시보드 화면용 데이터에서도 글자 수 제한(... 처리) 로직을 제거
+                    event_titles_full = row['진행 중인 주요 이벤트']
+                    
                     with target_col:
+                        # 🎨 HTML/CSS 활용 커스텀 컬러 박스 (줄바꿈이 일어나도 예쁘게 정렬되도록 line-height 조정)
                         st.markdown(f"""
                         <div style='
                             background-color: {style_config["bg"]}; 
@@ -1207,23 +1211,24 @@ with st.container(border=True):
                             padding: 4mm; 
                             margin-bottom: 4mm;
                             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                            min-height: 180px;  /* 글자가 길어져도 박스들이 어느 정도 균형을 맞추도록 최소 높이 지정 */
                         '>
                             <h5 style='margin-top: 0; color: {style_config["text"]}; font-weight: bold; border-bottom: 1px solid {style_config["border"]}; padding-bottom: 1.5mm;'>
                                 🏢 {comp_key}
                             </h5>
-                            <p style='margin: 2mm 0; font-size: 9pt; color: #334155;'>
-                                📣 <b>진행 이벤트:</b> {row['진행 중인 주요 이벤트']}
+                            <p style='margin: 2.5mm 0; font-size: 9.5pt; color: #334155; line-height: 1.5;'>
+                                📣 <b>진행 이벤트:</b> {event_titles_full}
                             </p>
-                            <p style='margin: 2mm 0; font-size: 9pt; color: #334155;'>
+                            <p style='margin: 2.5mm 0; font-size: 9.5pt; color: #334155; line-height: 1.4;'>
                                 🎯 <b>집중 푸쉬 종목:</b> <code style='background-color: rgba(255,255,255,0.7); padding: 0.5mm 1mm; border-radius: 4px; border: 1px solid {style_config["border"]}80;'>{row['마케팅 푸쉬 종목']}</code>
                             </p>
-                            <p style='margin: 2mm 0; font-size: 9.5pt; color: #1E293B;'>
+                            <p style='margin: 2.5mm 0; font-size: 10pt; color: #1E293B;'>
                                 📈 <b>마케팅 순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{row['DiD 순수 마케팅 효과']}</span>
                             </p>
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 진단 결과 컴포넌트
+                        # 💡 진단 결과 컴포넌트
                         if "🟢" in row['최종 마케팅 효용 판단']: 
                             st.success(f"**진단:** {row['최종 마케팅 효용 판단']}")
                         elif "🟡" in row['최종 마케팅 효용 판단']: 
