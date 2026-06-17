@@ -882,6 +882,8 @@ else:
                         st.info("구조화할 수 있는 노출 텍스트 컨텐츠가 없습니다.")
 
     st.markdown("<br>", unsafe_allow_html=True)
+    # Part D 스크리닝 결과가 담긴 변수(예시: homepage_data)를 세션에 저장
+st.session_state['homepage_data'] = homepage_data # 본인의 Part D 데이터 변수명에 맞게 매칭
             
 # ==============================================================================
 # # [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할 - 100% 와이드 버전)
@@ -1711,6 +1713,15 @@ with st.container(border=True):
             sec2_data[com_key]['theme'] = res.get('marketing_theme', sec2_data[com_key]['theme'])
             sec2_data[com_key]['reason'] = res.get('reasoning', sec2_data[com_key]['reason'])
 
+        homepage_session = st.session_state.get('homepage_data', []) # 본인의 Part D 세션 데이터 이름
+        if homepage_session:
+            part_d_text = "<br>".join([f"• <b>{item['brand']}</b>: {item.get('main_copy', '데이터 없음')} ({item.get('trend_summary', '')})" for item in homepage_session])
+        else:
+            part_d_text = "실시간 홈페이지 스크리닝 데이터가 존재하지 않습니다."
+
+        # 딕셔너리에 'part_d' 키를 만들어서 가공한 텍스트를 저장해둡니다.
+        sec2_data['part_d'] = part_d_text
+
         # ----------------------------------------------------------------------
         # 👥 SECTION 3. 투자자별 순매수 수급 강도
         # ----------------------------------------------------------------------
@@ -2100,6 +2111,27 @@ with st.container(border=True):
                         </td>
                     </tr>
                 </table>
+                <td style="width:50%; vertical-align:top; border:2px solid #047857; border-radius:6px; padding:3mm; background-color:#ECFDF5;">
+                            <div style="font-weight:bold; color:#047857; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #047857; padding-bottom:1.5mm;">■ 한국투자신탁운용 (ACE)</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['ace']['prod']}</div>
+                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['ace']['theme']}</div>
+                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['ace']['reason']}</div>
+                        </td>
+                    </tr>
+                </table> <div class="content-title" style="margin-top:4mm;">▶ 5. 운용사 공식 홈페이지 메인화면 실시간 스크리닝 요약</div>
+                
+                <table style="width:100%; border-collapse:collapse; margin-top:2mm;">
+                    <tr>
+                        <td style="border:1px solid #E5E7EB; background-color:#F9FAFB; padding:3.5mm; border-radius:6px;">
+                            <div style="font-size:8pt; color:#374151; line-height:1.5;">
+                                {sec2_data['part_d']}
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+                </div> ```
+
+이렇게 수정하시면 블로그 4분할 카드형 리포트 바로 아래에 가로로 길게 홈페이지 실시간 스크리닝 요약이 깔끔한 박스 형태로 연달아 출력됩니다!
             </div>
 
             <div class="section-container">
