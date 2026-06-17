@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET  
 import email.utils
 import streamlit.components.v1 as components
+import io
 
 # 1. 페이지 기본 설정 및 와이드 모드 강제 적용
 st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈", layout="wide")
@@ -889,7 +890,135 @@ else:
     
     # 내 코드 내의 진짜 수집 변수인 hp_results 데이터를 PDF용 세션에 실시간 주입합니다.
     st.session_state['homepage_data'] = hp_results
-            
+
+    # ==============================================================================
+# 📊 SECTION 2-B. 운용사별 이벤트-순매수 연관성 분석 (팀원 코드 합치기)
+# ==============================================================================
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("### 📊운용사별 이벤트-순매수 연관성 요약 지표")
+
+# 1. 네이버 API를 통한 실시간 이벤트 데이터 수집 (최근 30일)
+# 💡 팁: 버튼을 누르거나 페이지 로드 시 최초 1회 세션에 저장하도록 하여 API 호출 낭비를 방지합니다.
+if "df_events_base_data" not in st.session_state:
+    with st.spinner("🔄 네이버 API로부터 4대 운용사 실시간 마케팅 이벤트를 수집 중입니다..."):
+        try:
+            total_data = fetch_all_etf_events()  # 팀원분이 짠 수집 함수 호출
+            st.session_state["df_events_base_data"] = total_data
+        except Exception as e:
+            st.session_state["df_events_base_data"] = []
+            st.warning(f"⚠️ 네이버 이벤트 수집 중 오류 발생: {e}")
+
+df_events_base = pd.DataFrame(st.session_state["df_events_base_data"])
+
+# 2. 수급 데이터 연동 (기존 SECTION 3 등에서 업로드되어 세션에 저장된 'res_df' 활용)
+# 💡 팀원 코드의 combined_market_data 대신, 대시보드 내에 이미 존재하는 실시간 DataFrame을 연동합니다.
+target_agent_df = st.session_state.get('res_df', pd.DataFrame())
+
+if target_agent_df.empty or df_events_base.empty:
+    st.info("💡 대시보드 상단에서 순매수 엑셀/CSV 데이터를 분석하시고 네이버 API 연동이 완료되면, 실시간 마케팅 효용성 분석 보고서가 이곳에 즉시 완성됩니다.")
+else:
+    # 팀원분의 로직을 화면 세션 데이터 구조에 맞게 전처리
+    df_total_market = target_agent_df.copy()
+    
+    # 4대 운용사 및 브랜드 정의
+    brands_info = {
+        "삼성자산운용": "KODEX",
+        "미래에셋자산운용": "TIGER",
+        "한국투자신탁운용": "ACE",
+        "KB자산운용": "RISE"
+    }
+
+    summary_report_rows = []
+
+    for comp_name, b_name in brands_info.items():
+        df_comp_ev = df_events_base[df_events_base["운용사"] == comp_name] if not df_events_base.empty else pd.DataFrame()
+        
+        if df_comp_ev.empty:
+            summary_report_rows.append({
+                "운용사 (브랜드)": f"{comp_name} ({b_name})",
+                "진행 중인 주요 이벤트": "확인 가능한 최근 이벤트 없음",
+                "마케팅 푸쉬 종목": "이력 없음",
+                "실제 개인 누적 순매수액": "0 원",
+                "최종 마케팅 효용 판단": "⚪ 데이터 없음"
+            })
+            continue
+
+        # 이벤트 제목 리스트 추출 (최대 2개 요약)
+        event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
+        if len(event_titles) > 50: 
+            event_titles = event_titles[:47] + "..."
+
+        # 푸쉬 종목 키워드 바인딩
+        all_prods = []
+        for _, r in df_comp_ev.iterrows():
+            if "관련 상품" in r["🎯 유도 ETF 종목"]: continue
+            all_prods.extend([k.strip() for k in r["🎯 유도 ETF 종목"].split(",") if k.strip()])
+        all_prods = list(set(all_prods))
+        push_products_text = ", ".join(all_prods[:3]) if all_prods else f"{b_name} 주요 라인업"
+
+        # 수급 데이터 매칭 연산 (기존 대시보드 컬럼명 유연성 확보)
+        total_comp_money = 0.0
+        matched_any_stock = False
+        
+        # '개인' 컬럼 혹은 대시보드 수급 컬럼 매칭
+        amt_col = '개인' if '개인' in df_total_market.columns else ('순매수' if '순매수' in df_total_market.columns else None)
+        name_col = '종목명' if '종목명' in df_total_market.columns else ('종목명_정제' if '종목명_정제' in df_total_market.columns else 'ETF명')
+
+        if amt_col and name_col:
+            for kw in all_prods:
+                kw_norm = kw.replace(" ", "")
+                df_matched = df_total_market[df_total_market[name_col].astype(str).str.replace(" ", "").str.contains(kw_norm, na=False)]
+                if not df_matched.empty:
+                    matched_any_stock = True
+                    try:
+                        # 숫자 형변환 및 단위 가공 (백만 원 단위 변환)
+                        s_val = df_matched[amt_col].astype(str).str.replace(",", "").astype(float).sum()
+                        total_comp_money += s_val / 1000000.0  
+                    except:
+                        pass
+
+        # 마케팅 효용 최종 조건문 판단
+        if not matched_any_stock:
+            efficacy_result = "⚪ 효용성 판단 불가 (시장 무반응)"
+        elif total_comp_money > 0:
+            efficacy_result = "🟢 효용성 높음 (성공적인 자금 유입)"
+        else:
+            efficacy_result = "🔴 효용성 없음 (홍보했으나 순매도 이탈)"
+
+        summary_report_rows.append({
+            "운용사 (브랜드)": f"{comp_name} ({b_name})",
+            "진행 중인 주요 이벤트": event_titles,
+            "마케팅 푸쉬 종목": push_products_text,
+            "실제 개인 누적 순매수액": f"{total_comp_money:,.1f} 백만 원",
+            "최종 마케팅 효용 판단": efficacy_result
+        })
+
+    # 3. 완성된 요약 표 화면 출력
+    df_final_report = pd.DataFrame(summary_report_rows)
+    st.dataframe(df_final_report, use_container_width=True, hide_index=True)
+
+    # 4. 그리드형 핵심 브리핑 카드 배치
+    st.markdown("#### ✍️ 운용사별 최종 성과 직관 요약")
+    c1, c2 = st.columns(2)
+    c3, c4 = st.columns(2)
+
+    for idx, row in df_final_report.iterrows():
+        target_col = [c1, c2, c3, c4][idx]
+        with target_col:
+            with st.container(border=True):
+                st.markdown(f"##### **{row['운용사 (브랜드)']}**")
+                st.markdown(f"• **📣 진행 이벤트:** {row['진행 중인 주요 이벤트']}")
+                st.markdown(f"• **🎯 집중 푸쉬 종목:** `{row['마케팅 푸쉬 종목']}`")
+                st.markdown(f"• **💰 개인 순매수 결산:** **{row['실제 개인 누적 순매수액']}**")
+                
+                # 효용성에 따라 스트림릿 고유 라벨 색상 부여
+                if "🟢" in row['최종 마케팅 효용 판단']:
+                    st.success(f"**결론:** {row['최종 마케팅 효용 판단']}")
+                elif "🔴" in row['최종 마케팅 효용 판단']:
+                    st.error(f"**결론:** {row['최종 마케팅 효용 판단']}")
+                else:
+                    st.info(f"**결론:** {row['최종 마케팅 효용 판단']}")
+
 # ==============================================================================
 # # [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할 - 100% 와이드 버전)
 # ==============================================================================
