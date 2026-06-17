@@ -960,7 +960,7 @@ else:
 # 👥 [Section 3] 투자자 데이터 분석 + 운용사 마케팅 연관성 평가 (오타 수정 완본)
 # ==============================================================================
 with st.container(border=True):
-    st.header("👥 Section 3. 투자자 데이터 분석")
+    st.header("👥 Section 3. 투자자 데이터 분석 및 이벤트와 순매수 간 상관관계 분석")
     st.caption("엑셀 파일을 끌어다 놓으면 확인 버튼 없이 실시간 AUM과 교차 검증된 투자자별 순매수 강도가 즉시 업데이트됩니다.")
     st.markdown("<br>", unsafe_allow_html=True)
 
