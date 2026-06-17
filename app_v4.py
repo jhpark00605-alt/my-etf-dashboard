@@ -1076,7 +1076,7 @@ with st.container(border=True):
             # 🔗 [DiD 고도화 구역] 4대 운용사 마케팅 이벤트 이중차분 분석 엔진
             # ==================================================================
             st.markdown("<br><hr>", unsafe_allow_html=True)
-            st.markdown("### 🧬 운용사별 이벤트 - 인과관계 검증 지표 (DiD 인텔리전스)")
+            st.markdown("### 🧬 운용사별 이벤트&순매수와 상관관계 분석")
             st.caption("※ DiD(이중차분 스코어) = (마케팅 상품의 수급 강도 변화량) - (동일 자산군 내 경쟁사 대조군의 수급 강도 변화량)")
 
             if "df_events_base_data" not in st.session_state:
@@ -1175,28 +1175,69 @@ with st.container(border=True):
                 df_final_report = pd.DataFrame(summary_report_rows)
                 st.dataframe(df_final_report, use_container_width=True, hide_index=True)
 
-                st.markdown("<br>#### ✍️ DiD 인텔리전스 기반 성과 분석 스냅샷", unsafe_allow_html=True)
+                # 기존 상단 표 출력 코드(st.dataframe)는 과감히 제거했습니다.
+
+                st.markdown("<br>#### ✍️ DiD 분석 기반 이벤트 성과 분석", unsafe_allow_html=True)
+                
+                # 화면을 2x2 배열로 배치하기 위해 컬럼 분할
                 c1, c2 = st.columns(2)
                 c3, c4 = st.columns(2)
 
+                # 운용사별 맞춤 테두리 및 배경색 (Light 테마 디자인)
+                # 삼성=파란색, 미래=주황색, 한투=초록색, KB=주황색
+                color_mapping = {
+                    "삼성자산운용 (KODEX)": {"bg": "#EFF6FF", "border": "#3B82F6", "text": "#1E40AF"},
+                    "미래에셋자산운용 (TIGER)": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C"},
+                    "한국투자신탁운용 (ACE)": {"bg": "#F0FDF4", "border": "#22C55E", "text": "#166534"},
+                    "KB자산운용 (RISE)": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C"}
+                }
+
                 for idx, row in df_final_report.iterrows():
+                    comp_key = row['운용사 (브랜드)']
+                    # 지정된 색상이 없으면 기본 회색 처리
+                    style_config = color_mapping.get(comp_key, {"bg": "#F8FAFC", "border": "#CBD5E1", "text": "#334155"})
+                    
+                    # 출력을 분할된 4개의 칸에 순서대로 매칭
                     target_col = [c1, c2, c3, c4][idx]
+                    
                     with target_col:
-                        with st.container(border=True):
-                            st.markdown(f"##### **{row['운용사 (브랜드)']}**")
-                            st.markdown(f"• **📣 진행 이벤트:** {row['진행 중인 주요 이벤트']}")
-                            st.markdown(f"• **🎯 집중 푸쉬 종목:** `{row['마케팅 푸쉬 종목']}`")
-                            st.markdown(f"• **📈 마케팅 순수 인과효과(DiD):** **`{row['DiD 순수 마케팅 효과']}`**")
-                            
-                            if "🟢" in row['최종 마케팅 효용 판단']: st.success(f"**진단:** {row['최종 마케팅 효용 판단']}")
-                            elif "🟡" in row['최종 마케팅 효용 판단']: st.warning(f"**진단:** {row['최종 마케팅 효용 판단']}")
-                            elif "🔴" in row['최종 마케팅 효용 판단']: st.error(f"**진단:** {row['최종 마케팅 효용 판단']}")
-                            else: st.info(f"**진단:** {row['최종 마케팅 효용 판단']}")
+                        # 🎨 HTML/CSS를 활용해 운용사별 커스텀 컬러 박스 구현
+                        st.markdown(f"""
+                        <div style='
+                            background-color: {style_config["bg"]}; 
+                            border: 2px solid {style_config["border"]}; 
+                            border-radius: 8px; 
+                            padding: 4mm; 
+                            margin-bottom: 4mm;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                        '>
+                            <h5 style='margin-top: 0; color: {style_config["text"]}; font-weight: bold; border-bottom: 1px solid {style_config["border"]}; padding-bottom: 1.5mm;'>
+                                🏢 {comp_key}
+                            </h5>
+                            <p style='margin: 2mm 0; font-size: 9pt; color: #334155;'>
+                                📣 <b>진행 이벤트:</b> {row['진행 중인 주요 이벤트']}
+                            </p>
+                            <p style='margin: 2mm 0; font-size: 9pt; color: #334155;'>
+                                🎯 <b>집중 푸쉬 종목:</b> <code style='background-color: rgba(255,255,255,0.7); padding: 0.5mm 1mm; border-radius: 4px; border: 1px solid {style_config["border"]}80;'>{row['마케팅 푸쉬 종목']}</code>
+                            </p>
+                            <p style='margin: 2mm 0; font-size: 9.5pt; color: #1E293B;'>
+                                📈 <b>마케팅 순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{row['DiD 순수 마케팅 효과']}</span>
+                            </p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # 💡 진단 결과(🟢, 🟡, 🔴) 컴포넌트는 가독성을 위해 박스 바로 아래에 깔끔하게 배치
+                        if "🟢" in row['최종 마케팅 효용 판단']: 
+                            st.success(f"**진단:** {row['최종 마케팅 효용 판단']}")
+                        elif "🟡" in row['최종 마케팅 효용 판단']: 
+                            st.warning(f"**진단:** {row['최종 마케팅 효용 판단']}")
+                        elif "🔴" in row['최종 마케팅 효용 판단']: 
+                            st.error(f"**진단:** {row['최종 마케팅 효용 판단']}")
+                        else: 
+                            st.info(f"**진단:** {row['최종 마케팅 효용 판단']}")
 
         except Exception as e:
             st.error(f"데이터 연산 처리 중 에러 발생: {e}")
-    else:
-        st.info("💡 위 데이터 드롭 영역에 엑셀 파일을 업로드해 주시면 순매수 강도 분석과 DiD 마케팅 인과성 평가 결과가 자동으로 실시간 빌드됩니다.")
 
 # ============================================================
 # ⚙️ FUNETF API 설정 (기존 설정 유지)
