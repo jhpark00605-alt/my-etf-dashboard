@@ -1220,6 +1220,8 @@ with st.container(border=True):
                                     📈 <b>마케팅 순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{row['DiD 순수 마케팅 효과']}</span>
                                 </p>
                             </div>
+                            # ... (위쪽 코드에서 이어짐) ...
+                                # 💡 통박스 내부에 완전히 갇힌 일체형 진단 디스플레이
                             <div style='
                                 margin-top: 4mm; 
                                 padding: 2.5mm; 
@@ -1235,8 +1237,9 @@ with st.container(border=True):
                         </div>
                         """, unsafe_allow_html=True)
 
-            except Exception as e:
-                st.error(f"데이터 연산 처리 중 에러 발생: {e}")
+            # 🛠️ [교정 구역] try 문과 정확히 들여쓰기 라인을 일치시켰습니다.
+        except Exception as e:
+            st.error(f"데이터 연산 처리 중 에러 발생: {e}")
                             
 
 # ============================================================
