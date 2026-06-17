@@ -1188,7 +1188,7 @@ with st.container(border=True):
                     "삼성자산운용 (KODEX)": {"bg": "#EFF6FF", "border": "#3B82F6", "text": "#1E40AF"},
                     "미래에셋자산운용 (TIGER)": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C"},
                     "한국투자신탁운용 (ACE)": {"bg": "#F0FDF4", "border": "#22C55E", "text": "#166534"},
-                    "KB자산운용 (RISE)": {"bg": "#FEFCE8", "border": "#EAB308", "text": "#A16207"} # 💛 노란색(Yellow/Gold) 계열 매칭
+                    "KB자산운용 (RISE)": {"bg": "#FEFCE8", "border": "#EAB308", "text": "#A16207"}
                 }
 
                 for idx, row in df_final_report.iterrows():
