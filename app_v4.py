@@ -1073,7 +1073,7 @@ with st.container(border=True):
             }), use_container_width=True, hide_index=True)
 
             # ==================================================================
-            # 🔗 [DiD 고도화 구역] 4대 운용사 마케팅 이벤트 이중차분 분석 엔진
+            # 🔗 [대시보드 최종 완본] 데이터 연산 필터 해제 및 카드 디자인 일원화
             # ==================================================================
             st.markdown("<br><hr>", unsafe_allow_html=True)
             st.markdown("### 🧬 운용사별 이벤트&순매수와 상관관계 분석")
@@ -1104,8 +1104,8 @@ with st.container(border=True):
                         })
                         continue
 
+                    # 🔍 [해결 조치] 상단 연산 파트에서 글자 수를 50자로 자르던 if문 안전장치를 완전히 제거했습니다!
                     event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
-                    if len(event_titles) > 50: event_titles = event_titles[:47] + "..."
 
                     # 마케팅 상품 키워드 추출
                     all_prods = []
@@ -1115,31 +1115,24 @@ with st.container(border=True):
                     all_prods = list(set(all_prods))
                     push_products_text = ", ".join(all_prods[:3]) if all_prods else f"{b_name} 주요 라인업"
 
-                    # ----------------------------------------------------------
                     # 🧬 핵심 DiD(이중차분) 연산 파트
-                    # ----------------------------------------------------------
-                    treatment_diffs = [] # 처치집단(우리 상품) 변화량 리스트
-                    control_diffs = []   # 통제집단(경쟁사 대조군) 변화량 리스트
+                    treatment_diffs = [] 
+                    control_diffs = []   
                     total_comp_money = 0.0
                     matched_any_stock = False
 
                     for kw in all_prods:
                         kw_norm = kw.replace(" ", "")
-                        # 1) 처치집단 (마케팅 대상 우리 상품)
                         df_treat = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
                         
                         if not df_treat.empty:
                             matched_any_stock = True
                             total_comp_money += df_treat['정제된_금주순매수(억원)'].sum()
-                            
-                            # 우리 상품의 (금주 매수강도 - 전주 매수강도) 계산
                             t_diff = (df_treat['금주_매수강도'] - df_treat['전주_매수강도']).mean()
                             treatment_diffs.append(t_diff)
                             
-                            # 2) 통제집단 (동일 키워드를 공유하지만 브랜드명이 다른 경쟁사 상품 탐색)
-                            # 예: 키워드가 '반도체'라면, 우리 브랜드가 아닌 다른 브랜드의 모든 반도체 ETF 수집
-                            core_keyword = kw_norm.replace(b_name, "") # 브랜드명 떼고 '반도체'만 추출
-                            if len(core_keyword) >= 2: # 유의미한 키워드인 경우 대조군 매칭
+                            core_keyword = kw_norm.replace(b_name, "") 
+                            if len(core_keyword) >= 2: 
                                 df_ctrl = res_df[
                                     (res_df['종목명_정제'].str.replace(" ", "").str.contains(core_keyword, na=False)) & 
                                     (~res_df['종목명_정제'].str.contains(b_name, na=False))
@@ -1148,12 +1141,10 @@ with st.container(border=True):
                                     c_diff = (df_ctrl['금주_매수강도'] - df_ctrl['전주_매수강도']).mean()
                                     control_diffs.append(c_diff)
 
-                    # 평균 변화량 계산 및 차분(DiD) 계산
                     avg_t_diff = np.mean(treatment_diffs) if treatment_diffs else 0.0
                     avg_c_diff = np.mean(control_diffs) if control_diffs else 0.0
-                    did_score = avg_t_diff - avg_c_diff # [처치군 변화량] - [통제군 변화량]
+                    did_score = avg_t_diff - avg_c_diff 
 
-                    # 3) DiD 기반 최종 마케팅 효용 판단 기준 정의
                     if not matched_any_stock:
                         efficacy_result = "⚪ 효용성 판단 불가 (시장 무반응)"
                     elif did_score > 0.05:
@@ -1174,72 +1165,78 @@ with st.container(border=True):
 
                 df_final_report = pd.DataFrame(summary_report_rows)
 
-                # 기존 상단 표 출력 코드(st.dataframe)는 과감히 제거했습니다.
-
                 st.markdown("<br>#### ✍️ DiD 분석 기반 이벤트 성과 분석", unsafe_allow_html=True)
                 
-                # 화면을 2x2 배열로 배치하기 위해 컬럼 분할
                 c1, c2 = st.columns(2)
                 c3, c4 = st.columns(2)
 
-                # 🎨 운용사별 맞춤 테두리 및 배경색 (KB를 노란색 계열로 수정)
-                # 삼성=파란색, 미래=주황색, 한투=초록색, KB=노란색
                 color_mapping = {
-                    "삼성자산운용 (KODEX)": {"bg": "#EFF6FF", "border": "#3B82F6", "text": "#1E40AF"},
-                    "미래에셋자산운용 (TIGER)": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C"},
-                    "한국투자신탁운용 (ACE)": {"bg": "#F0FDF4", "border": "#22C55E", "text": "#166534"},
-                    "KB자산운용 (RISE)": {"bg": "#FEFCE8", "border": "#EAB308", "text": "#A16207"}
+                    "삼성자산운용 (KODEX)": {"bg": "#EFF6FF", "border": "#3B82F6", "text": "#1E40AF", "badge": "#DBEAFE"},
+                    "미래에셋자산운용 (TIGER)": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C", "badge": "#FFEDD5"},
+                    "한국투자신탁운용 (ACE)": {"bg": "#F0FDF4", "border": "#22C55E", "text": "#166534", "badge": "#DCFCE7"},
+                    "KB자산운용 (RISE)": {"bg": "#FEFCE8", "border": "#EAB308", "text": "#A16207", "badge": "#FEF9C3"}
                 }
 
                 for idx, row in df_final_report.iterrows():
                     comp_key = row['운용사 (브랜드)']
-                    style_config = color_mapping.get(comp_key, {"bg": "#F8FAFC", "border": "#CBD5E1", "text": "#334155"})
+                    style_config = color_mapping.get(comp_key, {"bg": "#F8FAFC", "border": "#CBD5E1", "text": "#334155", "badge": "#F1F5F9"})
                     
-                    # 출력을 분할된 4개의 칸에 순서대로 매칭
                     target_col = [c1, c2, c3, c4][idx]
-                    
-                    # 🔍 [수정] 대시보드 화면용 데이터에서도 글자 수 제한(... 처리) 로직을 제거
                     event_titles_full = row['진행 중인 주요 이벤트']
                     
+                    # 진단 결과에 맞춘 하단 상태 바 색상 추출기
+                    diag_text = row['최종 마케팅 효용 판단']
+                    if "🟢" in diag_text: diag_bg, diag_border, diag_txt = "#DCFCE7", "#22C55E", "#15803D"
+                    elif "🟡" in diag_text: diag_bg, diag_border, diag_txt = "#FEF9C3", "#EAB308", "#A16207"
+                    elif "🔴" in diag_text: diag_bg, diag_border, diag_txt = "#FEE2E2", "#EF4444", "#B91C1C"
+                    else: diag_bg, diag_border, diag_txt = "#F1F5F9", "#94A3B8", "#475569"
+
                     with target_col:
-                        # 🎨 HTML/CSS 활용 커스텀 컬러 박스 (줄바꿈이 일어나도 예쁘게 정렬되도록 line-height 조정)
+                        # 🎨 [UX 업그레이드] 카드 박스 내부에 '진단 결과 뱃지'까지 통합 빌드하여 깔끔하게 마감
                         st.markdown(f"""
                         <div style='
                             background-color: {style_config["bg"]}; 
                             border: 2px solid {style_config["border"]}; 
                             border-radius: 8px; 
-                            padding: 4mm; 
+                            padding: 4.5mm; 
                             margin-bottom: 4mm;
-                            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-                            min-height: 180px;  /* 글자가 길어져도 박스들이 어느 정도 균형을 맞추도록 최소 높이 지정 */
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+                            min-height: 250px;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: space-between;
                         '>
-                            <h5 style='margin-top: 0; color: {style_config["text"]}; font-weight: bold; border-bottom: 1px solid {style_config["border"]}; padding-bottom: 1.5mm;'>
-                                🏢 {comp_key}
-                            </h5>
-                            <p style='margin: 2.5mm 0; font-size: 9.5pt; color: #334155; line-height: 1.5;'>
-                                📣 <b>진행 이벤트:</b> {event_titles_full}
-                            </p>
-                            <p style='margin: 2.5mm 0; font-size: 9.5pt; color: #334155; line-height: 1.4;'>
-                                🎯 <b>집중 푸쉬 종목:</b> <code style='background-color: rgba(255,255,255,0.7); padding: 0.5mm 1mm; border-radius: 4px; border: 1px solid {style_config["border"]}80;'>{row['마케팅 푸쉬 종목']}</code>
-                            </p>
-                            <p style='margin: 2.5mm 0; font-size: 10pt; color: #1E293B;'>
-                                📈 <b>마케팅 순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{row['DiD 순수 마케팅 효과']}</span>
-                            </p>
+                            <div>
+                                <h5 style='margin-top: 0; color: {style_config["text"]}; font-weight: bold; border-bottom: 1px solid {style_config["border"]}80; padding-bottom: 2mm; margin-bottom: 3mm;'>
+                                    🏢 {comp_key}
+                                </h5>
+                                <p style='margin: 2.5mm 0; font-size: 9.5pt; color: #2D3748; line-height: 1.55;'>
+                                    📣 <b>진행 이벤트:</b> {event_titles_full}
+                                </p>
+                                <p style='margin: 2.5mm 0; font-size: 9.5pt; color: #2D3748; line-height: 1.4;'>
+                                    🎯 <b>집중 푸쉬 종목:</b> <code style='background-color: {style_config["badge"]}; padding: 0.5mm 1.5mm; border-radius: 4px; border: 1px solid {style_config["border"]}40; color: #1A202C;'>{row['마케팅 푸쉬 종목']}</code>
+                                </p>
+                                <p style='margin: 2.5mm 0; font-size: 10pt; color: #1E293B;'>
+                                    📈 <b>마케팅 순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{row['DiD 순수 마케팅 효과']}</span>
+                                </p>
+                            </div>
+                            <div style='
+                                margin-top: 4mm; 
+                                padding: 2.5mm; 
+                                background-color: {diag_bg}; 
+                                border: 1px solid {diag_border}; 
+                                border-radius: 6px; 
+                                font-size: 9pt; 
+                                font-weight: bold; 
+                                color: {diag_txt};
+                            '>
+                                📝 진단: {diag_text}
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
-                        
-                        # 💡 진단 결과 컴포넌트
-                        if "🟢" in row['최종 마케팅 효용 판단']: 
-                            st.success(f"**진단:** {row['최종 마케팅 효용 판단']}")
-                        elif "🟡" in row['최종 마케팅 효용 판단']: 
-                            st.warning(f"**진단:** {row['최종 마케팅 효용 판단']}")
-                        elif "🔴" in row['최종 마케팅 효용 판단']: 
-                            st.error(f"**진단:** {row['최종 마케팅 효용 판단']}")
-                        else: 
-                            st.info(f"**진단:** {row['최종 마케팅 효용 판단']}")
 
-        except Exception as e:
-            st.error(f"데이터 연산 처리 중 에러 발생: {e}")
+            except Exception as e:
+                st.error(f"데이터 연산 처리 중 에러 발생: {e}")
                             
 
 # ============================================================
