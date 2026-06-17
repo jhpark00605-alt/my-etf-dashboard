@@ -16,6 +16,71 @@ import email.utils
 import streamlit.components.v1 as components
 import io
 
+# ==============================================================================
+# 🔍 [네이버 API 엔진] 4대 운용사별 ETF 이벤트 수집 함수 (secrets 매칭 반영 버전)
+# ==============================================================================
+def fetch_all_etf_events():
+    import requests
+    import re
+    from datetime import datetime, timedelta
+
+    # 1. 💡 [수정] 대문자 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 형태로 다이렉트 매칭
+    try:
+        naver_id = st.secrets["NAVER_CLIENT_ID"]
+        naver_secret = st.secrets["NAVER_CLIENT_SECRET"]
+    except Exception as e:
+        # secrets.toml 설정 변수명이 매칭되지 않을 때 경고 출력
+        st.error("⚠️ Streamlit Secrets에 NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET 설정이 누락되었거나 이름이 다릅니다.")
+        return []
+
+    brands = {"KODEX": "삼성자산운용", "TIGER": "미래에셋자산운용", "ACE": "한국투자신탁운용", "RISE": "KB자산운용"}
+    url = "https://openapi.naver.com/v1/search/blog.json"
+    headers = {"X-Naver-Client-Id": naver_id, "X-Naver-Client-Secret": naver_secret}
+    
+    all_processed_events = []
+    one_month_ago = datetime.now() - timedelta(days=30)
+    etf_pattern = re.compile(r'\b(KODEX|TIGER|ACE|RISE)\s?([A-Za-z0-9가-힣&·\+]+(?:\s+[A-Za-z0-9가-힣&·\+]+){0,3})')
+
+    for brand, company in brands.items():
+        params = {"query": f"{brand} 이벤트", "display": 50, "sort": "sim"}
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            items = response.json().get("items", [])
+        except: 
+            continue
+
+        for item in items:
+            post_date_str = item.get("postdate", "")
+            if not post_date_str: 
+                continue
+            try:
+                post_date = datetime.strptime(post_date_str, "%Y%m%d")
+            except:
+                continue
+            
+            # 최근 30일 데이터만 필터링
+            if post_date >= one_month_ago:
+                title = item.get("title", "").replace("<b>", "").replace("</b>", "")
+                description = item.get("description", "").replace("<b>", "").replace("</b>", "")
+                
+                raw_matches = etf_pattern.findall(title + " " + description)
+                cleaned_matches = []
+                for b, prod in raw_matches:
+                    prod_clean = prod.split("이벤트")[0].split("인증")[0].split("참여")[0].strip()
+                    if len(prod_clean) > 1: 
+                        cleaned_matches.append(f"{b} {prod_clean}")
+                
+                extracted_products = ", ".join(list(set(cleaned_matches))) if cleaned_matches else f"{brand} 관련 상품"
+
+                all_processed_events.append({
+                    "운용사": company, 
+                    "브랜드": brand, 
+                    "제목": title, 
+                    "🎯 유도 ETF 종목": extracted_products
+                })
+                
+    return all_processed_events
+
 # 1. 페이지 기본 설정 및 와이드 모드 강제 적용
 st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈", layout="wide")
 
@@ -892,14 +957,13 @@ else:
     st.session_state['homepage_data'] = hp_results
 
 # ==============================================================================
-# # [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할 - 100% 와이드 버전)
+# 👥 [Section 3] 투자자 데이터 분석 + 운용사 마케팅 연관성 평가 (통합 와이드 버전)
 # ==============================================================================
 with st.container(border=True):
     st.header("👥 Section 3. 투자자 데이터 분석")
     st.caption("엑셀 파일을 끌어다 놓으면 확인 버튼 없이 실시간 AUM과 교차 검증된 투자자별 순매수 강도가 즉시 업데이트됩니다.")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 🗑️ 기존 col3_left, col3_right 분할을 삭제하고 화면을 단일(Full-width) 구조로 넓게 씁니다.
     st.subheader("📊 주차별 순매수 강도 분석 결과")
     uploaded_file = st.file_uploader("ETF 순매수 데이터 엑셀 파일을 업로드해주세요", type=["xlsx"], key="sec3_uploader")
     
@@ -909,7 +973,6 @@ with st.container(border=True):
             xls = pd.ExcelFile(uploaded_file)
             weeks = [s for s in xls.sheet_names if s != '참고사항']
             
-            # 💡 [UI 정제] '전주' 셀렉트 박스를 삭제하고 2열 구조로 더 넓게 배치합니다.
             sub_c1, sub_c2 = st.columns(2)
             with sub_c1: 
                 curr_week = st.selectbox("📅 분석 기간 (금주)", weeks, index=min(1, len(weeks)-1), key="week2_option")
@@ -917,25 +980,21 @@ with st.container(border=True):
                 investor_opts = ['개인', '기관', '외국인', '투신', '은행', '금융투자', '연기금 등']
                 target_investor = st.selectbox("👥 분석 타겟", investor_opts, index=0, key="target_agent_option")
 
-            # 💡 [엔진 고도화] 사용자가 선택한 금주 시트의 위치를 찾아 '바로 전주 시트'를 자동으로 판단합니다.
             curr_index = weeks.index(curr_week)
             if curr_index == 0:
-                # 만약 사용자가 맨 첫 번째 시트를 골랐다면, 전주 데이터가 없으므로 자기 자신을 바라보거나 경고를 띄웁니다.
                 prev_week = weeks[0]
                 st.warning("⚠️ 선택하신 주차가 파일의 첫 번째 데이터입니다. 전주 역산 추정 시 기준점이 현재 주차와 동일하게 처리됩니다.")
             else:
-                # 정상적인 경우 바로 앞 순서(index - 1)의 시트명을 전주로 자동 지정합니다.
                 prev_week = weeks[curr_index - 1]
 
             # 2. 전주 및 금주 데이터 로드
             df_prev = pd.read_excel(uploaded_file, sheet_name=prev_week)
             df_curr = pd.read_excel(uploaded_file, sheet_name=curr_week)
             
-            # '전체' 행 및 결측치 제외
             df_prev = df_prev[(df_prev['종목명'] != '전체') & (df_prev['종목명'].notna())]
             df_curr = df_curr[(df_curr['종목명'] != '전체') & (df_curr['종목명'].notna())]
             
-            # 3. 네이버 금융 실시간 ETF 전종목 마스터 로드 (현재 시점의 실시간 자산 수급)
+            # 3. 네이버 금융 실시간 ETF 전종목 마스터 로드
             status_aum = st.empty()
             status_aum.text(f"🌐 [최종 엔진] 네이버 AUM 동기화 및 {prev_week}차 자산 자동 역산 중...")
             
@@ -945,7 +1004,6 @@ with st.container(border=True):
                 res_json = json.loads(response.read().decode('cp949', errors='ignore'))
                 etf_items = res_json.get('result', {}).get('etfItemList', [])
             
-            # 네이버 마스터 DB 구축 (매칭키 청소)
             naver_data = []
             for item in etf_items:
                 naver_data.append({
@@ -956,20 +1014,18 @@ with st.container(border=True):
             df_naver = pd.DataFrame(naver_data).drop_duplicates(subset=['💡매칭키'])
             
             # 4. 엑셀 데이터 숫자 정제 및 매칭키 빌드
-            scale_factor = 100_000.0  # 천원 단위 -> 억원 단위 변환 스케일 팩터
+            scale_factor = 100_000.0  
             investor_cols = ['기관', '외국인', '개인', '금융투자', '보험', '투신', '사모', '은행', '연기금 등']
             
             for df_target in [df_prev, df_curr]:
                 df_target['종목명_정제'] = df_target['종목명'].astype(str).str.strip()
                 df_target['💡매칭키'] = df_target['종목명_정제'].apply(lambda x: re.sub(r'[^가-힣A-Za-z0-9]', '', x).upper())
                 
-                # 가용한 모든 투자자 컬럼의 콤마 제거 및 수치화
                 available_cols = [c for c in investor_cols if c in df_target.columns]
                 for col in available_cols:
                     df_target[col] = df_target[col].astype(str).str.replace(',', '').str.strip()
                     df_target[col] = pd.to_numeric(df_target[col], errors='coerce').fillna(0)
             
-            # 전주 기준의 자산을 구하기 위해, 금주 전체 투자자의 총 순매수액 계산
             df_curr['금주_총순매수(억원)'] = df_curr[available_cols].sum(axis=1) / scale_factor
             
             # 5. 전주 데이터와 금주 데이터 1차 병합
@@ -980,7 +1036,7 @@ with st.container(border=True):
                 suffixes=('_전주', '_금주')
             )
             
-            # 6. 네이버 실시간 실제 자산 결합 및 텍스트 2차 포함 검증 매칭 보정
+            # 6. 네이버 실시간 실제 자산 결합 및 보정
             final_df = pd.merge(merged_df, df_naver, on='💡매칭키', how='left')
             
             for idx, row in final_df.iterrows():
@@ -993,10 +1049,9 @@ with st.container(border=True):
             
             final_df['네이버실제자산(억원)'] = final_df['네이버실제자산(억원)'].fillna(0)
             
-            # 7. [공식 공식 교정] 전주 기준 추정 순자산 역산
+            # 7. 전주 기준 추정 순자산 역산
             final_df['전주_추정순자산(억원)'] = final_df['네이버실제자산(억원)'] - final_df['금주_총순매수(억원)']
             
-            # 왜곡 방지 장치 (분모가 0이 되거나 너무 작아져 강도가 폭등하는 버그 차단)
             final_df['전주_추정순자산(억원)'] = np.where(
                 final_df['전주_추정순자산(억원)'] < 50.0, 
                 np.where(final_df['네이버실제자산(억원)'] > 50.0, final_df['네이버실제자산(억원)'], 800.0), 
@@ -1009,11 +1064,9 @@ with st.container(border=True):
             final_df['정제된_금주순매수(억원)'] = final_df[f'{target_investor}_금주'] / scale_factor
             final_df['매수강도'] = (final_df['정제된_금주순매수(억원)'] / final_df['전주_추정순자산(억원)']) * 100
             
-            # 데이터 정렬 및 세션 저장 (전체 데이터 PDF 연동용)
             res_df = final_df.sort_values(by='매수강도', ascending=False)
             st.session_state['res_df'] = res_df 
             
-            # 글로벌 컨텍스트 빌드
             top_bought_etfs = ", ".join(res_df['종목명_정제'].head(5).tolist())
             if "global_context" not in st.session_state:
                 st.session_state.global_context = ""
@@ -1025,13 +1078,11 @@ with st.container(border=True):
             st.markdown(f"### 🏆 {curr_week} 주차 순매수 강도 TOP 15 리포트")
             st.caption(f"公式: [금주({curr_week}) {target_investor} 순매수액(억원)] ÷ [시스템 자동추적 전주({prev_week}) 기준 순자산(억원)] × 100 (%)")
             
-            # 와이드 스크린 전용 차트 생성
-            fig = px.bar(display_df, x='종목명_정제', y='매수강도', color='매수강도', text_auto='.2f',
+            fig = px.bar(display_df, x='종목명_정제', y='매수강度', color='매수강도', text_auto='.2f',
                          color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 (자동추적 전주 AUM 대비)",
                          labels={"매수강도": "순매수 강도 (%)", "종목명_정제": "종목명"})
             st.plotly_chart(fig, use_container_width=True)
             
-            # 전체 결과 데이터프레임 노출 (와이드 버전 가독성 포맷팅)
             df_display = res_df[['종목명_정제', '전주_추정순자산(억원)', '정제된_금주순매수(억원)', '매수강도']].copy()
             df_display.columns = ['종목명', f'{prev_week} 기준 순자산(억원)', f'{curr_week} {target_investor} 순매수(억원)', '순매수 강도 (%)']
             
@@ -1040,228 +1091,102 @@ with st.container(border=True):
                 f'{curr_week} {target_investor} 순매수(억원)': '{:,.1f}',
                 '순매수 강도 (%)': '{:.3f}'
             }), use_container_width=True, hide_index=True)
-            
+
+            # ==================================================================
+            # 🔗 [연동 구역] 팀원분의 운용사 이벤트 - 순매수 연관성분석 엔진 작동
+            # ==================================================================
+            st.markdown("<br><hr>", unsafe_allow_html=True)
+            st.markdown("### 📊 운용사별 이벤트 - 실제 개인 순매수 연관성 요약 지표")
+
+            # 🅰️ 네이버 API 실시간 이벤트 캐싱 로드
+            if "df_events_base_data" not in st.session_state:
+                with st.spinner("🔄 네이버 API로부터 4대 운용사 실시간 마케팅 이벤트를 수집 중입니다..."):
+                    try:
+                        st.session_state["df_events_base_data"] = fetch_all_etf_events()
+                    except:
+                        st.session_state["df_events_base_data"] = []
+
+            df_events_base = pd.DataFrame(st.session_state.get("df_events_base_data", []))
+
+            if df_events_base.empty:
+                st.warning("⚠️ 네이버 실시간 마케팅 이벤트 데이터를 가져오지 못했습니다. API 상태를 확인해 주세요.")
+            else:
+                # 🅱️ 사용자가 올린 엑셀 데이터프레임 구조를 그대로 재활용하여 대기업 4사 매칭 시작
+                brands_info = {"삼성자산운용": "KODEX", "미래에셋자산운용": "TIGER", "한국투자신탁운용": "ACE", "KB자산운용": "RISE"}
+                summary_report_rows = []
+
+                for comp_name, b_name in brands_info.items():
+                    df_comp_ev = df_events_base[df_events_base["운용사"] == comp_name]
+                    
+                    if df_comp_ev.empty:
+                        summary_report_rows.append({
+                            "운용사 (브랜드)": f"{comp_name} ({b_name})", "진행 중인 주요 이벤트": "확인 가능한 최근 이벤트 없음",
+                            "마케팅 푸쉬 종목": "이력 없음", "실제 개인 누적 순매수액": "0 원", "최종 마케팅 효용 판단": "⚪ 데이터 없음"
+                        })
+                        continue
+
+                    event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
+                    if len(event_titles) > 50: event_titles = event_titles[:47] + "..."
+
+                    all_prods = []
+                    for _, r in df_comp_ev.iterrows():
+                        if "관련 상품" in r["🎯 유도 ETF 종목"]: continue
+                        all_prods.extend([k.strip() for k in r["🎯 유도 ETF 종목"].split(",") if k.strip()])
+                    all_prods = list(set(all_prods))
+                    push_products_text = ", ".join(all_prods[:3]) if all_prods else f"{b_name} 주요 라인업"
+
+                    # 💡 정밀 매칭: 방금 위에서 계산 완료된 'res_df' 엑셀 데이터의 '개인' 순매수액을 활용합니다.
+                    total_comp_money = 0.0
+                    matched_any_stock = False
+                    
+                    for kw in all_prods:
+                        kw_norm = kw.replace(" ", "")
+                        # 위에서 한창 정제한 '종목명_정제' 컬럼과 '정제된_금주순매수(억원)' 데이터를 정밀 트래킹
+                        df_matched = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
+                        if not df_matched.empty:
+                            matched_any_stock = True
+                            total_comp_money += df_matched['정제된_금주순매수(억원)'].sum()  # 이미 억원 단위 변환됨
+
+                    if not matched_any_stock:
+                        efficacy_result = "⚪ 효용성 판단 불가 (시장 무반응)"
+                    elif total_comp_money > 0:
+                        efficacy_result = "🟢 효용성 높음 (성공적인 자금 유입)"
+                    else:
+                        efficacy_result = "🔴 효용성 없음 (홍보했으나 순매도 이탈)"
+
+                    summary_report_rows.append({
+                        "운용사 (브랜드)": f"{comp_name} ({b_name})",
+                        "진행 중인 주요 이벤트": event_titles,
+                        "마케팅 푸쉬 종목": push_products_text,
+                        "실제 개인 누적 순매수액": f"{total_comp_money:,.2f} 억 원" if matched_any_stock else "0 원",
+                        "최종 마케팅 효용 판단": efficacy_result
+                    })
+
+                # 🅲 화면에 결과 테이블 및 카드 노출
+                df_final_report = pd.DataFrame(summary_report_rows)
+                st.dataframe(df_final_report, use_container_width=True, hide_index=True)
+
+                st.markdown("<br>#### ✍️ 운용사별 최종 성과 직관 요약", unsafe_allow_html=True)
+                c1, c2 = st.columns(2)
+                c3, c4 = st.columns(2)
+
+                for idx, row in df_final_report.iterrows():
+                    target_col = [c1, c2, c3, c4][idx]
+                    with target_col:
+                        with st.container(border=True):
+                            st.markdown(f"##### **{row['운용사 (브랜드)']}**")
+                            st.markdown(f"• **📣 진행 이벤트:** {row['진행 중인 주요 이벤트']}")
+                            st.markdown(f"• **🎯 집중 푸쉬 종목:** `{row['마케팅 푸쉬 종목']}`")
+                            st.markdown(f"• **💰 개인 순매수 결산:** **{row['실제 개인 누적 순매수액']}**")
+                            
+                            if "🟢" in row['최종 마케팅 효용 판단']: st.success(f"**결론:** {row['최종 마케팅 효용 판단']}")
+                            elif "🔴" in row['최종 마케팅 효용 판단']: st.error(f"**결론:** {row['최종 마케팅 효용 판단']}")
+                            else: st.info(f"**결론:** {row['최종 마케팅 효용 판단']}")
+
         except Exception as e:
             st.error(f"데이터 연산 처리 중 에러 발생: {e}")
     else:
-        st.info("💡 위 데이터 드롭 영역에 엑셀 파일을 업로드해 주시면 순매수 강도 그래프가 자동으로 빌드됩니다.")
-
-st.divider()
-
-# ==============================================================================
-# 🔍 [네이버 API 엔진] 4대 운용사별 ETF 이벤트 수집 함수 (secrets 매칭 반영 버전)
-# ==============================================================================
-def fetch_all_etf_events():
-    import requests
-    import re
-    from datetime import datetime, timedelta
-
-    # 1. 💡 [수정] 대문자 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 형태로 다이렉트 매칭
-    try:
-        naver_id = st.secrets["NAVER_CLIENT_ID"]
-        naver_secret = st.secrets["NAVER_CLIENT_SECRET"]
-    except Exception as e:
-        # secrets.toml 설정 변수명이 매칭되지 않을 때 경고 출력
-        st.error("⚠️ Streamlit Secrets에 NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET 설정이 누락되었거나 이름이 다릅니다.")
-        return []
-
-    brands = {"KODEX": "삼성자산운용", "TIGER": "미래에셋자산운용", "ACE": "한국투자신탁운용", "RISE": "KB자산운용"}
-    url = "https://openapi.naver.com/v1/search/blog.json"
-    headers = {"X-Naver-Client-Id": naver_id, "X-Naver-Client-Secret": naver_secret}
-    
-    all_processed_events = []
-    one_month_ago = datetime.now() - timedelta(days=30)
-    etf_pattern = re.compile(r'\b(KODEX|TIGER|ACE|RISE)\s?([A-Za-z0-9가-힣&·\+]+(?:\s+[A-Za-z0-9가-힣&·\+]+){0,3})')
-
-    for brand, company in brands.items():
-        params = {"query": f"{brand} 이벤트", "display": 50, "sort": "sim"}
-        try:
-            response = requests.get(url, headers=headers, params=params, timeout=10)
-            items = response.json().get("items", [])
-        except: 
-            continue
-
-        for item in items:
-            post_date_str = item.get("postdate", "")
-            if not post_date_str: 
-                continue
-            try:
-                post_date = datetime.strptime(post_date_str, "%Y%m%d")
-            except:
-                continue
-            
-            # 최근 30일 데이터만 필터링
-            if post_date >= one_month_ago:
-                title = item.get("title", "").replace("<b>", "").replace("</b>", "")
-                description = item.get("description", "").replace("<b>", "").replace("</b>", "")
-                
-                raw_matches = etf_pattern.findall(title + " " + description)
-                cleaned_matches = []
-                for b, prod in raw_matches:
-                    prod_clean = prod.split("이벤트")[0].split("인증")[0].split("참여")[0].strip()
-                    if len(prod_clean) > 1: 
-                        cleaned_matches.append(f"{b} {prod_clean}")
-                
-                extracted_products = ", ".join(list(set(cleaned_matches))) if cleaned_matches else f"{brand} 관련 상품"
-
-                all_processed_events.append({
-                    "운용사": company, 
-                    "브랜드": brand, 
-                    "제목": title, 
-                    "🎯 유도 ETF 종목": extracted_products
-                })
-                
-    return all_processed_events
-# ==============================================================================
-# 📊 [SECTION 3 연장] 운용사별 ETF 마케팅 이벤트 - 순매수 연관성 분석 구역
-# ==============================================================================
-st.markdown("---")
-st.markdown("### 📊 운용사별 이벤트-순매수 연관성 요약 지표")
-
-# 1. 네이버 API를 통한 실시간 이벤트 데이터 수집 (최근 30일 데이터)
-# 💡 API 한도 초과 및 새로고침 지연 방지를 위해 세션에 최초 1회 캐싱합니다.
-if "df_events_base_data" not in st.session_state:
-    with st.spinner("🔄 네이버 API로부터 4대 운용사 실시간 마케팅 이벤트를 수집 중입니다..."):
-        try:
-            total_data = fetch_all_etf_events()  # 상단에 선언한 네이버 수집 엔진 함수 호출
-            st.session_state["df_events_base_data"] = total_data
-        except Exception as e:
-            st.session_state["df_events_base_data"] = []
-
-df_events_base = pd.DataFrame(st.session_state.get("df_events_base_data", []))
-
-# 2. 💡 SECTION 3의 파일 업로드 상태 체크
-# 위쪽의 st.file_uploader 변수명이 'uploaded_files'가 맞는지 확인해 주세요!
-if not uploaded_files or df_events_base.empty:
-    st.info("💡 위의 업로드 칸에 주차별 순매수 엑셀/CSV 파일을 업로드하시면, 실시간 마케팅 효용성 분석 보고서가 이곳에 즉시 완성됩니다.")
-else:
-    # 3. 업로드된 파일들을 팀원분 알고리즘대로 전처리 및 통합 합산
-    combined_market_data = []
-    for u_file in uploaded_files:
-        if u_file.name.endswith('.xlsx'):
-            try:
-                excel_file = pd.ExcelFile(u_file)
-                for s_name in excel_file.sheet_names:
-                    combined_market_data.append(pd.read_excel(u_file, sheet_name=s_name))
-            except: pass
-        elif u_file.name.endswith('.csv'):
-            try:
-                bytes_data = u_file.read()
-                try: df_sheet = pd.read_csv(io.BytesIO(bytes_data), encoding='utf-8')
-                except: df_sheet = pd.read_csv(io.BytesIO(bytes_data), encoding='cp949')
-                combined_market_data.append(df_sheet)
-            except: pass
-
-    if combined_market_data:
-        df_total_market = pd.concat(combined_market_data, ignore_index=True)
-        
-        # 수급 수치 정제 함수
-        def clean_val(v):
-            if isinstance(v, str): v = v.replace(",", "")
-            try: return float(v)
-            except: return 0.0
-            
-        # 팀원분 코드의 '개인' 컬럼 수치 정제 및 그룹화 적용
-        if '개인' in df_total_market.columns:
-            df_total_market['개인'] = df_total_market['개인'].apply(clean_val)
-        
-        # 종목명 존재 여부 확인 후 그룹화
-        name_col = next((c for c in ['종목명', '종목명_정제', 'ETF명'] if c in df_total_market.columns), '종목명')
-        if name_col in df_total_market.columns and '개인' in df_total_market.columns:
-            df_grouped_market = df_total_market.groupby(name_col)['개인'].sum().reset_index()
-        else:
-            df_grouped_market = pd.DataFrame()
-
-        # 4대 운용사 및 브랜드 정의
-        brands_info = {
-            "삼성자산운용": "KODEX",
-            "미래에셋자산운용": "TIGER",
-            "한국투자신탁운용": "ACE",
-            "KB자산운용": "RISE"
-        }
-
-        summary_report_rows = []
-
-        for comp_name, b_name in brands_info.items():
-            df_comp_ev = df_events_base[df_events_base["운용사"] == comp_name] if not df_events_base.empty else pd.DataFrame()
-            
-            if df_comp_ev.empty:
-                summary_report_rows.append({
-                    "운용사 (브랜드)": f"{comp_name} ({b_name})",
-                    "진행 중인 주요 이벤트": "최근 이벤트 확인 불가",
-                    "마케팅 푸쉬 종목": "이력 없음",
-                    "실제 개인 누적 순매수액": "0 원",
-                    "최종 마케팅 효용 판단": "⚪ 데이터 없음"
-                })
-                continue
-
-            # 이벤트 제목 리스트 추출 (최대 2개 요약)
-            event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
-            if len(event_titles) > 50: 
-                event_titles = event_titles[:47] + "..."
-
-            # 푸쉬 종목 키워드 바인딩
-            all_prods = []
-            for _, r in df_comp_ev.iterrows():
-                if "관련 상품" in r["🎯 유도 ETF 종목"]: continue
-                all_prods.extend([k.strip() for k in r["🎯 유도 ETF 종목"].split(",") if k.strip()])
-            all_prods = list(set(all_prods))
-            push_products_text = ", ".join(all_prods[:3]) if all_prods else f"{b_name} 주요 라인업"
-
-            # 수급 데이터 매칭 연산
-            total_comp_money = 0.0
-            matched_any_stock = False
-            
-            if not df_grouped_market.empty:
-                for kw in all_prods:
-                    kw_norm = kw.replace(" ", "")
-                    df_matched = df_grouped_market[df_grouped_market[name_col].astype(str).str.replace(" ", "").str.contains(kw_norm, na=False)]
-                    if not df_matched.empty:
-                        matched_any_stock = True
-                        try:
-                            total_comp_money += df_matched['개인'].sum() / 1000000.0  # 백만 원 단위 변환
-                        except:
-                            pass
-
-            # 마케팅 효용 최종 조건문 판단
-            if not matched_any_stock:
-                efficacy_result = "⚪ 효용성 판단 불가 (시장 무반응)"
-            elif total_comp_money > 0:
-                efficacy_result = "🟢 효용성 높음 (성공적인 자금 유입)"
-            else:
-                efficacy_result = "🔴 효용성 없음 (홍보했으나 순매도 이탈)"
-
-            summary_report_rows.append({
-                "운용사 (브랜드)": f"{comp_name} ({b_name})",
-                "진행 중인 주요 이벤트": event_titles,
-                "마케팅 푸쉬 종목": push_products_text,
-                "실제 개인 누적 순매수액": f"{total_comp_money:,.1f} 백만 원" if matched_any_stock else "0 원",
-                "최종 마케팅 효용 판단": efficacy_result
-            })
-
-        # 4. 완성된 요약 표 및 브리핑 카드 출력 부문
-        df_final_report = pd.DataFrame(summary_report_rows)
-        st.dataframe(df_final_report, use_container_width=True, hide_index=True)
-
-        st.markdown("#### ✍️ 운용사별 최종 성과 직관 요약")
-        c1, c2 = st.columns(2)
-        c3, c4 = st.columns(2)
-
-        for idx, row in df_final_report.iterrows():
-            target_col = [c1, c2, c3, c4][idx]
-            with target_col:
-                with st.container(border=True):
-                    st.markdown(f"##### **{row['운용사 (브랜드)']}**")
-                    st.markdown(f"• **📣 진행 이벤트:** {row['진행 중인 주요 이벤트']}")
-                    st.markdown(f"• **🎯 집중 푸쉬 종목:** `{row['마케팅 푸쉬 종목']}`")
-                    st.markdown(f"• **💰 개인 순매수 결산:** **{row['실제 개인 누적 순매수액']}**")
-                    
-                    if "🟢" in row['최종 마케팅 효용 판단']:
-                        st.success(f"**결론:** {row['최종 마케팅 효용 판단']}")
-                    elif "🔴" in row['최종 마케팅 효용 판단']:
-                        st.error(f"**결론:** {row['최종 마케팅 효용 판단']}")
-                    else:
-                        st.info(f"**결론:** {row['최종 마케팅 효용 판단']}")
+        st.info("💡 위 데이터 드롭 영역에 엑셀 파일을 업로드해 주시면 순매수 강도 분석과 마케팅 연관성 평가 결과가 자동으로 실시간 빌드됩니다.")
 
 # ============================================================
 # ⚙️ FUNETF API 설정 (기존 설정 유지)
