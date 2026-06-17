@@ -1173,7 +1173,6 @@ with st.container(border=True):
                     })
 
                 df_final_report = pd.DataFrame(summary_report_rows)
-                st.dataframe(df_final_report, use_container_width=True, hide_index=True)
 
                 # 기존 상단 표 출력 코드(st.dataframe)는 과감히 제거했습니다.
 
@@ -1183,25 +1182,23 @@ with st.container(border=True):
                 c1, c2 = st.columns(2)
                 c3, c4 = st.columns(2)
 
-                # 운용사별 맞춤 테두리 및 배경색 (Light 테마 디자인)
-                # 삼성=파란색, 미래=주황색, 한투=초록색, KB=주황색
+                # 🎨 운용사별 맞춤 테두리 및 배경색 (KB를 노란색 계열로 수정)
+                # 삼성=파란색, 미래=주황색, 한투=초록색, KB=노란색
                 color_mapping = {
                     "삼성자산운용 (KODEX)": {"bg": "#EFF6FF", "border": "#3B82F6", "text": "#1E40AF"},
                     "미래에셋자산운용 (TIGER)": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C"},
                     "한국투자신탁운용 (ACE)": {"bg": "#F0FDF4", "border": "#22C55E", "text": "#166534"},
-                    "KB자산운용 (RISE)": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C"}
+                    "KB자산운용 (RISE)": {"bg": "#FEFCE8", "border": "#EAB308", "text": "#A16207"} # 💛 노란색(Yellow/Gold) 계열 매칭
                 }
 
                 for idx, row in df_final_report.iterrows():
                     comp_key = row['운용사 (브랜드)']
-                    # 지정된 색상이 없으면 기본 회색 처리
                     style_config = color_mapping.get(comp_key, {"bg": "#F8FAFC", "border": "#CBD5E1", "text": "#334155"})
                     
                     # 출력을 분할된 4개의 칸에 순서대로 매칭
                     target_col = [c1, c2, c3, c4][idx]
                     
                     with target_col:
-                        # 🎨 HTML/CSS를 활용해 운용사별 커스텀 컬러 박스 구현
                         st.markdown(f"""
                         <div style='
                             background-color: {style_config["bg"]}; 
@@ -1226,7 +1223,7 @@ with st.container(border=True):
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 💡 진단 결과(🟢, 🟡, 🔴) 컴포넌트는 가독성을 위해 박스 바로 아래에 깔끔하게 배치
+                        # 진단 결과 컴포넌트
                         if "🟢" in row['최종 마케팅 효용 판단']: 
                             st.success(f"**진단:** {row['최종 마케팅 효용 판단']}")
                         elif "🟡" in row['최종 마케팅 효용 판단']: 
@@ -1235,9 +1232,6 @@ with st.container(border=True):
                             st.error(f"**진단:** {row['최종 마케팅 효용 판단']}")
                         else: 
                             st.info(f"**진단:** {row['최종 마케팅 효용 판단']}")
-
-        except Exception as e:
-            st.error(f"데이터 연산 처리 중 에러 발생: {e}")
 
 # ============================================================
 # ⚙️ FUNETF API 설정 (기존 설정 유지)
