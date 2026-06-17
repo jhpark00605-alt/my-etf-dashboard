@@ -882,7 +882,8 @@ else:
                         st.info("구조화할 수 있는 노출 텍스트 컨텐츠가 없습니다.")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if 'homepage_data' not in st.session_state:
+    
+if 'homepage_data' not in st.session_state:
     st.session_state['homepage_data'] = []
 
 # 만약 코드가 실행되면서 실시간으로 변수가 생성되었다면 세션에 업데이트
