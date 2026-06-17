@@ -2002,7 +2002,7 @@ with st.container(border=True):
                 </div>
                 """
         # ======================================================================
-        # 🔗 [PDF 고도화 완본] PDF 내부에 운용사별 브랜드 컬러 박스 및 DiD 스코어 반영
+        # 🔗 [Layout & Font 교정 완본] 하나의 통박스 구조 및 PDF 글자 깨짐 방지 처리
         # ======================================================================
         marketing_report_html = ""
         df_events_base_data = st.session_state.get("df_events_base_data", [])
@@ -2015,15 +2015,15 @@ with st.container(border=True):
                 df_events_base = pd.DataFrame(df_events_base_data)
                 brands_info = {"삼성자산운용": "KODEX", "미래에셋자산운용": "TIGER", "한국투자신탁운용": "ACE", "KB자산운용": "RISE"}
                 
-                # PDF 섹션 타이틀 정의
+                # 상단 타이틀 바 (특수문자 배제)
                 marketing_report_html += """
-                <div style='margin-top: 6mm; margin-bottom: 3mm; padding: 2mm; background-color: #F8FAFC; border-left: 3px solid #1E40AF;'>
-                    <div style='font-size: 10pt; font-weight: bold; color: #1E40AF;'>📊 운용사별 이벤트 - 인과관계 검증 리포트 (DiD 인텔리전스)</div>
+                <div style='margin-top: 6mm; margin-bottom: 4mm; padding: 2.5mm; background-color: #F8FAFC; border-left: 3px solid #1E40AF;'>
+                    <div style='font-size: 10pt; font-weight: bold; color: #1E40AF;'>[분석] 운용사별 이벤트 - 인과관계 검증 리포트 (DiD 인텔리전스)</div>
                 </div>
                 <table style='width: 100%; border-collapse: collapse; border: none;'>
                 """
                 
-                # 🎨 PDF용 운용사별 커스텀 컬러맵 (삼성=파랑, 미래=주황, 한투=초록, KB=노랑)
+                # 운용사별 고유 컬러 매칭 (텍스트 가독성 최적화)
                 color_mapping = {
                     "삼성자산운용": {"bg": "#EFF6FF", "border": "#3B82F6", "text": "#1E40AF"},
                     "미래에셋자산운용": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C"},
@@ -2031,36 +2031,37 @@ with st.container(border=True):
                     "KB자산운용": {"bg": "#FEFCE8", "border": "#EAB308", "text": "#A16207"}
                 }
                 
-                # 4대 운용사 데이터를 가공하여 박스 그리기 준비
                 boxes_html = []
                 for comp_name, b_name in brands_info.items():
                     df_comp_ev = df_events_base[df_events_base["운용사"] == comp_name]
                     style_config = color_mapping.get(comp_name, {"bg": "#F8FAFC", "border": "#CBD5E1", "text": "#334155"})
                     
                     if df_comp_ev.empty:
-                        # 데이터가 없는 경우의 심플한 박스 디자인
                         box_item = f"""
-                        <div style='background-color: #F8FAFC; border: 1.5px solid #CBD5E1; border-radius: 6px; padding: 3mm; margin: 1mm; min-height: 38mm;'>
-                            <div style='font-size: 8.5pt; font-weight: bold; color: #475569; border-bottom: 0.5px solid #CBD5E1; padding-bottom: 1mm; margin-bottom: 2mm;'>🏢 {comp_name} ({b_name})</div>
-                            <div style='font-size: 7.5pt; color: #64748B; font-style: italic; margin-top: 4mm;'>확인 가능한 최근 마케팅 이벤트 이력이 존재하지 않습니다.</div>
+                        <div style='background-color: #F8FAFC; border: 1.5px solid #CBD5E1; border-radius: 6px; padding: 4mm; margin: 1mm; min-height: 42mm;'>
+                            <div style='font-size: 9pt; font-weight: bold; color: #475569; border-bottom: 1px solid #CBD5E1; padding-bottom: 1.5mm; margin-bottom: 3mm;'>▶ {comp_name} ({b_name})</div>
+                            <div style='font-size: 8pt; color: #64748B; font-style: italic; margin-top: 4mm;'>최근 마케팅 이벤트 이력이 존재하지 않습니다.</div>
                         </div>
                         """
                         boxes_html.append(box_item)
                         continue
                         
-                    # 진행 중인 이벤트 타이틀 추출 및 글자 수 제한
+                    # 글자 깨짐 유발 단어 전처리 (HTML 엔티티 및 이모지 제거)
                     event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
-                    if len(event_titles) > 42: event_titles = event_titles[:39] + "..."
+                    event_titles = event_titles.replace("&gt;", ">").replace("&lt;", "<")
+                    if len(event_titles) > 40: event_titles = event_titles[:37] + "..."
                         
-                    # 마케팅 상품 키워드 추출 및 정제
                     all_prods = []
                     for _, r in df_comp_ev.iterrows():
                         if "관련 상품" in r["🎯 유도 ETF 종목"]: continue
                         all_prods.extend([k.strip() for k in r["🎯 유도 ETF 종목"].split(",") if k.strip()])
                     all_prods = list(set(all_prods))
-                    push_products_text = ", ".join(all_prods[:2]) if all_prods else f"{b_name} 주요 라인업"
                     
-                    # 🧬 DiD 연산 로직 (대시보드와 100% 동일한 연산식 수행)
+                    # 푸쉬 종목 글자 깨짐 방지 및 가독성 확보
+                    push_products_text = ", ".join(all_prods[:2]) if all_prods else f"{b_name} 주요 라인업"
+                    push_products_text = push_products_text.replace("&gt;", ">").replace("&lt;", "<")
+                    
+                    # DiD 연산
                     treatment_diffs = []
                     control_diffs = []
                     total_comp_money = 0.0
@@ -2083,36 +2084,42 @@ with st.container(border=True):
                                     (~res_df['종목명_정제'].str.contains(b_name, na=False))
                                 ]
                                 if not df_ctrl.empty:
-                                    c_diff = (df_ctrl['금주_매수강도'] - df_ctrl['전주_매수강도']).mean()
+                                    c_diff = (df_ctrl['금주_매수강도'] - df_ctrl['전주_weak_AUM'] if '전주_weak_AUM' in df_ctrl.columns else df_ctrl['전주_매수강도']).mean()
                                     control_diffs.append(c_diff)
                                     
                     avg_t_diff = np.mean(treatment_diffs) if treatment_diffs else 0.0
                     avg_c_diff = np.mean(control_diffs) if control_diffs else 0.0
                     did_score = avg_t_diff - avg_c_diff
                     
-                    # DiD 기준 효용성 판정 진단 문구 생성
+                    # 진단 텍스트 이모지 제거 및 한글 대체
                     if not matched_any_stock:
-                        efficacy_result = "⚪ 시장 무반응"
+                        efficacy_result = "시장 무반응"
                     elif did_score > 0.05:
-                        efficacy_result = "🟢 효용 탁월 (시장 평균 상회)"
+                        efficacy_result = "효용 탁월 (시장 평균 상회)"
                     elif did_score > -0.05 and total_comp_money > 0:
-                        efficacy_result = "🟡 보통 (시장 호재 편승)"
+                        efficacy_result = "보통 (시장 호재 편승)"
                     else:
-                        efficacy_result = "🔴 효용 없음 (경쟁사 대비 이탈)"
+                        efficacy_result = "효용 없음 (경쟁사 대비 이탈)"
                         
-                    # 🎨 HTML 코드를 이용해 PDF 전용 고유 브랜드 컬러 박스 빌드
+                    # ✨ [핵심 교정] 단 하나의 통박스(div) 구조 안에 모든 요소를 줄바꿈(<br>)으로 연결
                     box_item = f"""
-                    <div style='background-color: {style_config["bg"]}; border: 1.5px solid {style_config["border"]}; border-radius: 6px; padding: 3mm; margin: 1mm; min-height: 38mm;'>
-                        <div style='font-size: 8.5pt; font-weight: bold; color: {style_config["text"]}; border-bottom: 1px solid {style_config["border"]}80; padding-bottom: 1mm; margin-bottom: 1.5mm;'>🏢 {comp_name} ({b_name})</div>
-                        <div style='font-size: 7.5pt; color: #334155; margin-bottom: 1mm;'>• <b>이벤트:</b> {event_titles}</div>
-                        <div style='font-size: 7.5pt; color: #334155; margin-bottom: 1mm;'>• <b>푸쉬 종목:</b> <span style='font-family: monospace; font-size: 7pt;'>{push_products_text}</span></div>
-                        <div style='font-size: 7.5pt; color: #1E293B; margin-bottom: 1.5mm;'>• <b>순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{did_score:+.3f}%p</span></div>
-                        <div style='font-size: 7.5pt; font-weight: bold; color: #1E293B; margin-top: 1mm; padding-top: 1mm; border-top: 0.5px dashed {style_config["border"]}60;'>📊 진단: {efficacy_result}</div>
+                    <div style='background-color: {style_config["bg"]}; border: 1.5px solid {style_config["border"]}; border-radius: 6px; padding: 4mm; margin: 1.5mm; min-height: 44mm;'>
+                        <div style='font-size: 9pt; font-weight: bold; color: {style_config["text"]}; border-bottom: 1px solid {style_config["border"]}80; padding-bottom: 1.5mm; margin-bottom: 2.5mm;'>
+                            [운용사] {comp_name} ({b_name})
+                        </div>
+                        <div style='font-size: 8pt; color: #2D3748; line-height: 1.4;'>
+                            - <b>이벤트:</b> {event_titles}<br/>
+                            - <b>푸쉬 종목:</b> {push_products_text}<br/>
+                            - <b>순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{did_score:+.3f}%p</span><br/>
+                        </div>
+                        <div style='font-size: 8pt; font-weight: bold; color: #1A202C; margin-top: 3mm; padding-top: 2mm; border-top: 1px dashed {style_config["border"]}60;'>
+                            [진단 결과] {efficacy_result}
+                        </div>
                     </div>
                     """
                     boxes_html.append(box_item)
                 
-                # PDF 출력 시 깨지지 않도록 좌/우 2열씩 끊어서 테이블에 배치 (2x2 구조화)
+                # 2x2 격자 배열 배치 생성
                 marketing_report_html += f"""
                 <tr>
                     <td style='width: 50%; border: none; vertical-align: top;'>{boxes_html[0]}</td>
@@ -2125,7 +2132,6 @@ with st.container(border=True):
                 </table>
                 """
                 
-                # 최종 병합 처리하여 PDF 드로잉 매니저로 전달
                 section3_chart_html += marketing_report_html
         except Exception as marketing_err:
             pass
