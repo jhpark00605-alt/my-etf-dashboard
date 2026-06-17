@@ -2002,7 +2002,7 @@ with st.container(border=True):
                 </div>
                 """
         # ======================================================================
-        # 🔗 [Layout 100% 교정본] table 태그를 활용한 단일 통박스 강제 고정 및 결합
+        # 🔗 [텍스트 제한 해제 완본] 이벤트명 자르지 않고 전체 출력 처리
         # ======================================================================
         marketing_report_html = ""
         df_events_base_data = st.session_state.get("df_events_base_data", [])
@@ -2037,7 +2037,6 @@ with st.container(border=True):
                     style_config = color_mapping.get(comp_name, {"bg": "#F8FAFC", "border": "#CBD5E1", "text": "#334155"})
                     
                     if df_comp_ev.empty:
-                        # 데이터가 없는 경우 테이블 기반 통박스
                         box_item = f"""
                         <table style='width: 96%; background-color: #F8FAFC; border: 1.5px solid #CBD5E1; border-collapse: collapse; margin: 1.5mm; min-height: 44mm;'>
                             <tr>
@@ -2051,10 +2050,9 @@ with st.container(border=True):
                         boxes_html.append(box_item)
                         continue
                         
-                    # 텍스트 전처리
+                    # 🔍 [수정] 글자수 조건문(if len > 40)을 제거하여 이벤트 제목이 끝까지 나오도록 변경
                     event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
                     event_titles = event_titles.replace("&gt;", ">").replace("&lt;", "<")
-                    if len(event_titles) > 40: event_titles = event_titles[:37] + "..."
                         
                     all_prods = []
                     for _, r in df_comp_ev.iterrows():
@@ -2104,7 +2102,7 @@ with st.container(border=True):
                     else:
                         efficacy_result = "효용 없음 (경쟁사 대비 이탈)"
                         
-                    # ✨ [핵심 수정] div 테두리를 버리고, 자체 table 테두리를 사용하여 쪼개짐 현상을 물리적으로 방어
+                    # 테이블 기반 단일 통박스 (line-height를 주어 여러 줄이 되어도 가독성 유지)
                     box_item = f"""
                     <table style='width: 96%; background-color: {style_config["bg"]}; border: 2px solid {style_config["border"]}; border-collapse: collapse; margin: 1.5mm; min-height: 44mm;'>
                         <tr>
@@ -2112,7 +2110,7 @@ with st.container(border=True):
                                 <div style='font-size: 9pt; font-weight: bold; color: {style_config["text"]}; border-bottom: 1px solid {style_config["border"]}80; padding-bottom: 1.5mm; margin-bottom: 2.5mm;'>
                                     [운용사] {comp_name} ({b_name})
                                 </div>
-                                <div style='font-size: 8pt; color: #2D3748; line-height: 1.45;'>
+                                <div style='font-size: 8pt; color: #2D3748; line-height: 1.5;'>
                                     - <b>이벤트:</b> {event_titles}<br/>
                                     - <b>푸쉬 종목:</b> {push_products_text}<br/>
                                     - <b>순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{did_score:+.3f}%p</span>
