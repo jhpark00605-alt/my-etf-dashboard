@@ -1949,17 +1949,15 @@ with st.container(border=True):
                 </div>
                 """
         # ======================================================================
-        # 🔗 [위치 교정] 루프와 조건문을 완전히 빠져나온 '가장 바깥 라인'에서 실행
+        # 🔗 [글자색 교정 완본] 헤더 영역의 글자색을 완전한 흰색(#FFFFFF)으로 변경
         # ======================================================================
         marketing_report_html = ""
         df_events_base_data = st.session_state.get("df_events_base_data", [])
         
-        # target_agent_df 가 없더라도 PDF가 깨지거나 멈추지 않도록 백업 처리 보완
         if target_agent_df is None:
             target_agent_df = pd.DataFrame(columns=['종목명_정제', '정제된_금주순매수(억원)'])
 
         try:
-            # 네이버 실시간 API 데이터셋 바인딩 확인
             if df_events_base_data:
                 df_events_base = pd.DataFrame(df_events_base_data)
                 brands_info = {"삼성자산운용": "KODEX", "미래에셋자산운용": "TIGER", "한국투자신탁운용": "ACE", "KB자산운용": "RISE"}
@@ -1970,11 +1968,11 @@ with st.container(border=True):
                 </div>
                 <table style='width: 100%; border-collapse: collapse; margin-top: 2mm; font-size: 8pt; border: 1px solid #CBD5E1;'>
                     <thead>
-                        <tr style='background-color: #E2E8F0; text-align: left; font-weight: bold;'>
-                            <th style='padding: 2mm; border: 1px solid #CBD5E1; width: 25%; color:#1E293B;'>운용사 (브랜드)</th>
-                            <th style='padding: 2mm; border: 1px solid #CBD5E1; width: 35%; color:#1E293B;'>마케팅 푸쉬 종목 (이벤트)</th>
-                            <th style='padding: 2mm; border: 1px solid #CBD5E1; width: 20%; color:#1E293B;'>개인 순매수 결산</th>
-                            <th style='padding: 2mm; border: 1px solid #CBD5E1; width: 20%; color:#1E293B;'>최종 마케팅 효용</th>
+                        <tr style='background-color: #1E40AF; text-align: left; font-weight: bold;'>
+                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 25%; color: #FFFFFF; font-weight: bold;'>운용사 (브랜드)</th>
+                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 35%; color: #FFFFFF; font-weight: bold;'>마케팅 푸쉬 종목 (이벤트)</th>
+                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 20%; color: #FFFFFF; font-weight: bold;'>개인 순매수 결산</th>
+                            <th style='padding: 2.5mm 2mm; border: 1px solid #CBD5E1; width: 20%; color: #FFFFFF; font-weight: bold;'>최종 마케팅 효용</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2031,8 +2029,6 @@ with st.container(border=True):
                     """
                     
                 marketing_report_html += "</tbody></table>"
-                
-                # 📌 최종 병합 확인 사살
                 section3_chart_html += marketing_report_html
         except Exception as marketing_err:
             pass
