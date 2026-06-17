@@ -1076,7 +1076,7 @@ with st.container(border=True):
             # 🔗 [대시보드 최종 완본] 데이터 연산 필터 해제 및 진단 기준 가이드라인 추가
             # ==================================================================
             st.markdown("<br><hr>", unsafe_allow_html=True)
-            st.markdown("### 🧬 운용사별 이벤트&순매수와 상관관계 분석")
+            st.markdown("### 🧬 운용사별 이벤트와 순매수 간 상관관계 분석")
             st.caption("※ DiD(이중차분 스코어) = (마케팅 상품의 수급 강도 변화량) - (동일 자산군 내 경쟁사 대조군의 수급 강도 변화량)")
 
             if "df_events_base_data" not in st.session_state:
