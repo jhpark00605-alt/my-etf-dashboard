@@ -1948,6 +1948,89 @@ with st.container(border=True):
                     </div>
                 </div>
                 """
+                # ----------------------------------------------------------------------
+                # 🔗 [추가] 운용사 마케팅 이벤트 - 실제 개인 순매수 상관관계 결산 리포트 추가
+                # ----------------------------------------------------------------------
+                marketing_report_html = ""
+                df_events_base_data = st.session_state.get("df_events_base_data", [])
+                
+                if df_events_base_data and target_agent_df is not None and not target_agent_df.empty:
+                    try:
+                        df_events_base = pd.DataFrame(df_events_base_data)
+                        brands_info = {"삼성자산운용": "KODEX", "미래에셋자산운용": "TIGER", "한국투자신탁운용": "ACE", "KB자산운용": "RISE"}
+                        
+                        marketing_report_html += """
+                        <div style='margin-top: 5mm; margin-bottom: 2mm; padding: 2mm; background-color: #F8FAFC; border-left: 3px solid #1E40AF;'>
+                            <div style='font-size: 10pt; font-weight: bold; color: #1E40AF;'>📊 운용사 마케팅 이벤트 - 순매수 상관관계 결산</div>
+                        </div>
+                        <table style='width: 100%; border-collapse: collapse; margin-top: 2mm; font-size: 8pt;'>
+                            <thead>
+                                <tr style='background-color: #E2E8F0; text-align: left; font-weight: bold;'>
+                                    <th style='padding: 1.5mm; border: 1px solid #CBD5E1; width: 25%;'>운용사 (브랜드)</th>
+                                    <th style='padding: 1.5mm; border: 1px solid #CBD5E1; width: 35%;'>마케팅 푸쉬 종목 (이벤트)</th>
+                                    <th style='padding: 1.5mm; border: 1px solid #CBD5E1; width: 20%;'>개인 순매수 결산</th>
+                                    <th style='padding: 1.5mm; border: 1px solid #CBD5E1; width: 20%;'>최종 마케팅 효용</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                        """
+                        
+                        for comp_name, b_name in brands_info.items():
+                            df_comp_ev = df_events_base[df_events_base["운용사"] == comp_name]
+                            
+                            if df_comp_ev.empty:
+                                marketing_report_html += f"""
+                                <tr>
+                                    <td style='padding: 1.5mm; border: 1px solid #CBD5E1; font-weight: bold;'>{comp_name} ({b_name})</td>
+                                    <td style='padding: 1.5mm; border: 1px solid #CBD5E1; color: #64748B;'>확인 가능한 최근 이벤트 없음</td>
+                                    <td style='padding: 1.5mm; border: 1px solid #CBD5E1;'>0 원</td>
+                                    <td style='padding: 1.5mm; border: 1px solid #CBD5E1; color: #64748B;'>⚪ 데이터 없음</td>
+                                </tr>
+                                """
+                                continue
+                                
+                            # 푸쉬 상품명 정제
+                            all_prods = []
+                            for _, r in df_comp_ev.iterrows():
+                                if "관련 상품" in r["🎯 유도 ETF 종목"]: continue
+                                all_prods.extend([k.strip() for k in r["🎯 유도 ETF 종목"].split(",") if k.strip()])
+                            all_prods = list(set(all_prods))
+                            push_products_text = ", ".join(all_prods[:2]) if all_prods else f"{b_name} 주요 라인업"
+                            
+                            # 개인 순매수액 연산
+                            total_comp_money = 0.0
+                            matched_any_stock = False
+                            for kw in all_prods:
+                                kw_norm = kw.replace(" ", "")
+                                df_matched = target_agent_df[target_agent_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
+                                if not df_matched.empty:
+                                    matched_any_stock = True
+                                    total_comp_money += df_matched['정제된_금주순매수(억원)'].sum()
+                                    
+                            # 효용성 판단 매칭
+                            if not matched_any_stock:
+                                efficacy_result = "⚪ 무반응"
+                            elif total_comp_money > 0:
+                                efficacy_result = "🟢 효용 높음"
+                            else:
+                                efficacy_result = "🔴 효용 없음"
+                                
+                            money_str = f"{total_comp_money:,.1f} 억 원" if matched_any_stock else "0 원"
+                            
+                            marketing_report_html += f"""
+                            <tr>
+                                <td style='padding: 1.5mm; border: 1px solid #CBD5E1; font-weight: bold;'>{comp_name} ({b_name})</td>
+                                <td style='padding: 1.5mm; border: 1px solid #CBD5E1;'>{push_products_text}</td>
+                                <td style='padding: 1.5mm; border: 1px solid #CBD5E1; font-weight: bold;'>{money_str}</td>
+                                <td style='padding: 1.5mm; border: 1px solid #CBD5E1; font-weight: bold;'>{efficacy_result}</td>
+                            </tr>
+                            """
+                            
+                        marketing_report_html += "</tbody></table>"
+                        # 기존 대시보드 변수(section3_chart_html) 뒤에 깔끔하게 병합
+                        section3_chart_html += marketing_report_html
+                    except Exception as marketing_err:
+                        pass
 
         # ----------------------------------------------------------------------
         # 📈 SECTION 4. 주간 수익률 퍼포먼스 & 테마별 평균 수익률 (session_state 연동)
