@@ -2002,7 +2002,7 @@ with st.container(border=True):
                 </div>
                 """
         # ======================================================================
-        # 🔗 [Layout & Font 교정 완본] 하나의 통박스 구조 및 PDF 글자 깨짐 방지 처리
+        # 🔗 [Layout 100% 교정본] table 태그를 활용한 단일 통박스 강제 고정 및 결합
         # ======================================================================
         marketing_report_html = ""
         df_events_base_data = st.session_state.get("df_events_base_data", [])
@@ -2015,7 +2015,7 @@ with st.container(border=True):
                 df_events_base = pd.DataFrame(df_events_base_data)
                 brands_info = {"삼성자산운용": "KODEX", "미래에셋자산운용": "TIGER", "한국투자신탁운용": "ACE", "KB자산운용": "RISE"}
                 
-                # 상단 타이틀 바 (특수문자 배제)
+                # 상단 타이틀 바
                 marketing_report_html += """
                 <div style='margin-top: 6mm; margin-bottom: 4mm; padding: 2.5mm; background-color: #F8FAFC; border-left: 3px solid #1E40AF;'>
                     <div style='font-size: 10pt; font-weight: bold; color: #1E40AF;'>[분석] 운용사별 이벤트 - 인과관계 검증 리포트 (DiD 인텔리전스)</div>
@@ -2023,7 +2023,7 @@ with st.container(border=True):
                 <table style='width: 100%; border-collapse: collapse; border: none;'>
                 """
                 
-                # 운용사별 고유 컬러 매칭 (텍스트 가독성 최적화)
+                # 운용사별 테두리 및 배경색 설정
                 color_mapping = {
                     "삼성자산운용": {"bg": "#EFF6FF", "border": "#3B82F6", "text": "#1E40AF"},
                     "미래에셋자산운용": {"bg": "#FFF7ED", "border": "#F97316", "text": "#C2410C"},
@@ -2037,16 +2037,21 @@ with st.container(border=True):
                     style_config = color_mapping.get(comp_name, {"bg": "#F8FAFC", "border": "#CBD5E1", "text": "#334155"})
                     
                     if df_comp_ev.empty:
+                        # 데이터가 없는 경우 테이블 기반 통박스
                         box_item = f"""
-                        <div style='background-color: #F8FAFC; border: 1.5px solid #CBD5E1; border-radius: 6px; padding: 4mm; margin: 1mm; min-height: 42mm;'>
-                            <div style='font-size: 9pt; font-weight: bold; color: #475569; border-bottom: 1px solid #CBD5E1; padding-bottom: 1.5mm; margin-bottom: 3mm;'>▶ {comp_name} ({b_name})</div>
-                            <div style='font-size: 8pt; color: #64748B; font-style: italic; margin-top: 4mm;'>최근 마케팅 이벤트 이력이 존재하지 않습니다.</div>
-                        </div>
+                        <table style='width: 96%; background-color: #F8FAFC; border: 1.5px solid #CBD5E1; border-collapse: collapse; margin: 1.5mm; min-height: 44mm;'>
+                            <tr>
+                                <td style='padding: 4mm; vertical-align: top; border: none;'>
+                                    <div style='font-size: 9pt; font-weight: bold; color: #475569; border-bottom: 1px solid #CBD5E1; padding-bottom: 1.5mm; margin-bottom: 3mm;'>▶ {comp_name} ({b_name})</div>
+                                    <div style='font-size: 8pt; color: #64748B; font-style: italic; margin-top: 4mm;'>최근 마케팅 이벤트 이력이 존재하지 않습니다.</div>
+                                </td>
+                            </tr>
+                        </table>
                         """
                         boxes_html.append(box_item)
                         continue
                         
-                    # 글자 깨짐 유발 단어 전처리 (HTML 엔티티 및 이모지 제거)
+                    # 텍스트 전처리
                     event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
                     event_titles = event_titles.replace("&gt;", ">").replace("&lt;", "<")
                     if len(event_titles) > 40: event_titles = event_titles[:37] + "..."
@@ -2057,7 +2062,6 @@ with st.container(border=True):
                         all_prods.extend([k.strip() for k in r["🎯 유도 ETF 종목"].split(",") if k.strip()])
                     all_prods = list(set(all_prods))
                     
-                    # 푸쉬 종목 글자 깨짐 방지 및 가독성 확보
                     push_products_text = ", ".join(all_prods[:2]) if all_prods else f"{b_name} 주요 라인업"
                     push_products_text = push_products_text.replace("&gt;", ">").replace("&lt;", "<")
                     
@@ -2084,14 +2088,13 @@ with st.container(border=True):
                                     (~res_df['종목명_정제'].str.contains(b_name, na=False))
                                 ]
                                 if not df_ctrl.empty:
-                                    c_diff = (df_ctrl['금주_매수강도'] - df_ctrl['전주_weak_AUM'] if '전주_weak_AUM' in df_ctrl.columns else df_ctrl['전주_매수강도']).mean()
+                                    c_diff = (df_ctrl['금주_매수강도'] - df_ctrl['전주_매수강도']).mean()
                                     control_diffs.append(c_diff)
                                     
                     avg_t_diff = np.mean(treatment_diffs) if treatment_diffs else 0.0
                     avg_c_diff = np.mean(control_diffs) if control_diffs else 0.0
                     did_score = avg_t_diff - avg_c_diff
                     
-                    # 진단 텍스트 이모지 제거 및 한글 대체
                     if not matched_any_stock:
                         efficacy_result = "시장 무반응"
                     elif did_score > 0.05:
@@ -2101,25 +2104,29 @@ with st.container(border=True):
                     else:
                         efficacy_result = "효용 없음 (경쟁사 대비 이탈)"
                         
-                    # ✨ [핵심 교정] 단 하나의 통박스(div) 구조 안에 모든 요소를 줄바꿈(<br>)으로 연결
+                    # ✨ [핵심 수정] div 테두리를 버리고, 자체 table 테두리를 사용하여 쪼개짐 현상을 물리적으로 방어
                     box_item = f"""
-                    <div style='background-color: {style_config["bg"]}; border: 1.5px solid {style_config["border"]}; border-radius: 6px; padding: 4mm; margin: 1.5mm; min-height: 44mm;'>
-                        <div style='font-size: 9pt; font-weight: bold; color: {style_config["text"]}; border-bottom: 1px solid {style_config["border"]}80; padding-bottom: 1.5mm; margin-bottom: 2.5mm;'>
-                            [운용사] {comp_name} ({b_name})
-                        </div>
-                        <div style='font-size: 8pt; color: #2D3748; line-height: 1.4;'>
-                            - <b>이벤트:</b> {event_titles}<br/>
-                            - <b>푸쉬 종목:</b> {push_products_text}<br/>
-                            - <b>순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{did_score:+.3f}%p</span><br/>
-                        </div>
-                        <div style='font-size: 8pt; font-weight: bold; color: #1A202C; margin-top: 3mm; padding-top: 2mm; border-top: 1px dashed {style_config["border"]}60;'>
-                            [진단 결과] {efficacy_result}
-                        </div>
-                    </div>
+                    <table style='width: 96%; background-color: {style_config["bg"]}; border: 2px solid {style_config["border"]}; border-collapse: collapse; margin: 1.5mm; min-height: 44mm;'>
+                        <tr>
+                            <td style='padding: 4mm; vertical-align: top; border: none;'>
+                                <div style='font-size: 9pt; font-weight: bold; color: {style_config["text"]}; border-bottom: 1px solid {style_config["border"]}80; padding-bottom: 1.5mm; margin-bottom: 2.5mm;'>
+                                    [운용사] {comp_name} ({b_name})
+                                </div>
+                                <div style='font-size: 8pt; color: #2D3748; line-height: 1.45;'>
+                                    - <b>이벤트:</b> {event_titles}<br/>
+                                    - <b>푸쉬 종목:</b> {push_products_text}<br/>
+                                    - <b>순수 인과효과(DiD):</b> <span style='color: {style_config["text"]}; font-weight: bold;'>{did_score:+.3f}%p</span>
+                                </div>
+                                <div style='font-size: 8pt; font-weight: bold; color: #1A202C; margin-top: 3.5mm; padding-top: 2mm; border-top: 1px dashed {style_config["border"]}60;'>
+                                    [진단 결과] {efficacy_result}
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
                     """
                     boxes_html.append(box_item)
                 
-                # 2x2 격자 배열 배치 생성
+                # 2x2 메인 레이아웃 정렬
                 marketing_report_html += f"""
                 <tr>
                     <td style='width: 50%; border: none; vertical-align: top;'>{boxes_html[0]}</td>
