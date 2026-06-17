@@ -882,8 +882,15 @@ else:
                         st.info("구조화할 수 있는 노출 텍스트 컨텐츠가 없습니다.")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    # Part D 스크리닝 결과가 담긴 변수(예시: homepage_data)를 세션에 저장
-st.session_state['homepage_data'] = homepage_data # 본인의 Part D 데이터 변수명에 맞게 매칭
+    if 'homepage_data' not in st.session_state:
+    st.session_state['homepage_data'] = []
+
+# 만약 코드가 실행되면서 실시간으로 변수가 생성되었다면 세션에 업데이트
+try:
+    if 'homepage_data' in locals() or 'homepage_data' in globals():
+        st.session_state['homepage_data'] = homepage_data
+except NameError:
+    pass # 변수가 없어도 에러를 뿜지 않고 부드럽게 넘어갑니다.
             
 # ==============================================================================
 # # [Section 3] 투자자 데이터 분석 (📦 큰 컨테이너로 칸 명확히 분할 - 100% 와이드 버전)
