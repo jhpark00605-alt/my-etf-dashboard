@@ -961,7 +961,6 @@ else:
 # ==============================================================================
 with st.container(border=True):
     st.header("👥 Section 3. 투자자 데이터 분석 및 이벤트 효과 분석")
-    st.caption("이중차분법(Difference-in-Differences)을 활용하여 시장 및 섹터 자체의 노이즈를 제거한 오직 '마케팅 이벤트만의 순수 자금 유입 효과'를 추적합니다.")
     st.markdown("<br>", unsafe_allow_html=True)
 
     st.subheader("📊 주차별 순매수 강도 분석 결과")
@@ -1057,7 +1056,7 @@ with st.container(border=True):
             # 6. 화면 시각화 출력 (상위 15개 제한)
             display_df = res_df.head(15) 
             st.markdown(f"### 🏆 {curr_week} 주차 순매수 강도 TOP 15 리포트")
-            st.caption(f"公式: [금주({curr_week}) {target_investor} 순매수액(억원)] ÷ [시스템 자동추적 전주({prev_week}) 기준 순자산(억원)] × 100 (%)")
+            st.caption(f"[금주({curr_week}) {target_investor} 순매수액(억원)] ÷ [시스템 자동추적 전주({prev_week}) 기준 순자산(억원)] × 100 (%)")
             
             fig = px.bar(display_df, x='종목명_정제', y='금주_매수강도', color='금주_매수강도', text_auto='.2f',
                          color_continuous_scale="Viridis", title=f"{target_investor} 순매수 강도 TOP 15 (자동추적 전주 AUM 대비)",
