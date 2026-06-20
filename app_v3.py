@@ -1999,16 +1999,21 @@ with st.container(border=True):
                     item_name = row.get('종목명_정제', row.get('종목명', f'KODEX 혁신 자산 {idx+1}'))
                     vol_val = row.get('매수강도', 0.0)
                     
-                    blocks = max(1, round((float(vol_val) / max_vol) * 12))
-                    bar_display = "■" * blocks
+                    pct = max(1, min(100, round((float(vol_val) / max_vol) * 100)))
+                    _rest = 100 - pct
+                    _empty = f'<td width="{_rest}%" style="background-color:#EEF2FF; padding:0;"></td>' if _rest > 0 else ''
                     section3_chart_html += f"""
-                    <div style='margin-bottom:1.2mm; border-bottom:1px dashed #F3F4F6; padding-bottom:0.8mm;'>
-                        <div style='font-weight:bold; color:#1F2937; font-size:8.5pt;'>{idx+1}. {item_name}</div>
-                        <div style='margin-top:0.5mm;'>
-                            <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:75px;'>매수강도: {vol_val:,.1f}</span>
-                            <span style='color:#3B82F6; font-size:8pt;'>{bar_display}</span>
-                        </div>
-                    </div>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:1.0mm;">
+                      <tr>
+                        <td width="42%" style="font-weight:bold; color:#1F2937; font-size:8pt; padding-right:2mm;">{idx+1}. {item_name}</td>
+                        <td width="42%">
+                          <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                            <td width="{pct}%" bgcolor="#3B82F6" style="background-color:#3B82F6; padding:0;"></td>{_empty}
+                          </tr></table>
+                        </td>
+                        <td width="16%" style="text-align:right; color:#1E40AF; font-size:8pt; font-weight:bold;">{vol_val:,.1f}</td>
+                      </tr>
+                    </table>
                     """
             except Exception as e:
                 pass
@@ -2023,15 +2028,21 @@ with st.container(border=True):
                 ("RISE 코리아밸류업", 420), ("KODEX 200", 380)
             ]
             for idx, (name, vol) in enumerate(sample_agents):
-                bars = "■" * round((vol / 1250) * 12)
+                pct = max(1, min(100, round((vol / 1250) * 100)))
+                _rest = 100 - pct
+                _empty = f'<td width="{_rest}%" style="background-color:#EEF2FF; padding:0;"></td>' if _rest > 0 else ''
                 section3_chart_html += f"""
-                <div style='margin-bottom:1.2mm; border-bottom:1px dashed #F3F4F6; padding-bottom:0.8mm;'>
-                    <div style='font-weight:bold; color:#1F2937; font-size:8.5pt;'>{idx+1}. {name}</div>
-                    <div style='margin-top:0.5mm;'>
-                        <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:75px;'>매수강도: {vol:,}</span>
-                        <span style='color:#3B82F6; font-size:8pt;'>{bars}</span>
-                    </div>
-                </div>
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:1.0mm;">
+                  <tr>
+                    <td width="42%" style="font-weight:bold; color:#1F2937; font-size:8pt; padding-right:2mm;">{idx+1}. {name}</td>
+                    <td width="42%">
+                      <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                        <td width="{pct}%" bgcolor="#3B82F6" style="background-color:#3B82F6; padding:0;"></td>{_empty}
+                      </tr></table>
+                    </td>
+                    <td width="16%" style="text-align:right; color:#1E40AF; font-size:8pt; font-weight:bold;">{vol:,}</td>
+                  </tr>
+                </table>
                 """
         # ======================================================================
         # 🔗 [텍스트 제한 해제 완본] 이벤트명 자르지 않고 전체 출력 처리
@@ -2191,19 +2202,26 @@ with st.container(border=True):
         # 1. 실제 대시보드 데이터 연동부
         if target_top_df is not None and not target_top_df.empty:
             try:
-                for idx, row in target_top_df.head(top_n_count).reset_index().iterrows():
+                _rows = target_top_df.head(top_n_count).reset_index()
+                # 막대 스케일용 최대 절대 수익률
+                _max_abs = 1.0
+                for _, _r in _rows.iterrows():
+                    _v = str(_r.get('수익률(%)', _r.get('수익률', _r.get('주간수익률', 0.0)))).replace('+-','-').replace('+','').replace('%','').strip()
+                    try: _max_abs = max(_max_abs, abs(float(_v)))
+                    except: pass
+                for idx, row in _rows.iterrows():
                     r_name = row.get('종목명', row.get('ETF명', row.get('ETF종목명', 'KODEX 상위 자산')))
                     r_val = row.get('수익률(%)', row.get('수익률', row.get('주간수익률', 0.0)))
-                    
+
                     # 💡 [핵심 조치] 대시보드에서 '+-4.21%' 문자열이 넘어오더라도 이를 완벽히 청소합니다.
                     clean_val_str = str(r_val).replace('+-', '-').replace('+', '').strip()
-                    
+
                     # 수치 비교를 위해 float 형변환 (% 기호 제거)
                     try:
                         num_val = float(clean_val_str.replace('%', ''))
                     except:
                         num_val = 0.0
-                    
+
                     if num_val != 0.0:
                         # 깨끗하게 정제된 값에 따라 기호와 색상을 동적으로 매칭합니다.
                         if num_val > 0:
@@ -2212,8 +2230,19 @@ with st.container(border=True):
                         else:
                             sign_str = ""          # 음수는 clean_val_str에 마이너스가 포함되어 있으므로 빈값
                             color_span = "#1E40AF" # 하락 파랑
-                            
-                        top_n_return_html += f"<tr><td>{r_name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{clean_val_str if '%' in clean_val_str else clean_val_str + '%'}</td></tr>"
+
+                        _pct = max(1, min(100, round(abs(num_val) / _max_abs * 100)))
+                        _rest = 100 - _pct
+                        _empty = f'<td width="{_rest}%" style="background-color:#F3F4F6; padding:0;"></td>' if _rest > 0 else ''
+                        _vtxt = clean_val_str if '%' in clean_val_str else clean_val_str + '%'
+                        top_n_return_html += f"""<tr>
+                          <td style='font-size:8pt; color:#1F2937; padding:0.6mm 1mm;' width="40%">{r_name}</td>
+                          <td style='padding:0.6mm 1mm;' width="42%">
+                            <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                              <td width="{_pct}%" bgcolor="{color_span}" style="background-color:{color_span}; padding:0;"></td>{_empty}
+                            </tr></table></td>
+                          <td style='text-align:right; font-weight:bold; color:{color_span}; font-size:8pt; padding:0.6mm 1mm;' width="18%">{sign_str}{_vtxt}</td>
+                        </tr>"""
             except: 
                 pass # 💡 문법 에러(SyntaxError)가 나지 않도록 개행 및 인덴트를 정렬했습니다.
 
@@ -2221,11 +2250,23 @@ with st.container(border=True):
         if not top_n_return_html:
             top_n_return_html = "" 
             default_top_assets = [("KODEX 미국AI테크TOP10+", "6.72"), ("KODEX AI반도체TOP2플러스", "6.15"), ("KODEX 미국나스닥100", "4.12"), ("KODEX 단기자금", "0.08"), ("KODEX 국채30년선물", "-1.05")]
+            _dmax = max(abs(float(v)) for _, v in default_top_assets) or 1.0
             for name, val in default_top_assets[:top_n_count]:
                 val_str = str(val).replace('+-', '-').replace('+', '').strip()
+                _n = float(val_str)
                 color_span = "#1E40AF" if "-" in val_str else "#B91C1C"
                 sign_str = "" if "-" in val_str else "+"
-                top_n_return_html += f"<tr><td>{name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{val_str}%</td></tr>"
+                _pct = max(1, min(100, round(abs(_n) / _dmax * 100)))
+                _rest = 100 - _pct
+                _empty = f'<td width="{_rest}%" style="background-color:#F3F4F6; padding:0;"></td>' if _rest > 0 else ''
+                top_n_return_html += f"""<tr>
+                  <td style='font-size:8pt; color:#1F2937; padding:0.6mm 1mm;' width="40%">{name}</td>
+                  <td style='padding:0.6mm 1mm;' width="42%">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                      <td width="{_pct}%" bgcolor="{color_span}" style="background-color:{color_span}; padding:0;"></td>{_empty}
+                    </tr></table></td>
+                  <td style='text-align:right; font-weight:bold; color:{color_span}; font-size:8pt; padding:0.6mm 1mm;' width="18%">{sign_str}{val_str}%</td>
+                </tr>"""
 
         # 3. 우측 테마별 평균 수익률 구역 (실시간 데이터 연동 및 try-except 마감)
         theme_return_html = ""
@@ -2233,15 +2274,34 @@ with st.container(border=True):
         
         if target_theme_df is not None and not target_theme_df.empty:
             try:
-                for idx, row in target_theme_df.reset_index().iterrows():
+                _trows = target_theme_df.reset_index()
+                _tmax = 1.0
+                for _, _r in _trows.iterrows():
+                    _tv = str(_r.get('주간수익률(%)', _r.get('주간수익률', _r.get('평균수익률', 0.0)))).replace('+-','-').replace('+','').replace('%','').strip()
+                    try: _tmax = max(_tmax, abs(float(_tv)))
+                    except: pass
+                for idx, row in _trows.iterrows():
                     t_name = row.get('테마명', row.get('시장핵심테마', '핵심섹터'))
                     t_val = row.get('주간수익률(%)', row.get('주간수익률', row.get('평균수익률', 0.0)))
-                    
+
                     # 기호 오염 방지 정제
                     clean_t_str = str(t_val).replace('+-', '-').replace('+', '').strip()
                     color_str = "#1E40AF" if "-" in clean_t_str else "#B91C1C"
                     sign_str = "" if "-" in clean_t_str else "+"
-                    theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{clean_t_str if '%' in clean_t_str else clean_t_str + '%'}</td></tr>"
+                    try: _tn = float(clean_t_str.replace('%',''))
+                    except: _tn = 0.0
+                    _tpct = max(1, min(100, round(abs(_tn) / _tmax * 100)))
+                    _trest = 100 - _tpct
+                    _tempty = f'<td width="{_trest}%" style="background-color:#F3F4F6; padding:0;"></td>' if _trest > 0 else ''
+                    _ttxt = clean_t_str if '%' in clean_t_str else clean_t_str + '%'
+                    theme_return_html += f"""<tr>
+                      <td style='font-size:8pt; color:#1F2937; padding:0.6mm 1mm;' width="40%">{t_name}</td>
+                      <td style='padding:0.6mm 1mm;' width="42%">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                          <td width="{_tpct}%" bgcolor="{color_str}" style="background-color:{color_str}; padding:0;"></td>{_tempty}
+                        </tr></table></td>
+                      <td style='text-align:right; color:{color_str}; font-weight:bold; font-size:8pt; padding:0.6mm 1mm;' width="18%">{sign_str}{_ttxt}</td>
+                    </tr>"""
             except: 
                 pass # 💡 실시간 데이터를 처리하는 try 블록의 올바른 짝입니다.
 
@@ -2249,11 +2309,22 @@ with st.container(border=True):
         if not theme_return_html or theme_return_html.count("0.0%") > 2:
             theme_return_html = ""
             default_themes = [("반도체/AI 혁신 테마", "4.85"), ("미국 빅테크&소프트웨어", "4.12"), ("바이오/헬스케어 대형주", "2.10"), ("2차전지 대형주", "-3.20")]
+            _dtmax = max(abs(float(v)) for _, v in default_themes) or 1.0
             for t_name, t_val in default_themes:
                 clean_dt_str = str(t_val).replace('+-', '-').replace('+', '').strip()
                 color_str = "#1E40AF" if "-" in clean_dt_str else "#B91C1C"
                 sign_str = "" if "-" in clean_dt_str else "+"
-                theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{clean_dt_str}%</td></tr>"
+                _dpct = max(1, min(100, round(abs(float(clean_dt_str)) / _dtmax * 100)))
+                _drest = 100 - _dpct
+                _dempty = f'<td width="{_drest}%" style="background-color:#F3F4F6; padding:0;"></td>' if _drest > 0 else ''
+                theme_return_html += f"""<tr>
+                  <td style='font-size:8pt; color:#1F2937; padding:0.6mm 1mm;' width="40%">{t_name}</td>
+                  <td style='padding:0.6mm 1mm;' width="42%">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                      <td width="{_dpct}%" bgcolor="{color_str}" style="background-color:{color_str}; padding:0;"></td>{_dempty}
+                    </tr></table></td>
+                  <td style='text-align:right; color:{color_str}; font-weight:bold; font-size:8pt; padding:0.6mm 1mm;' width="18%">{sign_str}{clean_dt_str}%</td>
+                </tr>"""
 
         # ↓↓↓ 아래 코드를 theme_return_html 처리 블록 바로 뒤에 추가
         # ----------------------------------------------------------------------
@@ -2329,40 +2400,68 @@ with st.container(border=True):
 
         if target_dl_df is not None and not target_dl_df.empty:
             try:
-                # 데이터가 아무리 많아도 에러 없이 루프를 돌며 가로 박스로 누적시킵니다.
-                for idx, row in target_dl_df.reset_index(drop=True).iterrows():
-                    date_val = str(row.iloc[0]) 
-                    c_val = float(row.iloc[1])
-                    
-                    b_cnt = max(1, min(10, round((c_val / 100.0) * 10)))
-                    pink_bars = "■" * b_cnt
-                    
-                    # 30개 이상의 박스를 한 줄에 하나씩 배치하면 세로로 너무 길어지므로,
-                    # inline-block(가로 31%씩 삼등분) 구조를 주어 짜임새 있게 정렬합니다.
-                    datalab_box_chart_html += f"""
-                    <div style='border: 1px solid #FECACA; background-color: #FEF2F2; padding: 1.8mm; margin-bottom: 1.2mm; border-radius: 4px; display: inline-block; width: 31%; margin-right: 1%; vertical-align: top;'>
-                        <span style='font-weight: bold; color: #1F2937; font-size: 8pt;'>{date_val}</span> 
-                        <span style='color: #DC2626; font-weight: bold; font-size: 8pt;'>[{c_val:,.1f}]</span>
-                        <div style='color: #F43F5E; font-size: 8.5pt; letter-spacing: 0.3mm; margin-top: 0.5mm;'>{pink_bars}</div>
-                    </div>
-                    """
+                _dl = target_dl_df.reset_index(drop=True)
+                _vals = []
+                for _, row in _dl.iterrows():
+                    try: _vals.append((str(row.iloc[0]), float(row.iloc[1])))
+                    except: pass
+                if _vals:
+                    _vmax = max(v for _, v in _vals) or 1.0
+                    _cur = _vals[-1][1]; _avg = sum(v for _,v in _vals)/len(_vals)
+                    _mx = max(v for _,v in _vals); _mn = min(v for _,v in _vals)
+                    # 통계 요약 박스
+                    datalab_box_chart_html = f"""
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:2mm;">
+                      <tr>
+                        <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">현재</div><div style="font-size:12pt; font-weight:bold; color:#DC2626;">{_cur:.0f}</div></td>
+                        <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">평균</div><div style="font-size:12pt; font-weight:bold; color:#1F2937;">{_avg:.0f}</div></td>
+                        <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">최고</div><div style="font-size:12pt; font-weight:bold; color:#B91C1C;">{_mx:.0f}</div></td>
+                        <td style="text-align:center;"><div style="font-size:7pt; color:#9CA3AF;">최저</div><div style="font-size:12pt; font-weight:bold; color:#1D4ED8;">{_mn:.0f}</div></td>
+                      </tr>
+                    </table>"""
+                    # 날짜별 가로막대 (최근 10일, 1열 단순 구조)
+                    _rows_html = ""
+                    for _d, _v in _vals[-10:]:
+                        _p = max(1, min(100, round(_v / _vmax * 100)))
+                        _r = 100 - _p
+                        _e = f'<td width="{_r}%" bgcolor="#FEE2E2" style="background-color:#FEE2E2; padding:0;"></td>' if _r > 0 else ''
+                        _rows_html += f"""<tr>
+                          <td width="16%" style="font-size:8pt; color:#1F2937; padding:0.4mm 1mm;">{_d}</td>
+                          <td width="68%" style="padding:0.4mm 1mm;"><table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;"><td width="{_p}%" bgcolor="#F43F5E" style="background-color:#F43F5E; padding:0;"></td>{_e}</tr></table></td>
+                          <td width="16%" style="font-size:8pt; color:#DC2626; font-weight:bold; text-align:right; padding:0.4mm 1mm;">{_v:.0f}</td>
+                        </tr>"""
+                    datalab_box_chart_html += f'<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#FEF2F2; border:1px solid #FECACA; border-radius:4px;">{_rows_html}</table>'
             except Exception as e:
                 pass
                 
         if not datalab_box_chart_html:
-            # 연동 실패 시 보여주는 예비용 6일치 샘플
             sample_dl = [
-                ("06월 11일", 56.0, 6), ("06월 12일", 92.0, 9), ("06월 13일", 86.0, 9),
-                ("06월 14일", 58.0, 6), ("06월 15일", 45.0, 4), ("06월 16일", 83.0, 8)
+                ("06.11", 56.0), ("06.12", 92.0), ("06.13", 86.0),
+                ("06.14", 58.0), ("06.15", 45.0), ("06.16", 83.0)
             ]
-            for d_date, d_val, d_bar in sample_dl:
-                datalab_box_chart_html += f"""
-                <div style='border: 1px solid #FECACA; background-color: #FEF2F2; padding: 1.8mm; margin-bottom: 1.2mm; border-radius: 4px; display: inline-block; width: 31%; margin-right: 1%; vertical-align: top;'>
-                    <span style='font-weight: bold; color: #1F2937; font-size: 8pt;'>{d_date}</span> 
-                    <span style='color: #DC2626; font-weight: bold; font-size: 8pt;'>[{d_val}]</span>
-                    <div style='color: #F43F5E; font-size: 8.5pt; letter-spacing: 0.3mm; margin-top: 0.5mm;'>{"■"*d_bar}</div>
-                </div>
-                """
+            _vmax = max(v for _, v in sample_dl) or 1.0
+            _cur = sample_dl[-1][1]; _avg = sum(v for _,v in sample_dl)/len(sample_dl)
+            _mx = max(v for _,v in sample_dl); _mn = min(v for _,v in sample_dl)
+            datalab_box_chart_html = f"""
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:2mm;">
+              <tr>
+                <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">현재</div><div style="font-size:12pt; font-weight:bold; color:#DC2626;">{_cur:.0f}</div></td>
+                <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">평균</div><div style="font-size:12pt; font-weight:bold; color:#1F2937;">{_avg:.0f}</div></td>
+                <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">최고</div><div style="font-size:12pt; font-weight:bold; color:#B91C1C;">{_mx:.0f}</div></td>
+                <td style="text-align:center;"><div style="font-size:7pt; color:#9CA3AF;">최저</div><div style="font-size:12pt; font-weight:bold; color:#1D4ED8;">{_mn:.0f}</div></td>
+              </tr>
+            </table>"""
+            _rows_html = ""
+            for _d, _v in sample_dl:
+                _p = max(1, min(100, round(_v / _vmax * 100)))
+                _r = 100 - _p
+                _e = f'<td width="{_r}%" bgcolor="#FEE2E2" style="background-color:#FEE2E2; padding:0;"></td>' if _r > 0 else ''
+                _rows_html += f"""<tr>
+                  <td width="16%" style="font-size:8pt; color:#1F2937; padding:0.4mm 1mm;">{_d}</td>
+                  <td width="68%" style="padding:0.4mm 1mm;"><table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;"><td width="{_p}%" bgcolor="#F43F5E" style="background-color:#F43F5E; padding:0;"></td>{_e}</tr></table></td>
+                  <td width="16%" style="font-size:8pt; color:#DC2626; font-weight:bold; text-align:right; padding:0.4mm 1mm;">{_v:.0f}</td>
+                </tr>"""
+            datalab_box_chart_html += f'<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#FEF2F2; border:1px solid #FECACA; border-radius:4px;">{_rows_html}</table>'
         # ----------------------------------------------------------------------
         # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
         # ----------------------------------------------------------------------
@@ -2570,8 +2669,9 @@ with st.container(border=True):
                             <table style="width:100%; border-collapse: collapse; margin-top: 1.5mm;">
                                 <thead>
                                     <tr>
-                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt;">KODEX ETF 종목명</th>
-                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 30%;">주간 수익률</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width:40%;">KODEX ETF 종목명</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 42%;">수익률 분포</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 18%;">주간 수익률</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -2585,8 +2685,9 @@ with st.container(border=True):
                             <table style="width:100%; border-collapse: collapse; margin-top: 1.5mm;">
                                 <thead>
                                     <tr>
-                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt;">시장 핵심 분석 테마 섹터</th>
-                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 30%;">평균 수익률</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width:40%;">시장 핵심 분석 테마 섹터</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 42%;">수익률 분포</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 18%;">평균 수익률</th>
                                     </tr>
                                 </thead>
                                 <tbody>
