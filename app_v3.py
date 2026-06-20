@@ -1798,68 +1798,152 @@ with st.container(border=True):
     st.markdown("### ⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    dynamic_context = ""
-    if 'all_titles_text' in locals() and all_titles_text:
-        dynamic_context += f"[시장 뉴스]\n{all_titles_text}\n\n"
-    if st.session_state.get("yt_report_fixed"):
-        dynamic_context += f"[유튜브 동향]\n{st.session_state.yt_report_fixed}\n\n"
-    if 'res_df' in locals() and not res_df.empty:
+    # ======================================================================
+    # [전 섹션 종합 컨텍스트 구성] session_state의 모든 분석 결과를 수집
+    # ======================================================================
+    import pandas as _pd
+
+    def _df_brief(key, cols=None, n=8):
+        d = st.session_state.get(key)
+        if not isinstance(d, _pd.DataFrame) or d.empty:
+            return ""
+        use = [c for c in (cols or d.columns) if c in d.columns]
         try:
-            top_bought_etfs = ", ".join(res_df['종목명'].head(3).tolist())
-            dynamic_context += f"[투자자 순매수]\n현재 탑 매수 종목: {top_bought_etfs}\n\n"
-        except:
+            return d[use].head(n).to_string(index=False)
+        except Exception:
+            return ""
+
+    full_context = ""
+    _wk = st.session_state.get('week2_option', '-')
+    _ag = st.session_state.get('target_agent_option', '개인')
+    full_context += f"[분석 기준] 기간: {_wk} / 투자주체: {_ag}\n\n"
+
+    # S1 트렌드/키워드
+    _lb = st.session_state.get('live_brief', {})
+    if _lb:
+        full_context += f"[S1 시장 브리핑] 강세: {_lb.get('rising','-')} / 약세: {_lb.get('falling','-')}\n트렌드: {_lb.get('trend','-')}\n"
+    _kw = _df_brief('df_keywords', ['키워드','언급량'], 6)
+    if _kw:
+        full_context += f"[S1 뉴스 키워드 언급량]\n{_kw}\n"
+    full_context += "\n"
+
+    # S2 경쟁사 모니터링
+    if st.session_state.get('yt_report_fixed'):
+        full_context += f"[S2 유튜브 동향]\n{str(st.session_state['yt_report_fixed'])[:600]}\n\n"
+    _blog = st.session_state.get('blog_analysis_results', [])
+    if _blog:
+        _bt = "; ".join([f"{b.get('company','')}: {b.get('main_products','')} ({b.get('marketing_theme','')})" for b in _blog[:5]])
+        full_context += f"[S2 경쟁사 블로그 주력 ETF]\n{_bt}\n\n"
+    _ev = st.session_state.get('df_events_base_data', [])
+    if _ev:
+        _evt = "; ".join(list(dict.fromkeys([f"{e.get('운용사','')}: {e.get('제목','')}" for e in _ev]))[:6])
+        full_context += f"[S2 운용사 ETF 이슈]\n{_evt}\n\n"
+
+    # S3 순매수강도 + DiD
+    _res = st.session_state.get('res_df')
+    if isinstance(_res, _pd.DataFrame) and not _res.empty and '매수강도' in _res.columns:
+        try:
+            _t = _res.sort_values('매수강도', ascending=False).head(8)
+            _nc = '종목명_정제' if '종목명_정제' in _t.columns else '종목명'
+            _rt = "; ".join([f"{r[_nc]}({r['매수강도']:.1f})" for _, r in _t.iterrows()])
+            full_context += f"[S3 순매수 강도 TOP]\n{_rt}\n\n"
+        except Exception:
             pass
-    if 'g_news_context' in locals() and g_news_context:
-        dynamic_context += f"[KODEX 보도자료]\n{g_news_context}\n\n"
+    _did = st.session_state.get('did_report_data', [])
+    if _did:
+        _dt = "; ".join([f"{d.get('운용사 (브랜드)','')}: DiD {d.get('DiD 순수 마케팅 효과','')} {d.get('최종 마케팅 효용 판단','')}" for d in _did])
+        full_context += f"[S3 DiD 이벤트 성과]\n{_dt}\n\n"
 
-    current_keyword = df_keywords['키워드'].iloc[0] if 'df_keywords' in locals() and not df_keywords.empty else "반도체/월배당"
-    current_etf = top_bought_etfs if 'top_bought_etfs' in locals() and top_bought_etfs else "KODEX AI반도체 / 커버드콜 시리즈"
+    # S4 수익률 + 테마 + Pick
+    _ret = _df_brief('df_top_returns', ['ETF명','수익률(%)'], 8)
+    if _ret:
+        full_context += f"[S4 수익률 상위]\n{_ret}\n"
+    _thm = _df_brief('df_theme_returns', None, 8)
+    if _thm:
+        full_context += f"[S4 테마별 수익률]\n{_thm}\n"
+    _pk = st.session_state.get('gemini_picks', {})
+    if isinstance(_pk, dict) and _pk:
+        _pt = "; ".join([f"{v.get('label','')} {v.get('name','')}: {v.get('point','')}" for v in _pk.values() if isinstance(v, dict)])
+        full_context += f"[S4 추천 Pick]\n{_pt}\n"
+    full_context += "\n"
 
+    # S5 뉴스 + 데이터랩
+    if st.session_state.get('news_summary'):
+        full_context += f"[S5 KODEX 뉴스 요약]\n{str(st.session_state['news_summary'])[:500]}\n\n"
+    _sns = st.session_state.get('df_sns')
+    if isinstance(_sns, _pd.DataFrame) and not _sns.empty and '검색 지수' in _sns.columns:
+        try:
+            _v = _pd.to_numeric(_sns['검색 지수'], errors='coerce').dropna()
+            full_context += f"[S5 네이버 데이터랩 검색지수] 현재 {_v.iloc[-1]:.0f} / 평균 {_v.mean():.0f} / 최고 {_v.max():.0f}\n\n"
+        except Exception:
+            pass
+
+    # 백업 고정 멘트 (AI 실패 시에만 사용)
+    current_keyword = "반도체/월배당"
+    try:
+        _dk = st.session_state.get('df_keywords', _pd.DataFrame())
+        if isinstance(_dk, _pd.DataFrame) and not _dk.empty and '키워드' in _dk.columns:
+            current_keyword = _dk['키워드'].iloc[0]
+    except Exception:
+        pass
     final_insights = [
         f"📣 **[테마 매칭 캠페인]** 실시간 데이터 분석 결과 현재 가장 핫한 키워드는 **'{current_keyword}'**입니다. 해당 테마와 매칭되는 KODEX 핵심 라인업의 디지털 콘텐츠 노출을 즉각 대형화하십시오.",
-        f"🚀 **[채널 역침투 전략]** 주요 증권사 유튜브가 연금/절세 콘텐츠에 화력을 집중하고 있습니다. **{current_etf}** 등을 활용한 자산 배분 시뮬레이션 툴킷을 각 증권사 리테일 채널에 역제안하십시오.",
-        "⚡ **[트렌드 가속 락인]** 네이버 데이터랩 검색 강도 추이와 개인/기관의 순매수 강도가 일치하는 타이밍을 저격하여 고자산가 유입 경로에 최적화된 디지털 타겟 마케팅을 집행하십시오."
+        "🚀 **[채널 역침투 전략]** 주요 증권사 유튜브가 연금/절세 콘텐츠에 화력을 집중하고 있습니다. 핵심 ETF를 활용한 자산 배분 시뮬레이션 툴킷을 각 증권사 리테일 채널에 역제안하십시오.",
+        "⚡ **[트렌드 가속 락인]** 네이버 데이터랩 검색 강도 추이와 순매수 강도가 일치하는 타이밍을 저격하여 고자산가 유입 경로에 최적화된 디지털 타겟 마케팅을 집행하십시오."
     ]
 
-    if GEMINI_KEY and len(dynamic_context.strip()) > 30:
-        insight_prompt = f"""
-        너는 삼성자산운용 KODEX ETF의 최고 마케팅 전략 책임자야. 제공된 실시간 데이터를 종합 분석해서 이번 주 마케팅 액션 플랜을 딱 '3가지 문장'으로만 도출해줘.
-        번호나 기호 없이 서론/결론 제외하고 문장 3개만 엔터로 구분해서 출력해줘. 문장 시작은 반드시 이모지와 대괄호 태그로 시작해줘. (예: 📣 **[테마 캠페인]** 내용...)
-        데이터:
-        {dynamic_context}
-        """
+    if GEMINI_KEY and len(full_context.strip()) > 80:
+        insight_prompt = f"""너는 삼성자산운용 KODEX ETF의 최고 마케팅 전략 책임자(CMO)야.
+아래는 이번 주 5개 영역(시장 트렌드/경쟁사 모니터링/투자자 수급/수익률/마케팅 성과)에서 수집된 실시간 분석 데이터 전체야.
+이 데이터를 교차 분석해서, 이번 주 KODEX가 실행해야 할 마케팅 액션 플랜을 도출해줘.
+
+[작성 규칙]
+- 데이터에서 실제로 드러난 근거에 기반해 전략을 제시할 것 (일반론 금지)
+- 전략 개수는 네가 데이터를 보고 판단해서 정해 (보통 3~5개)
+- 각 전략은 한 문장으로, 반드시 이모지 + 대괄호 태그로 시작 (예: 📣 **[테마 캠페인]** 내용...)
+- 번호나 불릿 없이, 각 전략을 빈 줄로 구분해서 출력
+- 서론/결론 없이 전략 문장들만 출력
+
+[분석 데이터]
+{full_context}
+"""
         try:
             ai_insights = generate_via_requests(insight_prompt, "gemini-1.5-flash")
             if ai_insights:
                 parsed_lines = []
-                for line in ai_insights.split('\n'):
-                    clean_line = line.strip()
-                    if not clean_line: continue
-                    clean_line = re.sub(r'^[0-9\-\*\.\s]+', '', clean_line)
-                    if clean_line: parsed_lines.append(clean_line)
-                if len(parsed_lines) >= 3:
-                    final_insights = parsed_lines[:3]
+                for block in ai_insights.split('\n\n'):
+                    clean = block.strip().replace('\n', ' ')
+                    clean = re.sub(r'^[0-9\-\*\.\s]+', '', clean)
+                    if clean and len(clean) > 10:
+                        parsed_lines.append(clean)
+                # 빈줄 구분이 안 됐으면 줄 단위로 재시도
+                if len(parsed_lines) < 2:
+                    parsed_lines = []
+                    for line in ai_insights.split('\n'):
+                        clean = re.sub(r'^[0-9\-\*\.\s]+', '', line.strip())
+                        if clean and len(clean) > 10:
+                            parsed_lines.append(clean)
+                if len(parsed_lines) >= 2:
+                    final_insights = parsed_lines
         except Exception as e:
             pass
 
-    col_a, col_b, col_c = st.columns(3)
+    # ======================================================================
+    # 가변 개수 출력 (3개면 3열, 그 이상이면 줄바꿈 배치)
+    # ======================================================================
+    _icons = ["🎯", "💰", "🌏", "🔥", "💡", "🚀", "⚡", "📊"]
+    _n = len(final_insights)
+    _per_row = 3
+    for _start in range(0, _n, _per_row):
+        _chunk = final_insights[_start:_start + _per_row]
+        _cols = st.columns(len(_chunk))
+        for _j, _txt in enumerate(_chunk):
+            _gi = _start + _j
+            with _cols[_j]:
+                with st.container(border=True):
+                    st.markdown(f"### {_icons[_gi % len(_icons)]} **핵심 전략 {_gi+1:02d}**")
+                    st.write(_txt)
 
-    with col_a:
-        with st.container(border=True):
-            st.markdown("### 🎯 **핵심 전략 01**")
-            st.write(final_insights[0])
-
-    with col_b:
-        with st.container(border=True):
-            st.markdown("### 💰 **핵심 전략 02**")
-            st.write(final_insights[1])
-
-    with col_c:
-        with st.container(border=True):
-            st.markdown("### 🌏 **핵심 전략 03**")
-            st.write(final_insights[2])
-            
-            # 💡 [여기에 추가!] 화면에 뜬 최종 전략 3가지를 문자열로 묶어서 세션에 저장합니다.
     st.session_state['final_insight'] = "\n\n".join(final_insights)
 
 # ==============================================================================
@@ -2389,9 +2473,22 @@ with st.container(border=True):
                 "⚡ **[트렌드 가속 락인]** 네이버 데이터랩 검색 강도 추이와 개인/기관의 순매수 강도가 일치하는 타이밍을 저격하여 디지털 타겟 마케팅을 집행하십시오."
             ]
         
-        # 보장성 코딩: 리스트가 3개보다 모자라거나 많을 때를 대비해 최대 3개로 패딩/제한
-        while len(pdf_insights) < 3:
+        # 보장성 코딩: 최소 2개는 보장 (AI가 자율 개수 도출)
+        while len(pdf_insights) < 2:
             pdf_insights.append("⚡ **[추가 전략 마케팅]** 시장 변동성에 대응하는 실시간 디지털 마케팅 세부 전술을 수립하고 모니터링을 강화하십시오.")
+
+        # [가변 개수] 인사이트 박스를 개수에 맞춰 동적 생성
+        _ins_icons = [("🎯", "#BE185D"), ("💰", "#B45309"), ("🌏", "#047857"),
+                      ("🔥", "#1E40AF"), ("💡", "#7C3AED"), ("🚀", "#0E7490"), ("⚡", "#DC2626")]
+        pdf_insights_html = ""
+        for _i, _txt in enumerate(pdf_insights):
+            _ic, _cl = _ins_icons[_i % len(_ins_icons)]
+            _mb = "margin-bottom: 2mm;" if _i < len(pdf_insights) - 1 else ""
+            pdf_insights_html += f"""
+            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; {_mb} border-radius: 4px;">
+                <div style="font-weight: bold; color: {_cl}; font-size: 8pt; margin-bottom: 0.5mm;">{_ic} 핵심 전략 {_i+1:02d}</div>
+                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{_txt}</div>
+            </div>"""
         
         # [문제 1 해결] 주간 마케팅 뉴스 요약 동적 렌더링 (Agent 화면과 동일하게 3개 매칭)
         kodex_press_dynamic_html = ""
@@ -2739,21 +2836,7 @@ with st.container(border=True):
                         
                         <td style="width: 48%; vertical-align: top; border: none;">
                             <div class="content-title">💡 2. 자산 배분 전략 및 에이전트 AI 종합 인사이트</div>
-                            
-                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; margin-bottom: 2mm; border-radius: 4px;">
-                                <div style="font-weight: bold; color: #BE185D; font-size: 8pt; margin-bottom: 0.5mm;">🎯 핵심 전략 01</div>
-                                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{pdf_insights[0]}</div>
-                            </div>
-                            
-                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; margin-bottom: 2mm; border-radius: 4px;">
-                                <div style="font-weight: bold; color: #B45309; font-size: 8pt; margin-bottom: 0.5mm;">💰 핵심 전략 02</div>
-                                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{pdf_insights[1]}</div>
-                            </div>
-                            
-                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; border-radius: 4px;">
-                                <div style="font-weight: bold; color: #047857; font-size: 8pt; margin-bottom: 0.5mm;">🌏 핵심 전략 03</div>
-                                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{pdf_insights[2]}</div>
-                            </div>
+                            {pdf_insights_html}
                         </td>
                     </tr>
                 </table>
@@ -3249,7 +3332,7 @@ def build_email_html_report():
     final_insight = st.session_state.get("final_insight", "")
     sec5 += sub_head("⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트")
     insight_html = ""
-    labels = ["🎯 핵심 전략 01", "💰 핵심 전략 02", "🌏 핵심 전략 03"]
+    labels = ["🎯 핵심 전략 01", "💰 핵심 전략 02", "🌏 핵심 전략 03", "🔥 핵심 전략 04", "💡 핵심 전략 05", "🚀 핵심 전략 06"]
     segs = []
     if isinstance(final_insight, str) and final_insight.strip():
         segs = [s.strip() for s in final_insight.split("\n\n") if s.strip()]
