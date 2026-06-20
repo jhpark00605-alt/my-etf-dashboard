@@ -100,19 +100,34 @@ st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기�
 st.divider()
 
 # Gemini API 직접 호출을 위한 경량 헬퍼 함수 (라이브러리 충돌 방지)
-def generate_via_requests(prompt, model_name="gemini-1.5-flash"):
+def generate_via_requests(prompt, model_name="gemini-1.5-flash", max_tokens=2048, return_error=False):
     if not GEMINI_KEY:
-        return None
+        return ("", "NO_KEY") if return_error else None
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_KEY}"
         headers = {"Content-Type": "application/json"}
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        res = requests.post(url, headers=headers, json=payload, timeout=20)
-        if res.status_code == 200:
-            return res.json()['candidates'][0]['content']['parts'][0]['text']
-    except:
-        pass
-    return None
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.4, "maxOutputTokens": max_tokens}
+        }
+        res = requests.post(url, headers=headers, json=payload, timeout=30)
+        if res.status_code != 200:
+            err = f"HTTP {res.status_code}: {res.text[:200]}"
+            return ("", err) if return_error else None
+        data = res.json()
+        cands = data.get("candidates", [])
+        if not cands:
+            err = f"NO_CANDIDATES: {str(data)[:200]}"
+            return ("", err) if return_error else None
+        cand = cands[0]
+        parts = cand.get("content", {}).get("parts", [])
+        text = "".join(p.get("text", "") for p in parts).strip()
+        if not text:
+            err = f"EMPTY_TEXT finishReason={cand.get('finishReason','?')}"
+            return ("", err) if return_error else None
+        return (text, "") if return_error else text
+    except Exception as e:
+        return ("", f"EXCEPTION: {e}") if return_error else None
 
 
 # ==============================================================================
@@ -1914,7 +1929,9 @@ with st.container(border=True):
 {full_context}
 """
         try:
-            ai_insights = generate_via_requests(insight_prompt, "gemini-1.5-flash")
+            ai_insights, _ai_err = generate_via_requests(insight_prompt, "gemini-1.5-flash", max_tokens=2048, return_error=True)
+            if _ai_err:
+                st.caption(f"⚠️ AI 호출 실패 원인: {_ai_err}")
             if ai_insights:
                 parsed_lines = []
                 for block in ai_insights.split('\n\n'):
