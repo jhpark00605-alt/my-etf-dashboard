@@ -1425,9 +1425,66 @@ def fetch_data(url, params, label):
     except Exception as e:
         return pd.DataFrame()
 
+def get_krx_etf_returns(term_days=5, brand_filter="KODEX"):
+    """[KRX 우선] pykrx로 ETF 전종목 등락률을 가져와 FuNETF 포맷으로 반환.
+    실패 시 빈 DataFrame 반환 → 상위 함수가 FuNETF로 폴백."""
+    try:
+        from pykrx import stock
+        from datetime import datetime, timedelta
+        # 최근 영업일 기준 종료일/시작일 산출 (주말·휴일 대비 여유 둠)
+        end = datetime.now()
+        # 종료일: 가장 최근 영업일 탐색 (최대 7일 역추적)
+        end_str = None
+        for back in range(0, 7):
+            d = (end - timedelta(days=back)).strftime("%Y%m%d")
+            try:
+                test = stock.get_etf_ohlcv_by_date(d, d, "069500")  # KODEX200
+                if test is not None and not test.empty:
+                    end_str = d
+                    break
+            except Exception:
+                continue
+        if not end_str:
+            return pd.DataFrame()
+        start_str = (datetime.strptime(end_str, "%Y%m%d") - timedelta(days=int(term_days) + 4)).strftime("%Y%m%d")
+
+        # 전종목 등락률 (1회 호출)
+        chg = stock.get_etf_price_change_by_ticker(start_str, end_str)
+        if chg is None or chg.empty:
+            return pd.DataFrame()
+
+        rows = []
+        for ticker, r in chg.iterrows():
+            try:
+                name = stock.get_etf_ticker_name(ticker)
+            except Exception:
+                name = str(ticker)
+            if brand_filter and brand_filter not in name:
+                continue
+            rate = r.get("등락률", r.get("등락율", 0.0))
+            price = r.get("종가", r.get("시가", 0))
+            rows.append({"ETF명": name, "종목코드": ticker, "수익률(%)": float(rate), "현재가": float(price)})
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame(rows)
+    except Exception:
+        return pd.DataFrame()
+
+
 def get_weekly_rate_top(rank_cd="DESC", term_days=5):
-    """주간/월간 등 선택된 기간별 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
-    # 💡 term_days 인자를 받아 API 파라미터인 "term"에 동적으로 매핑합니다.
+    """주간/월간 등 선택된 기간별 수익률 데이터 수집.
+    1순위: KRX(pykrx) / 2순위: FuNETF API / 3순위: 백업 데이터"""
+    # 🥇 1순위: KRX에서 직접 수집
+    df_krx = get_krx_etf_returns(term_days=term_days, brand_filter="KODEX")
+    if not df_krx.empty:
+        df_krx["수익률(%)"] = pd.to_numeric(df_krx["수익률(%)"], errors="coerce")
+        df_krx = df_krx.dropna(subset=["수익률(%)"])
+        # 상승/하락 정렬
+        df_krx = df_krx.sort_values(by="수익률(%)", ascending=(rank_cd != "DESC")).reset_index(drop=True)
+        cols = [c for c in ["ETF명", "종목코드", "수익률(%)", "현재가"] if c in df_krx.columns]
+        return df_krx[cols]
+
+    # 🥈 2순위: FuNETF API (term_days를 API 파라미터 term에 동적 매핑)
     df = fetch_data(
         f"{BASE}/rateReturn/list", 
         {"rankCd": rank_cd, "derivative": "true", "pension": "", "etfType": "", "term": term_days, "page": 0, "size": 50}, 
