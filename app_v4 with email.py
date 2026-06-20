@@ -438,7 +438,15 @@ with st.container(border=True):
                 items = soup.find_all("item")[:10]
                 titles_b = [item.title.text for item in items]
                 all_brand_news[brand] = "\n".join(titles_b) if titles_b else "최신 뉴스 없음"
-                backup_display_data[brand] = titles_b[:2] if titles_b else ["최신 이슈 뉴스 없음"]
+                # 백업: 제목 원문 대신 일반 요약 문구 (AI 실패 시에도 헤드라인 노출 방지)
+                if brand == "KODEX":
+                    backup_display_data[brand] = ["AI·반도체 테마 ETF 라인업 확장 및 순자산 성장세", "월배당·인컴형 상품 마케팅 강화"]
+                elif brand == "TIGER":
+                    backup_display_data[brand] = ["미국 대표지수·커버드콜 상품 중심 마케팅", "신흥국 테마 ETF 라인업 다각화"]
+                elif brand == "RISE":
+                    backup_display_data[brand] = ["밸류업 프로그램 연계 상품 부각", "채권형·자산배분 안정형 라인업 강조"]
+                else:
+                    backup_display_data[brand] = ["글로벌 빅테크 밸류체인 압축투자 상품 부각", "장기채권 현물 등 인컴형 라인업 확대"]
             else:
                 all_brand_news[brand] = "뉴스 수집 실패"
                 backup_display_data[brand] = ["실시간 뉴스 수집 실패"]
@@ -463,7 +471,24 @@ with st.container(border=True):
             news_context = ""
             for brand, news in all_brand_news.items():
                 news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
-            prompt = f"다음 뉴스에서 브랜드별 핵심 이슈 2개를 추출해 반드시 형식을 갖춘 JSON 구조로 반환해줘:\n{news_context}"
+            prompt = f"""아래는 4개 ETF 브랜드(KODEX, TIGER, RISE, ACE)별 최신 뉴스 헤드라인 목록이야.
+각 브랜드별로 뉴스들을 종합 분석해서, 그 브랜드가 현재 직면한 핵심 이슈/동향을 '한 문장 요약'으로 2~3개 도출해줘.
+
+[작성 규칙]
+- 뉴스 제목을 그대로 베끼지 말 것. 여러 기사를 종합한 '요약 문장'으로 재작성할 것
+- 언론사명/출처 표기 제외, 핵심 메시지만
+- 각 요약은 25자~45자 내외의 완결된 한 문장
+- 반드시 아래 JSON 형식으로만 출력 (다른 설명 금지)
+
+{{
+  "KODEX": ["요약 문장1", "요약 문장2"],
+  "TIGER": ["요약 문장1", "요약 문장2"],
+  "RISE": ["요약 문장1", "요약 문장2"],
+  "ACE": ["요약 문장1", "요약 문장2"]
+}}
+
+[뉴스 데이터]
+{news_context}"""
             response = model.generate_content(prompt)
             if response and response.text:
                 _parsed = json.loads(response.text.strip())
@@ -1651,7 +1676,9 @@ def render_section_4():
                 result = generate_via_requests(prompt)
                 if result:
                     clean = result.strip().replace("```json", "").replace("```", "").strip()
-                    return json.loads(clean)
+                    _parsed = json.loads(clean)
+                    if isinstance(_parsed, dict) and all(k in _parsed for k in ("pick1", "pick2", "pick3")):
+                        return _parsed
             except:
                 pass
             return {
@@ -1692,20 +1719,7 @@ def render_section_4():
             - **투자 포인트**: {pick_analysis['pick3']['point']}
             """)
 
-        # ↓↓↓ 이 코드를 958번 줄 바로 뒤(col_p3 블록 끝나는 지점)에 추가
-        st.session_state['gemini_picks'] = {
-            "pick1": {"label": "🌟 주도주 모멘텀", "name": pick_1,
-                      "bg": "최근 주간 수익률 최상위권을 수성하며 시장의 강력한 상방 압력을 견인하고 있습니다.",
-                      "point": "기관 및 외국인의 대규모 양방향 순매수 유입세가 뚜렷하여 다음 주 초반까지 시세 연속성 기대감이 높습니다."},
-            "pick2": {"label": "📈 테마 순환매 수혜", "name": pick_2,
-                      "bg": "바닥권 다지기 이후 거래량이 눈에 띄게 증가하며 기술적 추세 전환의 신호탄을 쏘아 올렸습니다.",
-                      "point": "기존 주도주 섹터의 차익 실현 자금이 유입되는 국면이므로, 단기 순환매 랠리를 활용한 트레이딩이 유효합니다."},
-            "pick3": {"label": "🛡️ 리스크 헤지형", "name": pick_3,
-                      "bg": "매크로 불확실성 및 글로벌 지수 변동성 확대 국면에서도 탄탄한 펀더멘탈로 방어력을 입증했습니다.",
-                      "point": "시장 전반의 지수 조정 리스크에 대응하여 내 포트폴리오의 변동성을 낮추고 안정적인 안전판 역할을 하기에 적합합니다."}
-        }
-
-        # PDF 연동을 위해 session_state에 실시간 저장
+        # PDF/메일 연동을 위해 화면에 쓴 AI 분석 결과(pick_analysis)를 그대로 저장
         st.session_state['gemini_picks'] = {
             "pick1": {"label": "🌟 주도주 모멘텀", "name": pick_1,
                       "bg": pick_analysis['pick1']['bg'], "point": pick_analysis['pick1']['point']},
