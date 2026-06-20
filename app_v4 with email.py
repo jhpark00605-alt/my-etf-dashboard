@@ -1427,31 +1427,33 @@ def fetch_data(url, params, label):
 
 def get_krx_etf_returns(term_days=5, brand_filter="KODEX"):
     """[KRX 우선] pykrx로 ETF 전종목 등락률을 가져와 FuNETF 포맷으로 반환.
-    실패 시 빈 DataFrame 반환 → 상위 함수가 FuNETF로 폴백."""
+    반환: (DataFrame, 진단메시지). 실패 시 빈 DataFrame."""
     try:
         from pykrx import stock
+    except Exception as e:
+        return pd.DataFrame(), f"pykrx import 실패: {e}"
+    try:
         from datetime import datetime, timedelta
-        # 최근 영업일 기준 종료일/시작일 산출 (주말·휴일 대비 여유 둠)
         end = datetime.now()
-        # 종료일: 가장 최근 영업일 탐색 (최대 7일 역추적)
         end_str = None
+        last_err = ""
         for back in range(0, 7):
             d = (end - timedelta(days=back)).strftime("%Y%m%d")
             try:
-                test = stock.get_etf_ohlcv_by_date(d, d, "069500")  # KODEX200
+                test = stock.get_etf_ohlcv_by_date(d, d, "069500")
                 if test is not None and not test.empty:
                     end_str = d
                     break
-            except Exception:
+            except Exception as e:
+                last_err = str(e)
                 continue
         if not end_str:
-            return pd.DataFrame()
+            return pd.DataFrame(), f"영업일 탐색 실패 (마지막 에러: {last_err[:100]})"
         start_str = (datetime.strptime(end_str, "%Y%m%d") - timedelta(days=int(term_days) + 4)).strftime("%Y%m%d")
 
-        # 전종목 등락률 (1회 호출)
         chg = stock.get_etf_price_change_by_ticker(start_str, end_str)
         if chg is None or chg.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(), f"등락률 조회 결과 없음 ({start_str}~{end_str})"
 
         rows = []
         for ticker, r in chg.iterrows():
@@ -1465,21 +1467,21 @@ def get_krx_etf_returns(term_days=5, brand_filter="KODEX"):
             price = r.get("종가", r.get("시가", 0))
             rows.append({"ETF명": name, "종목코드": ticker, "수익률(%)": float(rate), "현재가": float(price)})
         if not rows:
-            return pd.DataFrame()
-        return pd.DataFrame(rows)
-    except Exception:
-        return pd.DataFrame()
+            return pd.DataFrame(), f"등락률 {len(chg)}건 받았으나 '{brand_filter}' 필터 통과 0건"
+        return pd.DataFrame(rows), f"KRX 성공: {len(rows)}건 ({start_str}~{end_str})"
+    except Exception as e:
+        return pd.DataFrame(), f"KRX 처리 예외: {e}"
 
 
 def get_weekly_rate_top(rank_cd="DESC", term_days=5):
     """주간/월간 등 선택된 기간별 수익률 데이터 수집.
     1순위: KRX(pykrx) / 2순위: FuNETF API / 3순위: 백업 데이터"""
     # 🥇 1순위: KRX에서 직접 수집
-    df_krx = get_krx_etf_returns(term_days=term_days, brand_filter="KODEX")
+    df_krx, _krx_msg = get_krx_etf_returns(term_days=term_days, brand_filter="KODEX")
+    st.session_state['_krx_diag'] = _krx_msg  # 진단용
     if not df_krx.empty:
         df_krx["수익률(%)"] = pd.to_numeric(df_krx["수익률(%)"], errors="coerce")
         df_krx = df_krx.dropna(subset=["수익률(%)"])
-        # 상승/하락 정렬
         df_krx = df_krx.sort_values(by="수익률(%)", ascending=(rank_cd != "DESC")).reset_index(drop=True)
         cols = [c for c in ["ETF명", "종목코드", "수익률(%)", "현재가"] if c in df_krx.columns]
         return df_krx[cols]
@@ -1654,6 +1656,8 @@ def render_section_4():
             # 💡 [핵심 연결] 사용자가 화면에서 선택한 기간(chosen_term)을 데이터 수집 및 테마 연산 함수에 주입합니다!
             df_rate = get_weekly_rate_top(rank_cd, term_days=chosen_term)
             df_theme = get_theme_rate(term_days=chosen_term)
+            # [임시 진단] KRX 수집 상태 표시
+            st.caption(f"🔧 데이터 소스 진단: {st.session_state.get('_krx_diag', '진단 정보 없음')}")
             
             # PDF 연동 컴포넌트를 위해 전역 메모리에 데이터 복사본 전달
             st.session_state['df_top_returns'] = df_rate.copy() if not df_rate.empty else pd.DataFrame()
