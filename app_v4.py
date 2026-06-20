@@ -16,8 +16,10 @@ import email.utils
 import streamlit.components.v1 as components
 import io
 import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 
 # ==============================================================================
 # 🔍 [네이버 API 엔진] 4대 운용사별 ETF 이벤트 수집 함수 (secrets 매칭 반영 버전)
@@ -116,6 +118,80 @@ def generate_via_requests(prompt, model_name="gemini-1.5-flash"):
     except:
         pass
     return None
+
+
+# ==============================================================================
+# 📧 [이메일 발송 엔진] SMTP를 통한 HTML 리포트 메일 발송 함수
+# ------------------------------------------------------------------------------
+# secrets.toml 에 아래 키를 설정해야 합니다 (Naver/회사메일 등 일반 SMTP 서버 공용):
+#   SMTP_HOST       예) smtp.naver.com / smtp.office365.com / mail.company.com
+#   SMTP_PORT       예) 587 (TLS) 또는 465 (SSL)
+#   SMTP_USER       로그인 계정 (보통 보내는 사람 이메일 주소와 동일)
+#   SMTP_PASSWORD   로그인 비밀번호 (회사메일은 보통 일반 로그인 비밀번호 그대로 사용)
+#   SMTP_SENDER_NAME (선택) 보낸사람 표시 이름, 예) "KODEX 마케팅 AI 에이전트"
+#   SMTP_USE_SSL    (선택) "true"면 465 포트 SSL 방식 사용, 기본값은 587 TLS(STARTTLS)
+# ==============================================================================
+def send_report_email(recipients, subject, html_body, pdf_bytes=None, pdf_filename="report.pdf"):
+    """
+    HTML 리포트를 메일 본문에 그대로 표시해서 발송합니다.
+    recipients: 수신자 이메일 문자열 리스트
+    subject: 메일 제목
+    html_body: 메일 본문에 표시할 HTML 문자열 (PDF 생성에 쓰인 html_string 재사용)
+    pdf_bytes: (선택) 함께 첨부할 PDF 바이너리. None이면 첨부하지 않음.
+    pdf_filename: 첨부 PDF 파일명
+    반환값: (성공 여부: bool, 메시지: str)
+    """
+    try:
+        smtp_host = st.secrets.get("SMTP_HOST")
+        smtp_port = int(st.secrets.get("SMTP_PORT", 587))
+        smtp_user = st.secrets.get("SMTP_USER")
+        smtp_password = st.secrets.get("SMTP_PASSWORD")
+        sender_name = st.secrets.get("SMTP_SENDER_NAME", "KODEX 마케팅 AI 에이전트")
+        use_ssl = str(st.secrets.get("SMTP_USE_SSL", "false")).lower() == "true"
+    except Exception:
+        smtp_host = smtp_port = smtp_user = smtp_password = None
+        sender_name = "KODEX 마케팅 AI 에이전트"
+        use_ssl = False
+
+    if not smtp_host or not smtp_user or not smtp_password:
+        return False, "Streamlit Secrets에 SMTP_HOST / SMTP_USER / SMTP_PASSWORD 설정이 없습니다. secrets.toml을 확인해주세요."
+
+    if not recipients:
+        return False, "받는 사람 이메일 주소가 비어 있습니다."
+
+    try:
+        msg = MIMEMultipart("mixed")
+        msg["Subject"] = subject
+        msg["From"] = f"{sender_name} <{smtp_user}>"
+        msg["To"] = ", ".join(recipients)
+
+        # 본문은 HTML 그대로 표시 (메일 클라이언트에서 열면 바로 리포트가 보임)
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+        # PDF 첨부 (선택)
+        if pdf_bytes:
+            part = MIMEApplication(pdf_bytes, Name=pdf_filename)
+            part["Content-Disposition"] = f'attachment; filename="{pdf_filename}"'
+            msg.attach(part)
+
+        if use_ssl or smtp_port == 465:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=20) as server:
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_user, recipients, msg.as_string())
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+                server.ehlo()
+                server.starttls(context=ssl.create_default_context())
+                server.ehlo()
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_user, recipients, msg.as_string())
+
+        return True, "발송 성공"
+    except smtplib.SMTPAuthenticationError:
+        return False, "SMTP 인증 실패: 계정 또는 비밀번호(또는 앱 비밀번호)를 확인해주세요."
+    except Exception as e:
+        return False, str(e)
 
 
 # ==============================================================================
@@ -1076,7 +1152,7 @@ with st.container(border=True):
             }), use_container_width=True, hide_index=True)
 
             # ==================================================================
-            # 🔗 [대시보드 최종 완본] 데이터 연산 필터 해제 및 카드 디자인 일원화
+            # 🔗 [대시보드 최종 완본] 데이터 연산 필터 해제 및 진단 기준 가이드라인 추가
             # ==================================================================
             st.markdown("<br><hr>", unsafe_allow_html=True)
             st.markdown("### 🧬 운용사별 이벤트&순매수와 상관관계 분석")
@@ -1107,7 +1183,7 @@ with st.container(border=True):
                         })
                         continue
 
-                    # 🔍 [해결 조치] 상단 연산 파트에서 글자 수를 50자로 자르던 if문 안전장치를 완전히 제거했습니다!
+                    # 🔍 상단 연산 파트 글자 수 제한 필터 완벽 해제
                     event_titles = " / ".join(list(df_comp_ev["제목"].unique())[:2])
 
                     # 마케팅 상품 키워드 추출
@@ -1168,7 +1244,27 @@ with st.container(border=True):
 
                 df_final_report = pd.DataFrame(summary_report_rows)
 
+                # 💡 [수정 및 반영 위치] 리포트 타이틀 바로 아래에 가이드 바 레이아웃 배치
                 st.markdown("<br>#### ✍️ DiD 분석 기반 이벤트 성과 분석", unsafe_allow_html=True)
+                
+                st.markdown("""
+                <div style='
+                    background-color: #F8FAFC; 
+                    border: 1px solid #E2E8F0; 
+                    border-radius: 6px; 
+                    padding: 3.5mm 4.5mm; 
+                    margin-bottom: 5mm; 
+                    font-size: 8.5pt; 
+                    color: #475569;
+                    line-height: 1.6;
+                '>
+                    <b>💡 DiD 진단 기준 안내 :</b><br/>
+                    🟢 <b>효용성 탁월 :</b> DiD 스코어 &gt; +0.05%p (시장 평균을 뛰어넘는 순수 유입)<br/>
+                    🟡 <b>효용성 보통 :</b> -0.05%p ≦ DiD 스코어 ≦ +0.05%p 이면서 실제 누적 순매수액 &gt; 0 (시장 호재 편승)<br/>
+                    🔴 <b>효용성 없음 :</b> DiD 스코어 &lt; -0.05%p (이벤트 개최에도 경쟁사 대조군 대비 자금 이탈)<br/>
+                    ⚪ <b>판단 불가 :</b> 푸쉬 종목의 수급 반응이 없거나 매칭 데이터 부재 (시장 무반응)
+                </div>
+                """, unsafe_allow_html=True)
                 
                 c1, c2 = st.columns(2)
                 c3, c4 = st.columns(2)
@@ -1187,7 +1283,6 @@ with st.container(border=True):
                     target_col = [c1, c2, c3, c4][idx]
                     event_titles_full = row['진행 중인 주요 이벤트']
                     
-                    # 진단 결과에 맞춘 하단 상태 바 색상 추출기
                     diag_text = row['최종 마케팅 효용 판단']
                     if "🟢" in diag_text: diag_bg, diag_border, diag_txt = "#DCFCE7", "#22C55E", "#15803D"
                     elif "🟡" in diag_text: diag_bg, diag_border, diag_txt = "#FEF9C3", "#EAB308", "#A16207"
@@ -1195,7 +1290,6 @@ with st.container(border=True):
                     else: diag_bg, diag_border, diag_txt = "#F1F5F9", "#94A3B8", "#475569"
 
                     with target_col:
-                        # 🎨 [UX 업그레이드] 카드 박스 내부에 '진단 결과 뱃지'까지 통합 빌드하여 깔끔하게 마감
                         st.markdown(f"""
                         <div style='
                             background-color: {style_config["bg"]}; 
@@ -1238,7 +1332,6 @@ with st.container(border=True):
                         </div>
                         """, unsafe_allow_html=True)
 
-            # 🛠️ [교정 구역] try 문과 정확히 들여쓰기 라인을 일치시켰습니다.
         except Exception as e:
             st.error(f"데이터 연산 처리 중 에러 발생: {e}")
                             
@@ -2628,13 +2721,17 @@ with st.container(border=True):
         pisa_status = pisa.CreatePDF(html_string, dest=pdf_buffer, encoding='utf-8')
         
         if pisa_status.err:
-            return None
+            return None, html_string
         
         pdf_buffer.seek(0)
-        return pdf_buffer.getvalue()
+        return pdf_buffer.getvalue(), html_string
 
     try:
-        pdf_data = generate_pdf_report()
+        pdf_data, report_html = generate_pdf_report()
+        # 이메일 발송 시 재사용할 수 있도록 세션에 저장
+        st.session_state['report_html'] = report_html
+        st.session_state['report_pdf'] = pdf_data
+
         if pdf_data:
             st.download_button(
                 label="📄 PDF 리포트 다운로드",
@@ -2647,192 +2744,45 @@ with st.container(border=True):
             st.error("통합 PDF 리포트 바이너리를 바인딩하는 과정에서 구조적 에러가 발생했습니다.")
     except Exception as e:
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
+        report_html = None
+        pdf_data = None
 
+    # ==========================================================================
+    # 📧 [부록] 리포트 HTML 이메일 발송 기능 (SMTP)
+    # ==========================================================================
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("📧 리포트 메일로 받기")
+    st.caption("위 리포트와 동일한 내용을 HTML 메일 본문으로 바로 받아볼 수 있습니다.")
 
-# ==============================================================================
-# 📨 [대시보드 100% 동기화] 뉴스·블로그·PDF 요약 전체 포함 프리미엄 HTML 리포트 메일 엔진
-# ==============================================================================
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+    with st.form("send_report_email_form"):
+        email_col1, email_col2 = st.columns([3, 1])
+        with email_col1:
+            recipient_input = st.text_input(
+                "받는 사람 이메일 (여러 명은 쉼표로 구분)",
+                placeholder="example1@naver.com, example2@company.com"
+            )
+        with email_col2:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            attach_pdf = st.checkbox("PDF 첨부", value=True)
 
-def send_html_dashboard_email(to_email, subject, html_content):
-    """HTML 대시보드를 수신자에게 전송하는 SMTP 메일 엔진"""
-    SMTP_SERVER = "smtp.naver.com"  
-    SMTP_PORT = 587                 
-    SMTP_USER = "jhpark0065@naver.com"  # 👈 본인 네이버 전체 메일 주소 입력
-    SMTP_PASSWORD = "7RF4P35T95ZZ"       # 👈 네이버 기기별 전용 비밀번호 입력
+        send_clicked = st.form_submit_button("✉️ 메일 발송", use_container_width=True)
 
-    try:
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = SMTP_USER
-        msg['To'] = to_email
-
-        mime_html = MIMEText(html_content, 'html', 'utf-8')
-        msg.attach(mime_html)
-
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.ehlo()          
-            server.starttls()      
-            server.ehlo()
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, to_email, msg.as_string())
-        return True
-    except Exception as e:
-        st.error(f"📧 네이버 메일 전송 중 통신 에러 발생: {e}")
-        return False
-
-# 🖥️ 대시보드 화면 최하단 UI 렌더링
-st.markdown("<br><hr>", unsafe_allow_html=True)
-st.markdown("### 📨 AI Agent 인텔리전스 종합 리포트 이메일 구독")
-st.caption("대시보드의 실시간 뉴스 동향, 4대 운용사 블로그 원문 리스트, 그리고 업로드한 PDF 분석 결과까지 하나도 빠짐없이 완벽히 담아 메일로 전송합니다.")
-
-with st.form("dashboard_email_form", clear_on_submit=False):
-    col_em1, col_em2 = st.columns([3, 1])
-    with col_em1:
-        receiver_address = st.text_input("수신할 이메일 주소를 입력하세요:", placeholder="executive@company.com", label_visibility="collapsed")
-    with col_em2:
-        send_clicked = st.form_submit_button("🚀 종합 HTML 리포트 발송")
-
-if send_clicked:
-    if not receiver_address:
-        st.warning("⚠️ 이메일 주소를 정확히 입력해 주세요.")
-    else:
-        with st.spinner("🎨 대시보드의 대용량 데이터를 고해상도 인라인 HTML 구조로 컴파일 중..."):
-            
-            # 📊 [대시보드 완전 동기화 데이터 추출]
-            kw_df = st.session_state.get('df_keywords', pd.DataFrame())
-            brief = st.session_state.get('live_brief', {"rising": "데이터 없음", "falling": "데이터 없음", "trend": "데이터 없음"})
-            blog_results = st.session_state.get('blog_analysis_results', [])
-            
-            # 📄 1. PDF 핵심 전략 요약본 가져오기 (사용자님 코드의 pdf_insights 매칭)
-            pdf_insights = st.session_state.get('pdf_insights', [
-                "업로드된 금융 보고서(AI전략서) 분석 데이터가 아직 세션에 로드되지 않았습니다.",
-                "대시보드 상단에서 PDF 분석을 먼저 진행하시면 리포트에 자동 포함됩니다.",
-                "대시보드 내부 세션 연동 대기 중"
-            ])
-            
-            # 📰 2. 뉴스 언급량 Top 5 테이블 빌드
-            table_rows_html = ""
-            if not kw_df.empty:
-                for idx, row in kw_df.head(5).iterrows():
-                    table_rows_html += f"""
-                    <tr>
-                        <td style="padding: 10px; border-bottom: 1px solid #E2E8F0; font-size: 13px; color: #334155;">🔥 {row['키워드']}</td>
-                        <td style="padding: 10px; border-bottom: 1px solid #E2E8F0; font-size: 13px; color: #0F172A; font-weight: bold; text-align: right;">{row['언급량']}회</td>
-                    </tr>
-                    """
-
-            # 🏢 3. 4대 운용사 블로그 수집 분석 카드 빌드 (이벤트, 주력상품, 핵심카피 통합)
-            cards_html = ""
-            if blog_results:
-                for res in blog_results:
-                    cards_html += f"""
-                    <div style="background-color: #F8FAFC; border: 1px solid {res['hex']}; border-left: 6px solid {res['hex']}; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-                        <h4 style="margin: 0 0 8px 0; color: #0F172A; font-size: 15px;">🏢 {res['company']}</h4>
-                        <p style="margin: 4px 0; font-size: 12.5px; color: #334155;">📣 <b>진행 이벤트:</b> {res.get('event_titles', '진행 중인 이벤트 데이터 파싱 대기')}</p>
-                        <p style="margin: 4px 0; font-size: 12.5px; color: #334155;">🎯 <b>주력 ETF 상품:</b> <span style="color: {res['hex']}; font-weight: bold;">{res['main_products']}</span></p>
-                        <p style="margin: 4px 0; font-size: 12.5px; color: #475569;">💡 <b>투자 마케팅 테마:</b> {res['marketing_theme']}</p>
-                        <p style="margin: 4px 0; font-size: 12.5px; color: #1E293B; font-style: italic; background-color: #FFFFFF; padding: 8px; border-radius: 4px; border: 1px solid #E2E8F0;">"{res['key_copy']}"</p>
-                    </div>
-                    """
+    if send_clicked:
+        recipients = [r.strip() for r in recipient_input.split(",") if r.strip()]
+        if not recipients:
+            st.warning("받는 사람 이메일 주소를 입력해주세요.")
+        elif not report_html:
+            st.error("발송할 리포트 HTML이 없습니다. 리포트 생성을 먼저 확인해주세요.")
+        else:
+            with st.spinner("메일을 발송하는 중입니다..."):
+                ok, msg = send_report_email(
+                    recipients=recipients,
+                    subject=f"[KODEX] 주간 마케팅 모니터링 리포트 ({datetime.now().strftime('%Y-%m-%d')})",
+                    html_body=report_html,
+                    pdf_bytes=pdf_data if attach_pdf else None,
+                    pdf_filename=f"KODEX_Perfect_Sync_Report_{datetime.now().strftime('%Y%m%d')}.pdf"
+                )
+            if ok:
+                st.success(f"메일을 발송했습니다 → {', '.join(recipients)}")
             else:
-                cards_html = "<div style='text-align:center; color:#94A3B8; font-size:13px; padding:15px; border: 1px dashed #CBD5E1; border-radius:6px;'>4대 자산운용사 블로그 수집 데이터가 부재합니다. 대시보드 조회를 수행해 주세요.</div>"
-
-            # 🎨 [초고도화 템플릿] 대시보드의 모든 알맹이가 완벽하게 통합된 임원 보고용 마크업
-            email_template = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="utf-8">
-            </head>
-            <body style="margin: 0; padding: 0; background-color: #F1F5F9; font-family: 'Malgun Gothic', dotum, sans-serif;">
-                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F1F5F9; padding: 40px 0;">
-                    <tr>
-                        <td align="center">
-                            <table border="0" cellpadding="0" cellspacing="0" width="650" style="background-color: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(15,23,42,0.08); border: 1px solid #E2E8F0;">
-                                
-                                <tr>
-                                    <td style="background-color: #0F172A; padding: 40px; text-align: left;">
-                                        <div style="font-size: 11px; font-weight: bold; color: #38BDF8; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px;">AI Agent Multi-Intelligence System</div>
-                                        <h1 style="margin: 0; color: #FFFFFF; font-size: 24px; font-weight: bold; letter-spacing: -0.5px;">KODEX 마케팅 인텔리전스 대시보드 종합 보고서</h1>
-                                    </td>
-                                </tr>
-                                
-                                <tr>
-                                    <td style="padding: 40px;">
-                                        <p style="margin: 0 0 30px 0; font-size: 14.5px; color: #334155; line-height: 1.65;">
-                                            본 보고서는 대시보드 내부 인텔리전스 시스템이 실시간 구글 뉴스 트렌드, 네이버 블로그 원문 데이터 및 업로드하신 <b>[금융 AI 전략서 PDF]</b>의 핵심 분석 데이터까지 모두 결합하여 동적 컴파일한 의사결정용 프리미엄 HTML 리포트입니다.
-                                        </p>
-                                        
-                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">📋 PDF 보고서 기반 AI 핵심 전략 요약</h3>
-                                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 30px;">
-                                            <tr>
-                                                <td style="padding: 12px 15px; background-color: #FAFAFA; border: 1px solid #E5E7EB; border-radius: 6px; margin-bottom: 10px;">
-                                                    <div style="font-weight: bold; color: #1E40AF; font-size: 13px; margin-bottom: 4px;">🌏 핵심 전략 01</div>
-                                                    <div style="font-size: 12.5px; color: #374151; line-height: 1.5;">{pdf_insights[0]}</div>
-                                                </td>
-                                            </tr>
-                                            <tr><td style="height:10px;"></td></tr>
-                                            <tr>
-                                                <td style="padding: 12px 15px; background-color: #FAFAFA; border: 1px solid #E5E7EB; border-radius: 6px; margin-bottom: 10px;">
-                                                    <div style="font-weight: bold; color: #C2410C; font-size: 13px; margin-bottom: 4px;">🌏 핵심 전략 02</div>
-                                                    <div style="font-size: 12.5px; color: #374151; line-height: 1.5;">{pdf_insights[1]}</div>
-                                                </td>
-                                            </tr>
-                                            <tr><td style="height:10px;"></td></tr>
-                                            <tr>
-                                                <td style="padding: 12px 15px; background-color: #FAFAFA; border: 1px solid #E5E7EB; border-radius: 6px;">
-                                                    <div style="font-weight: bold; color: #047857; font-size: 13px; margin-bottom: 4px;">🌏 핵심 전략 03</div>
-                                                    <div style="font-size: 12.5px; color: #374151; line-height: 1.5;">{pdf_insights[2]}</div>
-                                                </td>
-                                            </tr>
-                                        </table>
-                                        
-                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">🔥 시장 실시간 트렌드 브리핑</h3>
-                                        <div style="background-color: #F0FDF4; border-left: 5px solid #22C55E; padding: 14px 16px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #166534; line-height: 1.5;">
-                                            🚀 <b>라이징 마켓 테마:</b> {brief['rising']}
-                                        </div>
-                                        <div style="background-color: #FEF2F2; border-left: 5px solid #EF4444; padding: 14px 16px; border-radius: 4px; margin-bottom: 30px; font-size: 13px; color: #991B1B; line-height: 1.5;">
-                                            📉 <b>하락 및 소외 테마:</b> {brief['falling']}
-                                        </div>
-
-                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">📰 실시간 구글 뉴스 파싱 키워드 TOP 5</h3>
-                                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 35px; border-collapse: collapse;">
-                                            <thead>
-                                                <tr style="background-color: #F1F5F9;">
-                                                    <th align="left" style="padding: 12px 10px; font-size: 12px; color: #64748B; font-weight: bold;">핵심 키워드 주제</th>
-                                                    <th align="right" style="padding: 12px 10px; font-size: 12px; color: #64748B; font-weight: bold;">뉴스 언급 빈도</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {table_rows_html if table_rows_html else "<tr><td colspan='2' style='padding:20px; text-align:center; color:#94A3B8; font-size:13px;'>수집된 실시간 구글 뉴스 키워드가 없습니다.</td></tr>"}
-                                            </tbody>
-                                        </table>
-
-                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">📊 4대 경쟁 자산운용사 공식 블로그 모니터링</h3>
-                                        {cards_html}
-                                        
-                                    </td>
-                                </tr>
-                                
-                                <tr>
-                                    <td style="background-color: #F8FAFC; padding: 30px 40px; border-top: 1px solid #E2E8F0; text-align: center;">
-                                        <div style="font-size: 11px; color: #94A3B8; line-height: 1.6;">
-                                            본 보고서는 내부 시스템의 인텔리전스 세션 메모리와 연동되어 실시간 암호화 전송되는 금융 리포트입니다.<br/>
-                                            © 2026 KODEX AI Marketing Agent Dashboard. All rights reserved.
-                                        </div>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-            </html>
-            """
-            
-            success = send_html_dashboard_email(receiver_address, "[AI Agent] 실시간 ETF 마케팅 동향 및 PDF 핵심전략 인텔리전스 종합 보고서", email_template)
-            if success:
-                st.success(f"🎉 PDF 핵심 전략을 포함한 대시보드 전체 리포트가 '{receiver_address}' 주소로 완벽하게 발송되었습니다!")
+                st.error(f"메일 발송에 실패했습니다: {msg}")
