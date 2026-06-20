@@ -86,10 +86,9 @@ st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈
 
 # API 키 및 보안 관리 변수 설정
 GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
-# Gemini 모델명: 1.5-flash는 폐기(404)됨. 사용자 계정 가용 모델로 설정.
-# (진단 결과 확인된 목록: gemini-2.5-flash, gemini-2.0-flash 등)
+# Gemini 모델명: 무료 등급은 모델별 quota가 분리되므로, 429 시 다른 모델로 폴백.
 GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
+GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash"]
 API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
 NAVER_ID = st.secrets.get("NAVER_CLIENT_ID")
 NAVER_SECRET = st.secrets.get("NAVER_CLIENT_SECRET")
@@ -134,6 +133,10 @@ def generate_via_requests(prompt, model_name=None, max_tokens=8192, return_error
                 try:
                     url = f"https://generativelanguage.googleapis.com/{ver}/models/{m}:generateContent?key={GEMINI_KEY}"
                     res = requests.post(url, headers=headers, json=_pl, timeout=40)
+                    if res.status_code == 429:
+                        # 할당량 초과: 이 모델/버전은 포기하고 다음 모델로 (모델별 quota 분리)
+                        last_err = f"HTTP 429 RATE_LIMIT [{m}/{ver}]"
+                        break
                     if res.status_code != 200:
                         last_err = f"HTTP {res.status_code} [{m}/{ver}]: {res.text[:150]}"
                         continue  # 다음 payload(또는 버전)로
@@ -151,6 +154,9 @@ def generate_via_requests(prompt, model_name=None, max_tokens=8192, return_error
                 except Exception as e:
                     last_err = f"EXCEPTION [{m}/{ver}]: {e}"
                     continue
+            # 429로 break된 경우 다음 버전 시도도 무의미 → 다음 모델로
+            if "RATE_LIMIT" in last_err:
+                break
     return ("", last_err) if return_error else None
 
 
@@ -1987,9 +1993,7 @@ with st.container(border=True):
 {full_context}
 """
         try:
-            ai_insights, _err = generate_via_requests(insight_prompt, max_tokens=16384, return_error=True)
-            if _err:
-                st.caption(f"⚠️ 인사이트 AI 실패: {_err}")
+            ai_insights = generate_via_requests(insight_prompt, max_tokens=16384)
             if ai_insights:
                 parsed_lines = []
                 for block in ai_insights.split('\n\n'):
@@ -2006,10 +2010,8 @@ with st.container(border=True):
                             parsed_lines.append(clean)
                 if len(parsed_lines) >= 2:
                     final_insights = parsed_lines
-                else:
-                    st.caption(f"⚠️ 인사이트 파싱 {len(parsed_lines)}개. 원문 일부: {str(ai_insights)[:150]}")
         except Exception as e:
-            st.caption(f"⚠️ 인사이트 예외: {e}")
+            pass
 
     # ======================================================================
     # 가변 개수 출력 (3개면 3열, 그 이상이면 줄바꿈 배치)
