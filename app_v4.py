@@ -1704,18 +1704,24 @@ with st.container(border=True):
                         news_res = generate_via_requests(news_prompt, "gemini-1.5-flash")
                         
                         if news_res:
+                            st.session_state['news_summary'] = news_res  # [메일용] 뉴스 요약 저장
                             st.markdown(news_res)
                         else:
+                            st.session_state['news_summary'] = backup_news_report  # [메일용]
                             st.markdown(backup_news_report)
                     else:
+                        st.session_state['news_summary'] = backup_news_report  # [메일용]
                         st.markdown(backup_news_report)
                 else:
                     st.warning("🚨 'KODEX ETF' 관련 실시간 보도 뉴스를 탐색하지 못했습니다.")
+                    st.session_state['news_summary'] = backup_news_report  # [메일용]
                     st.markdown(backup_news_report)
             else:
                 st.error("❌ 뉴스 피드 서버 연결 지연")
+                st.session_state['news_summary'] = backup_news_report  # [메일용]
                 st.markdown(backup_news_report)
         except Exception as e:
+            st.session_state['news_summary'] = backup_news_report  # [메일용]
             st.markdown(backup_news_report)
 
 with col5_top_right:
@@ -3045,60 +3051,19 @@ def build_email_html_report():
     sec4 += card_close()
 
     # ======================================================================
-    # SECTION 5. 마케팅 성과 (뉴스 + 데이터랩 + 종합 인사이트)
+    # SECTION 5. 마케팅 성과 (뉴스 요약 + 종합 인사이트)
     # ======================================================================
     sec5 = card_open("💡", "Section 5. 마케팅 성과 & 종합 인사이트")
 
-    # 5-A. KODEX 마케팅/보도 뉴스
-    news = st.session_state.get("g_news_titles", [])
-    sec5 += sub_head("📰 KODEX 마케팅/보도 뉴스 동향")
-    if isinstance(news, list) and news:
-        items = ""
-        for t in news[:8]:
-            items += (f"<li style='font-size:12.5px;color:{C_TEXT};margin-bottom:5px;"
-                      f"line-height:1.5;'>{t}</li>")
-        sec5 += f"<ul style='margin:4px 0 4px 0;padding-left:18px;'>{items}</ul>"
+    # 5-A. KODEX 마케팅/보도 뉴스 요약본 (헤드라인 원문 대신 Gemini 요약)
+    news_summary = st.session_state.get("news_summary", "")
+    sec5 += sub_head("📰 KODEX 마케팅/보도 뉴스 동향 요약")
+    if isinstance(news_summary, str) and news_summary.strip():
+        sec5 += (f"<div style='font-size:12.5px;color:{C_TEXT};line-height:1.65;"
+                 f"background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;"
+                 f"padding:12px;'>{md_bold(news_summary.strip())}</div>")
     else:
-        sec5 += empty("뉴스 데이터 없음")
-
-    # 5-B. 네이버 데이터랩 트렌드 (텍스트 미니 추이)
-    df_sns = st.session_state.get("df_sns", pd.DataFrame())
-    sec5 += sub_head("📱 네이버 데이터랩 검색 트렌드 (최근 한 달)")
-    if isinstance(df_sns, pd.DataFrame) and not df_sns.empty and "검색 지수" in df_sns.columns:
-        vals = pd.to_numeric(df_sns["검색 지수"], errors="coerce").dropna()
-        if not vals.empty:
-            cur = float(vals.iloc[-1])
-            avg = float(vals.mean())
-            mx = float(vals.max())
-            mn = float(vals.min())
-            # 막대 스파크라인 (최근 14일)
-            spark = ""
-            tail = vals.tail(14).tolist()
-            vmax = max(tail) or 1
-            for x in tail:
-                h = max(3, round(x / vmax * 34))
-                spark += (f"<td style='vertical-align:bottom;padding:0 1px;'>"
-                          f"<div style='width:8px;height:{h}px;background:{C_ACCENT};"
-                          f"border-radius:2px 2px 0 0;'></div></td>")
-            sec5 += f"""
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
-              <tr>
-                <td style="width:62%;vertical-align:bottom;">
-                  <table cellpadding="0" cellspacing="0"><tr style="height:38px;">{spark}</tr></table>
-                  <div style="font-size:10px;color:{C_SUB};margin-top:4px;">최근 14일 검색지수 추이</div>
-                </td>
-                <td style="width:38%;vertical-align:top;padding-left:10px;">
-                  <div style="font-size:12px;color:{C_TEXT};line-height:1.7;">
-                    현재 <b style="color:{C_PRIMARY};">{cur:.0f}</b><br>
-                    기간평균 {avg:.0f}<br>
-                    최고 {mx:.0f} / 최저 {mn:.0f}</div>
-                </td>
-              </tr>
-            </table>"""
-        else:
-            sec5 += empty("데이터랩 수치 없음")
-    else:
-        sec5 += empty("데이터랩 데이터 없음")
+        sec5 += empty("뉴스 요약 데이터 없음")
 
     # 5-C. 종합 인사이트 (문자열 \n\n 분리 + 마크다운 굵게)
     final_insight = st.session_state.get("final_insight", "")
@@ -3149,7 +3114,7 @@ def build_email_html_report():
         <tr><td style="padding:8px 4px 24px;">
           <div style="font-size:11px;color:{C_SUB};line-height:1.6;text-align:center;">
             본 리포트는 대시보드 세션 데이터를 기반으로 자동 생성된 투자 참고용 자료입니다.<br>
-            데이터 출처: 네이버 검색/데이터랩 API, 운용사 공식 블로그·홈페이지, ETF 시세 API, Gemini 분석.
+            데이터 출처: 네이버 검색 API, 운용사 공식 블로그·홈페이지, ETF 시세 API, Gemini 분석.
           </div>
         </td></tr>
       </table>
