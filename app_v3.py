@@ -86,6 +86,10 @@ st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈
 
 # API 키 및 보안 관리 변수 설정
 GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
+# Gemini 모델명: 1.5-flash는 폐기(404)되어 최신 별칭으로 통일.
+# 계정별 가용성이 달라 후보를 순차 시도함.
+GEMINI_MODEL = "gemini-flash-latest"
+GEMINI_MODEL_FALLBACKS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite"]
 API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
 NAVER_ID = st.secrets.get("NAVER_CLIENT_ID")
 NAVER_SECRET = st.secrets.get("NAVER_CLIENT_SECRET")
@@ -100,34 +104,44 @@ st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기�
 st.divider()
 
 # Gemini API 직접 호출을 위한 경량 헬퍼 함수 (라이브러리 충돌 방지)
-def generate_via_requests(prompt, model_name="gemini-1.5-flash", max_tokens=2048, return_error=False):
+def generate_via_requests(prompt, model_name=None, max_tokens=2048, return_error=False):
     if not GEMINI_KEY:
         return ("", "NO_KEY") if return_error else None
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_KEY}"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.4, "maxOutputTokens": max_tokens}
-        }
-        res = requests.post(url, headers=headers, json=payload, timeout=30)
-        if res.status_code != 200:
-            err = f"HTTP {res.status_code}: {res.text[:200]}"
-            return ("", err) if return_error else None
-        data = res.json()
-        cands = data.get("candidates", [])
-        if not cands:
-            err = f"NO_CANDIDATES: {str(data)[:200]}"
-            return ("", err) if return_error else None
-        cand = cands[0]
-        parts = cand.get("content", {}).get("parts", [])
-        text = "".join(p.get("text", "") for p in parts).strip()
-        if not text:
-            err = f"EMPTY_TEXT finishReason={cand.get('finishReason','?')}"
-            return ("", err) if return_error else None
-        return (text, "") if return_error else text
-    except Exception as e:
-        return ("", f"EXCEPTION: {e}") if return_error else None
+    # 시도할 모델 목록 구성 (지정 모델 우선, 이후 폴백)
+    if model_name and model_name not in ("gemini-1.5-flash", "gemini-1.5-pro"):
+        models_to_try = [model_name] + [m for m in GEMINI_MODEL_FALLBACKS if m != model_name]
+    else:
+        models_to_try = list(GEMINI_MODEL_FALLBACKS)
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.4, "maxOutputTokens": max_tokens}
+    }
+    last_err = ""
+    for m in models_to_try:
+        # v1 우선, 실패 시 v1beta 재시도
+        for ver in ("v1", "v1beta"):
+            try:
+                url = f"https://generativelanguage.googleapis.com/{ver}/models/{m}:generateContent?key={GEMINI_KEY}"
+                res = requests.post(url, headers=headers, json=payload, timeout=30)
+                if res.status_code != 200:
+                    last_err = f"HTTP {res.status_code} [{m}/{ver}]: {res.text[:150]}"
+                    continue
+                data = res.json()
+                cands = data.get("candidates", [])
+                if not cands:
+                    last_err = f"NO_CANDIDATES [{m}/{ver}]: {str(data)[:150]}"
+                    continue
+                parts = cands[0].get("content", {}).get("parts", [])
+                text = "".join(p.get("text", "") for p in parts).strip()
+                if not text:
+                    last_err = f"EMPTY_TEXT [{m}/{ver}] finishReason={cands[0].get('finishReason','?')}"
+                    continue
+                return (text, "") if return_error else text
+            except Exception as e:
+                last_err = f"EXCEPTION [{m}/{ver}]: {e}"
+                continue
+    return ("", last_err) if return_error else None
 
 
 # ==============================================================================
@@ -146,7 +160,7 @@ def generate_live_market_briefing(gemini_key, keywords_data):
         import json
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name=GEMINI_MODEL,
             generation_config={"temperature": 0.2, "response_mime_type": "application/json"}
         )
         prompt = f"""
@@ -357,7 +371,7 @@ with st.container(border=True):
         if GEMINI_KEY:
             try:
                 yt_briefing_prompt = f"금융 마케팅 디렉터로서 유튜브 동향 데이터를 요약 및 제언해줘.\n데이터:\n{yt_context_data}"
-                yt_report = generate_via_requests(yt_briefing_prompt, "gemini-1.5-flash")
+                yt_report = generate_via_requests(yt_briefing_prompt)
                 if yt_report and len(yt_report.strip()) > 50:
                     st.markdown(yt_report)
                     st.session_state["yt_report_fixed"] = yt_report
@@ -419,7 +433,7 @@ with st.container(border=True):
             import google.generativeai as genai  
             genai.configure(api_key=GEMINI_KEY)
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
+                model_name=GEMINI_MODEL,
                 generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
             )
             news_context = ""
@@ -528,7 +542,7 @@ def analyze_official_blog_with_gemini(gemini_key, system_role, user_data, output
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name=GEMINI_MODEL,
             generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
         )
         prompt = f"""
@@ -1604,7 +1618,7 @@ def render_section_4():
 """
             try:
                 import json
-                result = generate_via_requests(prompt, "gemini-1.5-flash")
+                result = generate_via_requests(prompt)
                 if result:
                     clean = result.strip().replace("```json", "").replace("```", "").strip()
                     return json.loads(clean)
@@ -1716,7 +1730,7 @@ with st.container(border=True):
                     
                     if GEMINI_KEY:
                         news_prompt = f"다음은 구글 뉴스를 통해 실시간 수집된 KODEX ETF 관련 최신 보도자료 헤드라인들이야. 현재 KODEX가 언론을 통해 집중적으로 홍보하고 있는 핵심 마케팅 방향성이 무엇인지 요약 리포트를 가독성 좋게 작성해줘.\n\n뉴스 데이터:\n{g_news_context}"
-                        news_res = generate_via_requests(news_prompt, "gemini-1.5-flash")
+                        news_res = generate_via_requests(news_prompt)
                         
                         if news_res:
                             st.session_state['news_summary'] = news_res  # [메일용] 뉴스 요약 저장
@@ -1911,6 +1925,21 @@ with st.container(border=True):
     with st.expander("🔧 인사이트 진단 (디버그)", expanded=True):
         st.caption(f"GEMINI_KEY 존재: {bool(GEMINI_KEY)}")
         st.caption(f"full_context 길이: {len(full_context.strip())}자 (80자 초과해야 AI 호출)")
+        # 본인 키에서 실제 사용 가능한 모델 목록 조회
+        if GEMINI_KEY:
+            try:
+                _lm = requests.get(
+                    f"https://generativelanguage.googleapis.com/v1/models?key={GEMINI_KEY}",
+                    timeout=15)
+                if _lm.status_code == 200:
+                    _avail = [m["name"].replace("models/", "")
+                              for m in _lm.json().get("models", [])
+                              if "generateContent" in m.get("supportedGenerationMethods", [])]
+                    st.caption(f"✅ 사용 가능 모델 ({len(_avail)}개): {', '.join(_avail[:15])}")
+                else:
+                    st.caption(f"⚠️ 모델 목록 조회 실패 HTTP {_lm.status_code}: {_lm.text[:150]}")
+            except Exception as e:
+                st.caption(f"⚠️ 모델 목록 조회 예외: {e}")
         st.text_area("수집된 컨텍스트 미리보기", full_context[:1500], height=200)
 
     if GEMINI_KEY and len(full_context.strip()) > 80:
@@ -1929,7 +1958,7 @@ with st.container(border=True):
 {full_context}
 """
         try:
-            ai_insights, _ai_err = generate_via_requests(insight_prompt, "gemini-1.5-flash", max_tokens=2048, return_error=True)
+            ai_insights, _ai_err = generate_via_requests(insight_prompt, max_tokens=2048, return_error=True)
             if _ai_err:
                 st.caption(f"⚠️ AI 호출 실패 원인: {_ai_err}")
             if ai_insights:
