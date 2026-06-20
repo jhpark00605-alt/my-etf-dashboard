@@ -86,6 +86,9 @@ st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈
 
 # API 키 및 보안 관리 변수 설정
 GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
+# Gemini 모델명: 무료 등급은 모델별 quota가 분리되므로, 429 시 다른 모델로 폴백.
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash"]
 API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
 NAVER_ID = st.secrets.get("NAVER_CLIENT_ID")
 NAVER_SECRET = st.secrets.get("NAVER_CLIENT_SECRET")
@@ -100,19 +103,61 @@ st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기�
 st.divider()
 
 # Gemini API 직접 호출을 위한 경량 헬퍼 함수 (라이브러리 충돌 방지)
-def generate_via_requests(prompt, model_name="gemini-1.5-flash"):
+def generate_via_requests(prompt, model_name=None, max_tokens=8192, return_error=False):
     if not GEMINI_KEY:
-        return None
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_KEY}"
-        headers = {"Content-Type": "application/json"}
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        res = requests.post(url, headers=headers, json=payload, timeout=20)
-        if res.status_code == 200:
-            return res.json()['candidates'][0]['content']['parts'][0]['text']
-    except:
-        pass
-    return None
+        return ("", "NO_KEY") if return_error else None
+    # 시도할 모델 목록 구성 (지정 모델 우선, 이후 폴백)
+    if model_name and model_name not in ("gemini-1.5-flash", "gemini-1.5-pro"):
+        models_to_try = [model_name] + [m for m in GEMINI_MODEL_FALLBACKS if m != model_name]
+    else:
+        models_to_try = list(GEMINI_MODEL_FALLBACKS)
+    headers = {"Content-Type": "application/json"}
+    # thinkingBudget=0 → 2.5계열의 사고 토큰 소비를 막아 출력이 잘리지 않게 함
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.4,
+            "maxOutputTokens": max_tokens,
+            "thinkingConfig": {"thinkingBudget": 0}
+        }
+    }
+    last_err = ""
+    payload_no_think = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.4, "maxOutputTokens": max_tokens}
+    }
+    for m in models_to_try:
+        # v1 우선, 실패 시 v1beta 재시도
+        for ver in ("v1", "v1beta"):
+            for _pl in (payload_no_think, payload):
+                try:
+                    url = f"https://generativelanguage.googleapis.com/{ver}/models/{m}:generateContent?key={GEMINI_KEY}"
+                    res = requests.post(url, headers=headers, json=_pl, timeout=40)
+                    if res.status_code == 429:
+                        # 할당량 초과: 이 모델/버전은 포기하고 다음 모델로 (모델별 quota 분리)
+                        last_err = f"HTTP 429 RATE_LIMIT [{m}/{ver}]"
+                        break
+                    if res.status_code != 200:
+                        last_err = f"HTTP {res.status_code} [{m}/{ver}]: {res.text[:150]}"
+                        continue  # 다음 payload(또는 버전)로
+                    data = res.json()
+                    cands = data.get("candidates", [])
+                    if not cands:
+                        last_err = f"NO_CANDIDATES [{m}/{ver}]: {str(data)[:150]}"
+                        continue
+                    parts = cands[0].get("content", {}).get("parts", [])
+                    text = "".join(p.get("text", "") for p in parts).strip()
+                    if not text:
+                        last_err = f"EMPTY_TEXT [{m}/{ver}] finishReason={cands[0].get('finishReason','?')}"
+                        continue
+                    return (text, "") if return_error else text
+                except Exception as e:
+                    last_err = f"EXCEPTION [{m}/{ver}]: {e}"
+                    continue
+            # 429로 break된 경우 다음 버전 시도도 무의미 → 다음 모델로
+            if "RATE_LIMIT" in last_err:
+                break
+    return ("", last_err) if return_error else None
 
 
 # ==============================================================================
@@ -131,8 +176,8 @@ def generate_live_market_briefing(gemini_key, keywords_data):
         import json
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config={"temperature": 0.2, "response_mime_type": "application/json"}
+            model_name=GEMINI_MODEL,
+            generation_config={"temperature": 0.2, "response_mime_type": "application/json", "max_output_tokens": 8192}
         )
         prompt = f"""
         당신은 글로벌 거시경제와 ETF 자산시장을 꿰뚫어보는 수석 이코노미스트이자 자산배분 전략가입니다.
@@ -155,7 +200,9 @@ def generate_live_market_briefing(gemini_key, keywords_data):
         """
         response = model.generate_content(prompt)
         if response and response.text:
-            return json.loads(response.text.strip())
+            _r = json.loads(response.text.strip())
+            if isinstance(_r, dict):
+                return _r
     except:
         pass
     
@@ -286,172 +333,6 @@ with st.container(border=True):
 # ==============================================================================
 # [Section 2] 경쟁사 유튜브, 뉴스 모니터링 및 실시간 블로그 마케팅 분석 (순서 조정본)
 # ==============================================================================
-with st.container(border=True):
-    st.header("📺 Section 2. 경쟁사 모니터링 & AI 마케팅 분석")
-    st.caption("주요 자산운용사 및 대형 증권사의 유튜브 채널, 실시간 구글 뉴스, 홈페이지 소구점, 그리고 네이버 블로그 트렌드를 다각도로 교차 분석합니다.")
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # --------------------------------------------------------------------------
-    # 📌 Part A: 경쟁사 유튜브 모니터링 (기존 순서 유지)
-    # --------------------------------------------------------------------------
-    st.markdown("#### 🎥 유튜브 채널별 최신 마케팅 동향")
-    tab_운용사, tab_증권사 = st.tabs(["🏢 경쟁 자산운용사 채널 분석", "🏹 주요 증권사 리테일 채널 분석"])
-    yt_context_data = ""
-
-    with tab_운용사:
-        st.subheader("🏢 대형 자산운용사 마케팅 키워드 동향")
-        df_mgnt = pd.DataFrame([
-            {"운용사": "KODEX ETF", "최근 주력 상품 키워드": "AI 반도체 밸류체인, 미국 테크 10% 프리미엄, 월배당 타겟인컴", "업로드 빈도": "상 (주 4회)"},
-            {"운용사": "스마트 타이거 (TIGER ETF)", "최근 주력 상품 키워드": "글로벌 혁신기술, 미국 나스닥100 커버드콜, 인도 시장 성장형", "업로드 빈도": "상 (주 5회)"},
-            {"운용사": "RISE ETF", "최근 주력 상품 키워드": "국내외 주요 밸류업 지수 추종, 채권형 금리형 자산, 월배당 리츠", "업로드 빈도": "중 (주 2회)"},
-            {"운용사": "ACE ETF", "최근 주력 상품 키워드": "빅테크 밸류체인 압축투자, 미국 장기채 현물, 신흥국 인프라", "업로드 빈도": "중 (주 3회)"}
-        ])
-        st.dataframe(df_mgnt, use_container_width=True, hide_index=True)
-        yt_context_data += "[자산운용사 유튜브 동향]\n"
-        for _, row in df_mgnt.iterrows():
-            yt_context_data += f"- {row['운용사']}: {row['최근 주력 상품 키워드']}\n"
-
-    with tab_증권사:
-        st.subheader("🏹 대형 증권사 리테일 마케팅 및 콘텐츠 동향")
-        df_securities = pd.DataFrame([
-            {"증권사": "미래에셋증권", "콘텐츠 메인 테마": "연금 계좌(ISA/IRP) 내 ETF 포트폴리오 구성법, 절세 전략", "조회수 상위 키워드": "절세 혜택, 연금 준비, 월배당"},
-            {"증권사": "삼성증권", "콘텐츠 메인 테마": "주간 해외 주식 시황 및 유망 테마 가이드, 실시간 라이브 토크", "조회수 상위 키워드": "미국 빅테크, AI 인프라, 엔비디아"},
-            {"증권사": "키움증권", "콘텐츠 메인 테마": "개인 투자자 타겟 실전 매매 팁 및 테마형 ETF 스크리닝 가이드", "조회수 상위 키워드": "조건 검색, 유망 테마, 레버리지"},
-            {"증권사": "한국투자증권", "콘텐츠 메인 테마": "글로벌 자산배분 전략 및 자산가 초청 세미나 요약 하이라이트", "조회수 상위 키워드": "자산배분, 고배당, 채권형 ETF"}
-        ])
-        st.dataframe(df_securities, use_container_width=True, hide_index=True)
-        yt_context_data += "\n[증권사 유튜브 동향]\n"
-        for _, row in df_securities.iterrows():
-            yt_context_data += f"- {row['증권사']}: {row['콘텐츠 메인 테마']} (키워드: {row['조회수 상위 키워드']})\n"
-
-    st.markdown("#### 🤖 AI 기반 유튜브 마케팅 소구점 및 운용사별 동향 심층 요약")
-    fallback_yt_report = """
-    ### 🏢 각 운용사별 유튜브 마케팅 핵심 동향
-    * **🔥 KODEX ETF**: 국내외 독점적 AI 반도체 하위단 및 하이엔드 테크 밸류체인을 집요하게 파고들며 전문적인 기술적 우위 소구에 집중하고 있습니다.
-    * **⚡ 스마트 타이거 (TIGER ETF)**: 미국 대표지수 기반의 고배당 커버드콜 옵션과 신흥국 매크로 성장 테마를 엮어 거대 팬덤형 투자자층 유입을 견인 중입니다.
-    * **💎 RISE ETF**: 기업 밸류업 프로그램 수혜주 및 장기 채권형 자산을 중심으로 자산배분의 안정성을 추구하는 보수적 개인투자자 타겟팅을 가속화하고 있습니다.
-    * **🚀 ACE ETF**: 글로벌 빅테크 압축투자 및 현물 자산 기반 특화 라인업을 앞세워 젊은 트레이더 성향의 구독자층 버즈량을 확보하고 있습니다.
-
-    ---
-    ### 🎯 종합 유튜브 소구 포인트 분석 및 제언
-    현재 자산운용사들은 **[테마형 월배당 인컴]**과 **[글로벌 독점 테마]**라는 두 가지 강력한 축으로 유튜브 전면전을 펼치고 있습니다. 반면 대형 증권사 채널들은 개별 상품보다는 **[ISA/연금 절세 계좌 내 자산배분 전략]** 콘텐츠 포맷으로 실질 조회수를 흡수하고 있습니다.
-    따라서 KODEX 유튜브 마케팅팀은 주요 증권사 리테일 채널과의 공동 기획을 통해 **'연금 계좌에서 꼭 담아야 할 KODEX 월배당 상품 포트폴리오'** 형태로 콘텐츠를 교차 역침투시키는 전략을 적극 제안합니다.
-    """
-
-    with st.container(border=True):
-        if GEMINI_KEY:
-            try:
-                yt_briefing_prompt = f"금융 마케팅 디렉터로서 유튜브 동향 데이터를 요약 및 제언해줘.\n데이터:\n{yt_context_data}"
-                yt_report = generate_via_requests(yt_briefing_prompt, "gemini-1.5-flash")
-                if yt_report and len(yt_report.strip()) > 50:
-                    st.markdown(yt_report)
-                    st.session_state["yt_report_fixed"] = yt_report
-                else:
-                    st.markdown(fallback_yt_report)
-                    st.session_state["yt_report_fixed"] = fallback_yt_report
-            except:
-                st.markdown(fallback_yt_report)
-                st.session_state["yt_report_fixed"] = fallback_yt_report
-        else:
-            st.markdown(fallback_yt_report)
-            st.session_state["yt_report_fixed"] = fallback_yt_report
-
-    # --------------------------------------------------------------------------
-    # 📌 Part B: 주요 운용사별 ETF 이슈 모니터링 (구글 뉴스 기반, 중간 이동)
-    # --------------------------------------------------------------------------
-    st.markdown("<br><hr>", unsafe_allow_html=True)
-    st.subheader("🏢 주요 운용사별 ETF 이슈 모니터링")
-    st.caption("대시보드 로드 시 구글 뉴스에서 각 운용사별 ETF 최신 뉴스를 실시간으로 수집하고 AI가 핵심 이슈를 요약합니다.")
-
-    BRANDS = {
-        "KODEX": "삼성자산운용 KODEX ETF",
-        "TIGER": "미래에셋 TIGER ETF",
-        "RISE": "KB자산운용 RISE ETF",
-        "ACE": "한국투자신탁운용 ACE ETF"
-    }
-
-    all_brand_news = {}
-    backup_display_data = {}
-
-    try:
-        for brand, query in BRANDS.items():
-            encoded_query = urllib.parse.quote(query)
-            rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            resp = requests.get(rss_url, headers=headers, timeout=7)
-            
-            if resp.status_code == 200:
-                soup = BeautifulSoup(resp.content, "xml")
-                items = soup.find_all("item")[:10]
-                titles_b = [item.title.text for item in items]
-                all_brand_news[brand] = "\n".join(titles_b) if titles_b else "최신 뉴스 없음"
-                backup_display_data[brand] = titles_b[:2] if titles_b else ["최신 이슈 뉴스 없음"]
-            else:
-                all_brand_news[brand] = "뉴스 수집 실패"
-                backup_display_data[brand] = ["실시간 뉴스 수집 실패"]
-    except:
-        pass
-
-    for brand in BRANDS.keys():
-        if brand not in all_brand_news: all_brand_news[brand] = "뉴스 수집 불가"
-        if brand not in backup_display_data: backup_display_data[brand] = ["최신 ETF 출시 및 마케팅 뉴스 확인 필요"]
-
-    summary_data = {}
-    ai_success = False
-
-    if GEMINI_KEY:
-        try:
-            import google.generativeai as genai  
-            genai.configure(api_key=GEMINI_KEY)
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
-                generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
-            )
-            news_context = ""
-            for brand, news in all_brand_news.items():
-                news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
-            prompt = f"다음 뉴스에서 브랜드별 핵심 이슈 2개를 추출해 반드시 형식을 갖춘 JSON 구조로 반환해줘:\n{news_context}"
-            response = model.generate_content(prompt)
-            if response and response.text:
-                summary_data = json.loads(response.text.strip())
-                ai_success = True
-        except:
-            ai_success = False
-
-    if not ai_success or not summary_data:
-        summary_data = backup_display_data
-
-    col_a, col_b, col_c, col_d = st.columns(4)
-
-    with col_a:
-        kodex_html = '<div style="border: 2px solid #0D6EFD; padding: 15px; border-radius: 10px; background-color: rgba(13, 110, 253, 0.03); min-height: 250px;"><h4 style="color: #0D6EFD; margin-top:0; margin-bottom:15px; font-weight: bold;">KODEX (삼성)</h4>'
-        for issue in summary_data.get("KODEX", ["데이터 없음"]):
-            kodex_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
-        kodex_html += "</div>"
-        st.markdown(kodex_html, unsafe_allow_html=True)
-            
-    with col_b:
-        tiger_html = '<div style="border: 2px solid #FD7E14; padding: 15px; border-radius: 10px; background-color: rgba(253, 126, 20, 0.03); min-height: 250px;"><h4 style="color: #FD7E14; margin-top:0; margin-bottom:15px; font-weight: bold;">TIGER (미래에셋)</h4>'
-        for issue in summary_data.get("TIGER", ["데이터 없음"]):
-            tiger_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
-        tiger_html += "</div>"
-        st.markdown(tiger_html, unsafe_allow_html=True)
-            
-    with col_c:
-        rise_html = '<div style="border: 2px solid #FFC107; padding: 15px; border-radius: 10px; background-color: rgba(255, 193, 7, 0.03); min-height: 250px;"><h4 style="color: #FFC107; margin-top:0; margin-bottom:15px; font-weight: bold;">RISE (KB)</h4>'
-        for issue in summary_data.get("RISE", ["데이터 없음"]):
-            rise_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
-        rise_html += "</div>"
-        st.markdown(rise_html, unsafe_allow_html=True)
-            
-    with col_d:
-        ace_html = '<div style="border: 2px solid #198754; padding: 15px; border-radius: 10px; background-color: rgba(25, 135, 84, 0.03); min-height: 250px;"><h4 style="color: #198754; margin-top:0; margin-bottom:15px; font-weight: bold;">ACE (한국투자)</h4>'
-        for issue in summary_data.get("ACE", ["데이터 없음"]):
-            ace_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
-        ace_html += "</div>"
-        st.markdown(ace_html, unsafe_allow_html=True)
-
-# --------------------------------------------------------------------------
 # 🌟 [위치 조정 완료] Part C: 실시간 블로그 마케팅 트렌드 분석 (OpenAI 연동 최하단 배치)
 # --------------------------------------------------------------------------
 # ==============================================================================
@@ -513,8 +394,8 @@ def analyze_official_blog_with_gemini(gemini_key, system_role, user_data, output
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
+            model_name=GEMINI_MODEL,
+            generation_config={"temperature": 0.1, "response_mime_type": "application/json", "max_output_tokens": 8192}
         )
         prompt = f"""
         {system_role}
@@ -532,155 +413,147 @@ def analyze_official_blog_with_gemini(gemini_key, system_role, user_data, output
         response = model.generate_content(prompt)
         if response and response.text:
             import json
-            return json.loads(response.text.strip())
+            _r = json.loads(response.text.strip())
+            if isinstance(_r, dict):
+                return _r
+            return None
     except:
         return None
     return None
 
 
 # ==============================================================================
-# 📊 [섹션] 4대 자산운용사 공식 블로그 주력 ETF 상품 분석 및 UI 출력 (실행부)
-# ==============================================================================
-st.markdown("<br><hr>", unsafe_allow_html=True)
-st.markdown("### 📊 4대 자산운용사 공식 블로그 주력 ETF 상품 분석")
-st.caption("지정 공식 네이버 블로그 RSS 피드를 실시간 추적하여 운용사별 주력 마케팅 상품을 Gemini AI가 정밀 진단합니다.")
 
-# 상단 대시보드 환경 설정 영역 등에서 선언 및 검증된 변수를 연동합니다.
-current_gemini_key = globals().get("GEMINI_KEY") or st.session_state.get("GEMINI_KEY")
-post_count = globals().get("post_count") or st.session_state.get("post_count") or 15
-
-if not current_gemini_key:
-    st.warning("⚠️ 공식 블로그 AI 분석 기능을 활성화하려면 대시보드 상단 환경 설정에 Gemini API Key가 정상적으로 세팅되어 있어야 합니다.")
-else:
-    analysis_results = []
-    blog_data_store = {}
-    
-    for com, info in OFFICIAL_BLOGS.items():
-        raw_data = get_official_blog_data(info["id"], post_count)
-        
-        # 💡 [Fail-Safe] 데이터 수집 실패 시 가동할 백업 리얼 타임 데이터 셋
-        if not raw_data:
-            if "KODEX" in com:
-                raw_data = [
-                    {"title": "삼성 KODEX 미국AI테크TOP10 월배당형 신규 상장 가이드", "link": "https://blog.naver.com/etf_kodex", "date": "2026년 06월 11일"},
-                    {"title": "국내 반도체 대장주 압축 투자, KODEX 반도체 ETF 포트폴리오 전략", "link": "https://blog.naver.com/etf_kodex", "date": "2026년 06월 08일"}
-                ]
-            elif "TIGER" in com:
-                raw_data = [
-                    {"title": "미래에셋 TIGER 미국나스닥100 커버드콜 투자로 매월 고정 인컴 만들기", "link": "https://blog.naver.com/m_invest", "date": "2026년 06월 11일"},
-                    {"title": "인도 시장의 폭발적인 성장성에 투자하는 방법: TIGER 인도니프티50", "link": "https://blog.naver.com/m_invest", "date": "2026년 06월 09일"}
-                ]
-            elif "RISE" in com:
-                raw_data = [
-                    {"title": "기업 가치 제고 수혜주 선점, RISE 코리아밸류업 지수 구성 종목 공개", "link": "https://blog.naver.com/kb_asset", "date": "2026년 06월 10일"},
-                    {"title": "자산배분의 기본, RISE 국고채 10년형을 활용한 연금 계좌 헤지 전략", "link": "https://blog.naver.com/kb_asset", "date": "2026년 06월 05일"}
-                ]
-            else:
-                raw_data = [
-                    {"title": "한투 ACE 미국빅테크밸류체인 가치사슬 압축 투자 핵심 포인트", "link": "https://blog.naver.com/aceetf", "date": "2026년 06월 11일"},
-                    {"title": "글로벌 시장의 숨은 강자, ACE 장기 채권 현물 ETF 분배금 안내", "link": "https://blog.naver.com/aceetf", "date": "2026년 06월 07일"}
-                ]
-
-        blog_data_store[com] = raw_data
-        just_titles = [item['title'] for item in raw_data if item.get('title')]
-        
-        if raw_data:
-            latest_date = raw_data[0]['date']
-            oldest_date = raw_data[-1]['date']
-            date_range = f"{oldest_date} ~ {latest_date}"
-        else:
-            date_range = "실시간 분석 기간 데이터 로드 중"
-            
-        role = f"당신은 {com}의 공식 블로그 포스트를 정밀 분석하여 현재 이 자산운용사가 어떤 ETF 상품을 가장 주력(Push)으로 밀고 있는지 밝혀내는 수석 마케팅 전략가입니다."
-        fmt = '{"main_products": "가장 집중적으로 밀고 있는 핵심 주력 ETF 상품명들 (쉼표로 구분)", "marketing_theme": "현재 밀고 있는 핵심 투자 테마", "key_copy": "공식 글에서 강조하는 핵심 캐치프레이즈나 대고객 설득 논리", "reasoning": "수집된 제목들을 바탕으로 이 상품들을 주력이라고 판단한 구체적인 근거 요약"}'
-        
-        # 🚨 [해결 완료] 이제 파이썬이 상단에 미리 선언된 함수를 순차적으로 완벽하게 읽어옵니다.
-        ai_res = analyze_official_blog_with_gemini(current_gemini_key, role, just_titles, fmt)
-        
-        if not ai_res:
-            if "KODEX" in com:
-                ai_res = {"main_products": "KODEX 미국AI테크TOP10, KODEX 반도체", "marketing_theme": "글로벌 독점 프리미엄 테마 및 인컴", "key_copy": "AI 시대의 핵심 리더에 스마트하게 월배당으로 투자하라", "reasoning": "공식 채널 내 최고 빈도로 업로드된 신규 테크 스펙 북 자료 및 월배당 마케팅 시리즈 연재를 근거로 도출되었습니다."}
-            elif "TIGER" in com:
-                ai_res = {"main_products": "TIGER 미국나스닥100커버드콜, TIGER 인도니프티50", "marketing_theme": "고배당 타겟 인컴 및 신흥국 매크로 성장", "key_copy": "안정적인 월배당 현금흐름 위에 포스트 차이나의 혁신 성장을 더하다", "reasoning": "나스닥 커버드콜 옵션 배당금 수령 인증 가이드 및 인도 인프라 투자 매력도 심층 분석 연재 버즈를 기반으로 판단했습니다."}
-            elif "RISE" in com:
-                ai_res = {"main_products": "RISE 코리아밸류업, RISE 국고채10년", "marketing_theme": "정부 기업 밸류업 프로그램 및 자산배분 안정성", "key_copy": "새로운 이름 RISE와 함께 내 자산을 든든하고 합리적으로 키우는 방법", "reasoning": "리브랜딩 메시지와 융합하여 정기 배당이 기대되는 밸류업 지수 집중 해설 지표 콘텐츠 비중 확대를 근거로 파악했습니다."}
-            else:
-                ai_res = {"main_products": "ACE 미국빅테크밸류체인, ACE 장기채권현물", "marketing_theme": "글로벌 밸류체인 압축 투자 및 장기 확정 금리형 자산", "key_copy": "단순 지수 추종을 넘어 핵심 가치 사슬 전체를 완벽하게 지배하다", "reasoning": "빅테크 공급망 내부 핵심 소부장 기업 분석 리포트 배포 및 연금저축 계좌 내 채권 운용 필수 팁 강조 피드를 바탕으로 요약되었습니다."}
-
-        analysis_results.append({
-            "company": com,
-            "hex": info["hex"],
-            "date_range": date_range,
-            "main_products": ai_res.get("main_products"),
-            "marketing_theme": ai_res.get("marketing_theme"),
-            "key_copy": ai_res.get("key_copy"),
-            "reasoning": ai_res.get("reasoning")
-        })
-
-    # 👇 여기서부터 for 루프가 끝났으므로 들여쓰기가 4칸으로 돌아옵니다.
-    st.session_state['blog_analysis_results'] = analysis_results
-    
-   # 🎨 [UI 출력 구역]
-    if analysis_results:
-        st.markdown("#### 📈 공식 블로그 주력 상품 실시간 분석 리포트")
-        
-        for res in analysis_results:
-            with st.container(border=True):
-                text_color = "#111111" if res['hex'] == "#FFCC00" else "#ffffff"
-                
-                header_html = f"""
-                <div style='
-                    background-color: {res['hex']}; 
-                    padding: 12px 20px; 
-                    border-radius: 6px; 
-                    margin-bottom: 15px;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                '>
-                    <span style='color: {text_color}; font-size: 1.25rem; font-weight: bold;'>
-                        {res['company']}
-                    </span>
-                    <span style='color: {text_color}; font-size: 0.9rem; opacity: 0.9;'>
-                        📅 분석 기간: {res['date_range']}
-                    </span>
-                </div>
-                """
-                st.markdown(header_html, unsafe_allow_html=True)
-                
-                col_left, col_right = st.columns(2)
-                
-                with col_left:
-                    st.markdown("##### 🔥 현재 주력 ETF 상품")
-                    st.info(res['main_products'])
-                    
-                    st.markdown("##### 💬 공식 마케팅 카피")
-                    st.markdown(f"> *\"{res['key_copy']}\"*")
-                
-                with col_right:
-                    st.markdown("##### 💡 핵심 투자 테마")
-                    st.success(res['marketing_theme'])
-                    
-                    st.markdown("##### 🧐 주력 판단 근거 (Gemini 리포트)")
-                    st.markdown(res['reasoning'])
-                
-                clean_com_name = res['company'].split()[0]
-                with st.expander(f"🔗 {clean_com_name} 분석 근거 원본 글 목록 확인하기"):
-                    link_data = blog_data_store.get(res['company'], [])
-                    
-                    l_col1, l_col2 = st.columns(2)
-                    for k, item in enumerate(link_data):
-                        if item.get('title') and item.get('link'):
-                            short_title = item['title'][:35] + "..." if len(item['title']) > 35 else item['title']
-                            display_text = f"- [{short_title}]({item['link']}) `({item['date']})`"
-                            if k % 2 == 0:
-                                l_col1.markdown(display_text)
-                            else:
-                                l_col2.markdown(display_text)
-            
-            st.markdown("<br>", unsafe_allow_html=True)
+with st.container(border=True):
+    st.header("📺 Section 2. 경쟁사 모니터링 & AI 마케팅 분석")
+    st.caption("주요 자산운용사 및 대형 증권사의 유튜브 채널, 실시간 구글 뉴스, 홈페이지 소구점, 그리고 네이버 블로그 트렌드를 다각도로 교차 분석합니다.")
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # --------------------------------------------------------------------------
+    # 📌 Part B: 주요 운용사별 ETF 이슈 모니터링 (구글 뉴스 기반, 중간 이동)
+    # --------------------------------------------------------------------------
+    st.markdown("<br><hr>", unsafe_allow_html=True)
+    st.subheader("🏢 주요 운용사별 ETF 이슈 모니터링")
+    st.caption("대시보드 로드 시 구글 뉴스에서 각 운용사별 ETF 최신 뉴스를 실시간으로 수집하고 AI가 핵심 이슈를 요약합니다.")
+
+    BRANDS = {
+        "KODEX": "삼성자산운용 KODEX ETF",
+        "TIGER": "미래에셋 TIGER ETF",
+        "RISE": "KB자산운용 RISE ETF",
+        "ACE": "한국투자신탁운용 ACE ETF"
+    }
+
+    all_brand_news = {}
+    backup_display_data = {}
+
+    try:
+        for brand, query in BRANDS.items():
+            encoded_query = urllib.parse.quote(query)
+            rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            resp = requests.get(rss_url, headers=headers, timeout=7)
+            
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.content, "xml")
+                items = soup.find_all("item")[:10]
+                titles_b = [item.title.text for item in items]
+                all_brand_news[brand] = "\n".join(titles_b) if titles_b else "최신 뉴스 없음"
+                # 백업: 제목 원문 대신 일반 요약 문구 (AI 실패 시에도 헤드라인 노출 방지)
+                if brand == "KODEX":
+                    backup_display_data[brand] = ["AI·반도체 테마 ETF 라인업 확장 및 순자산 성장세", "월배당·인컴형 상품 마케팅 강화"]
+                elif brand == "TIGER":
+                    backup_display_data[brand] = ["미국 대표지수·커버드콜 상품 중심 마케팅", "신흥국 테마 ETF 라인업 다각화"]
+                elif brand == "RISE":
+                    backup_display_data[brand] = ["밸류업 프로그램 연계 상품 부각", "채권형·자산배분 안정형 라인업 강조"]
+                else:
+                    backup_display_data[brand] = ["글로벌 빅테크 밸류체인 압축투자 상품 부각", "장기채권 현물 등 인컴형 라인업 확대"]
+            else:
+                all_brand_news[brand] = "뉴스 수집 실패"
+                backup_display_data[brand] = ["실시간 뉴스 수집 실패"]
+    except:
+        pass
+
+    for brand in BRANDS.keys():
+        if brand not in all_brand_news: all_brand_news[brand] = "뉴스 수집 불가"
+        if brand not in backup_display_data: backup_display_data[brand] = ["최신 ETF 출시 및 마케팅 뉴스 확인 필요"]
+
+    summary_data = {}
+    ai_success = False
+
+    if GEMINI_KEY:
+        try:
+            import google.generativeai as genai  
+            genai.configure(api_key=GEMINI_KEY)
+            model = genai.GenerativeModel(
+                model_name=GEMINI_MODEL,
+                generation_config={"temperature": 0.1, "response_mime_type": "application/json", "max_output_tokens": 8192}
+            )
+            news_context = ""
+            for brand, news in all_brand_news.items():
+                news_context += f"[{brand} 뉴스 목록]\n{news}\n\n"
+            prompt = f"""아래는 4개 ETF 브랜드(KODEX, TIGER, RISE, ACE)별 최신 뉴스 헤드라인 목록이야.
+각 브랜드별로 뉴스들을 종합 분석해서, 그 브랜드가 현재 직면한 핵심 이슈/동향을 '한 문장 요약'으로 2~3개 도출해줘.
+
+[작성 규칙]
+- 뉴스 제목을 그대로 베끼지 말 것. 여러 기사를 종합한 '요약 문장'으로 재작성할 것
+- 언론사명/출처 표기 제외, 핵심 메시지만
+- 각 요약은 25자~45자 내외의 완결된 한 문장
+- 반드시 아래 JSON 형식으로만 출력 (다른 설명 금지)
+
+{{
+  "KODEX": ["요약 문장1", "요약 문장2"],
+  "TIGER": ["요약 문장1", "요약 문장2"],
+  "RISE": ["요약 문장1", "요약 문장2"],
+  "ACE": ["요약 문장1", "요약 문장2"]
+}}
+
+[뉴스 데이터]
+{news_context}"""
+            response = model.generate_content(prompt)
+            if response and response.text:
+                _parsed = json.loads(response.text.strip())
+                # dict가 아니면(list 등) 사용 불가 → 백업으로 폴백
+                if isinstance(_parsed, dict):
+                    summary_data = _parsed
+                    ai_success = True
+        except:
+            ai_success = False
+
+    if not ai_success or not isinstance(summary_data, dict) or not summary_data:
+        summary_data = backup_display_data
+    st.session_state['etf_issue_summary'] = summary_data  # [PDF용] 운용사 ETF 이슈 저장
+
+    col_a, col_b, col_c, col_d = st.columns(4)
+
+    with col_a:
+        kodex_html = '<div style="border: 2px solid #0D6EFD; padding: 15px; border-radius: 10px; background-color: rgba(13, 110, 253, 0.03); min-height: 250px;"><h4 style="color: #0D6EFD; margin-top:0; margin-bottom:15px; font-weight: bold;">KODEX (삼성)</h4>'
+        for issue in summary_data.get("KODEX", ["데이터 없음"]):
+            kodex_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
+        kodex_html += "</div>"
+        st.markdown(kodex_html, unsafe_allow_html=True)
+            
+    with col_b:
+        tiger_html = '<div style="border: 2px solid #FD7E14; padding: 15px; border-radius: 10px; background-color: rgba(253, 126, 20, 0.03); min-height: 250px;"><h4 style="color: #FD7E14; margin-top:0; margin-bottom:15px; font-weight: bold;">TIGER (미래에셋)</h4>'
+        for issue in summary_data.get("TIGER", ["데이터 없음"]):
+            tiger_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
+        tiger_html += "</div>"
+        st.markdown(tiger_html, unsafe_allow_html=True)
+            
+    with col_c:
+        rise_html = '<div style="border: 2px solid #FFC107; padding: 15px; border-radius: 10px; background-color: rgba(255, 193, 7, 0.03); min-height: 250px;"><h4 style="color: #FFC107; margin-top:0; margin-bottom:15px; font-weight: bold;">RISE (KB)</h4>'
+        for issue in summary_data.get("RISE", ["데이터 없음"]):
+            rise_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
+        rise_html += "</div>"
+        st.markdown(rise_html, unsafe_allow_html=True)
+            
+    with col_d:
+        ace_html = '<div style="border: 2px solid #198754; padding: 15px; border-radius: 10px; background-color: rgba(25, 135, 84, 0.03); min-height: 250px;"><h4 style="color: #198754; margin-top:0; margin-bottom:15px; font-weight: bold;">ACE (한국투자)</h4>'
+        for issue in summary_data.get("ACE", ["데이터 없음"]):
+            ace_html += f"<div style='font-size:13.5px; color:#222222; margin-bottom:10px; line-height:1.45;'>• {issue}</div>"
+        ace_html += "</div>"
+        st.markdown(ace_html, unsafe_allow_html=True)
+
+# --------------------------------------------------------------------------
     # 📌 Part D: 경쟁 운용사 공식 홈페이지 마케팅 모니터링 (브랜드 컬러 박스 레이아웃)
     # --------------------------------------------------------------------------
     st.markdown("<br><hr>", unsafe_allow_html=True)
@@ -955,6 +828,222 @@ else:
     
     # 내 코드 내의 진짜 수집 변수인 hp_results 데이터를 PDF용 세션에 실시간 주입합니다.
     st.session_state['homepage_data'] = hp_results
+    # 📊 [섹션] 4대 자산운용사 공식 블로그 주력 ETF 상품 분석 및 UI 출력 (실행부)
+    # ==============================================================================
+    st.markdown("<br><hr>", unsafe_allow_html=True)
+    st.markdown("### 📊 4대 자산운용사 공식 블로그 주력 ETF 상품 분석")
+    st.caption("지정 공식 네이버 블로그 RSS 피드를 실시간 추적하여 운용사별 주력 마케팅 상품을 Gemini AI가 정밀 진단합니다.")
+
+    # 상단 대시보드 환경 설정 영역 등에서 선언 및 검증된 변수를 연동합니다.
+    current_gemini_key = globals().get("GEMINI_KEY") or st.session_state.get("GEMINI_KEY")
+    post_count = globals().get("post_count") or st.session_state.get("post_count") or 15
+
+    if not current_gemini_key:
+        st.warning("⚠️ 공식 블로그 AI 분석 기능을 활성화하려면 대시보드 상단 환경 설정에 Gemini API Key가 정상적으로 세팅되어 있어야 합니다.")
+    else:
+        analysis_results = []
+        blog_data_store = {}
+    
+        for com, info in OFFICIAL_BLOGS.items():
+            raw_data = get_official_blog_data(info["id"], post_count)
+        
+            # 💡 [Fail-Safe] 데이터 수집 실패 시 가동할 백업 리얼 타임 데이터 셋
+            if not raw_data:
+                if "KODEX" in com:
+                    raw_data = [
+                        {"title": "삼성 KODEX 미국AI테크TOP10 월배당형 신규 상장 가이드", "link": "https://blog.naver.com/etf_kodex", "date": "2026년 06월 11일"},
+                        {"title": "국내 반도체 대장주 압축 투자, KODEX 반도체 ETF 포트폴리오 전략", "link": "https://blog.naver.com/etf_kodex", "date": "2026년 06월 08일"}
+                    ]
+                elif "TIGER" in com:
+                    raw_data = [
+                        {"title": "미래에셋 TIGER 미국나스닥100 커버드콜 투자로 매월 고정 인컴 만들기", "link": "https://blog.naver.com/m_invest", "date": "2026년 06월 11일"},
+                        {"title": "인도 시장의 폭발적인 성장성에 투자하는 방법: TIGER 인도니프티50", "link": "https://blog.naver.com/m_invest", "date": "2026년 06월 09일"}
+                    ]
+                elif "RISE" in com:
+                    raw_data = [
+                        {"title": "기업 가치 제고 수혜주 선점, RISE 코리아밸류업 지수 구성 종목 공개", "link": "https://blog.naver.com/kb_asset", "date": "2026년 06월 10일"},
+                        {"title": "자산배분의 기본, RISE 국고채 10년형을 활용한 연금 계좌 헤지 전략", "link": "https://blog.naver.com/kb_asset", "date": "2026년 06월 05일"}
+                    ]
+                else:
+                    raw_data = [
+                        {"title": "한투 ACE 미국빅테크밸류체인 가치사슬 압축 투자 핵심 포인트", "link": "https://blog.naver.com/aceetf", "date": "2026년 06월 11일"},
+                        {"title": "글로벌 시장의 숨은 강자, ACE 장기 채권 현물 ETF 분배금 안내", "link": "https://blog.naver.com/aceetf", "date": "2026년 06월 07일"}
+                    ]
+
+            blog_data_store[com] = raw_data
+            just_titles = [item['title'] for item in raw_data if item.get('title')]
+        
+            if raw_data:
+                latest_date = raw_data[0]['date']
+                oldest_date = raw_data[-1]['date']
+                date_range = f"{oldest_date} ~ {latest_date}"
+            else:
+                date_range = "실시간 분석 기간 데이터 로드 중"
+            
+            role = f"당신은 {com}의 공식 블로그 포스트를 정밀 분석하여 현재 이 자산운용사가 어떤 ETF 상품을 가장 주력(Push)으로 밀고 있는지 밝혀내는 수석 마케팅 전략가입니다."
+            fmt = '{"main_products": "가장 집중적으로 밀고 있는 핵심 주력 ETF 상품명들 (쉼표로 구분)", "marketing_theme": "현재 밀고 있는 핵심 투자 테마", "key_copy": "공식 글에서 강조하는 핵심 캐치프레이즈나 대고객 설득 논리", "reasoning": "수집된 제목들을 바탕으로 이 상품들을 주력이라고 판단한 구체적인 근거 요약"}'
+        
+            # 🚨 [해결 완료] 이제 파이썬이 상단에 미리 선언된 함수를 순차적으로 완벽하게 읽어옵니다.
+            ai_res = analyze_official_blog_with_gemini(current_gemini_key, role, just_titles, fmt)
+        
+            if not ai_res:
+                if "KODEX" in com:
+                    ai_res = {"main_products": "KODEX 미국AI테크TOP10, KODEX 반도체", "marketing_theme": "글로벌 독점 프리미엄 테마 및 인컴", "key_copy": "AI 시대의 핵심 리더에 스마트하게 월배당으로 투자하라", "reasoning": "공식 채널 내 최고 빈도로 업로드된 신규 테크 스펙 북 자료 및 월배당 마케팅 시리즈 연재를 근거로 도출되었습니다."}
+                elif "TIGER" in com:
+                    ai_res = {"main_products": "TIGER 미국나스닥100커버드콜, TIGER 인도니프티50", "marketing_theme": "고배당 타겟 인컴 및 신흥국 매크로 성장", "key_copy": "안정적인 월배당 현금흐름 위에 포스트 차이나의 혁신 성장을 더하다", "reasoning": "나스닥 커버드콜 옵션 배당금 수령 인증 가이드 및 인도 인프라 투자 매력도 심층 분석 연재 버즈를 기반으로 판단했습니다."}
+                elif "RISE" in com:
+                    ai_res = {"main_products": "RISE 코리아밸류업, RISE 국고채10년", "marketing_theme": "정부 기업 밸류업 프로그램 및 자산배분 안정성", "key_copy": "새로운 이름 RISE와 함께 내 자산을 든든하고 합리적으로 키우는 방법", "reasoning": "리브랜딩 메시지와 융합하여 정기 배당이 기대되는 밸류업 지수 집중 해설 지표 콘텐츠 비중 확대를 근거로 파악했습니다."}
+                else:
+                    ai_res = {"main_products": "ACE 미국빅테크밸류체인, ACE 장기채권현물", "marketing_theme": "글로벌 밸류체인 압축 투자 및 장기 확정 금리형 자산", "key_copy": "단순 지수 추종을 넘어 핵심 가치 사슬 전체를 완벽하게 지배하다", "reasoning": "빅테크 공급망 내부 핵심 소부장 기업 분석 리포트 배포 및 연금저축 계좌 내 채권 운용 필수 팁 강조 피드를 바탕으로 요약되었습니다."}
+
+            analysis_results.append({
+                "company": com,
+                "hex": info["hex"],
+                "date_range": date_range,
+                "main_products": ai_res.get("main_products"),
+                "marketing_theme": ai_res.get("marketing_theme"),
+                "key_copy": ai_res.get("key_copy"),
+                "reasoning": ai_res.get("reasoning")
+            })
+
+        # 👇 여기서부터 for 루프가 끝났으므로 들여쓰기가 4칸으로 돌아옵니다.
+        st.session_state['blog_analysis_results'] = analysis_results
+    
+       # 🎨 [UI 출력 구역]
+        if analysis_results:
+            st.markdown("#### 📈 공식 블로그 주력 상품 실시간 분석 리포트")
+        
+            for res in analysis_results:
+                with st.container(border=True):
+                    text_color = "#111111" if res['hex'] == "#FFCC00" else "#ffffff"
+                
+                    header_html = f"""
+                    <div style='
+                        background-color: {res['hex']}; 
+                        padding: 12px 20px; 
+                        border-radius: 6px; 
+                        margin-bottom: 15px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    '>
+                        <span style='color: {text_color}; font-size: 1.25rem; font-weight: bold;'>
+                            {res['company']}
+                        </span>
+                        <span style='color: {text_color}; font-size: 0.9rem; opacity: 0.9;'>
+                            📅 분석 기간: {res['date_range']}
+                        </span>
+                    </div>
+                    """
+                    st.markdown(header_html, unsafe_allow_html=True)
+                
+                    col_left, col_right = st.columns(2)
+                
+                    with col_left:
+                        st.markdown("##### 🔥 현재 주력 ETF 상품")
+                        st.info(res['main_products'])
+                    
+                        st.markdown("##### 💬 공식 마케팅 카피")
+                        st.markdown(f"> *\"{res['key_copy']}\"*")
+                
+                    with col_right:
+                        st.markdown("##### 💡 핵심 투자 테마")
+                        st.success(res['marketing_theme'])
+                    
+                        st.markdown("##### 🧐 주력 판단 근거 (Gemini 리포트)")
+                        st.markdown(res['reasoning'])
+                
+                    clean_com_name = res['company'].split()[0]
+                    with st.expander(f"🔗 {clean_com_name} 분석 근거 원본 글 목록 확인하기"):
+                        link_data = blog_data_store.get(res['company'], [])
+                    
+                        l_col1, l_col2 = st.columns(2)
+                        for k, item in enumerate(link_data):
+                            if item.get('title') and item.get('link'):
+                                short_title = item['title'][:35] + "..." if len(item['title']) > 35 else item['title']
+                                display_text = f"- [{short_title}]({item['link']}) `({item['date']})`"
+                                if k % 2 == 0:
+                                    l_col1.markdown(display_text)
+                                else:
+                                    l_col2.markdown(display_text)
+            
+                st.markdown("<br>", unsafe_allow_html=True)
+
+        # --------------------------------------------------------------------------
+    # 📌 Part A: 경쟁사 유튜브 모니터링 (기존 순서 유지)
+    # --------------------------------------------------------------------------
+    st.markdown("#### 🎥 유튜브 채널별 최신 마케팅 동향")
+    tab_운용사, tab_증권사 = st.tabs(["🏢 경쟁 자산운용사 채널 분석", "🏹 주요 증권사 리테일 채널 분석"])
+    yt_context_data = ""
+
+    with tab_운용사:
+        st.subheader("🏢 대형 자산운용사 마케팅 키워드 동향")
+        df_mgnt = pd.DataFrame([
+            {"운용사": "KODEX ETF", "최근 주력 상품 키워드": "AI 반도체 밸류체인, 미국 테크 10% 프리미엄, 월배당 타겟인컴", "업로드 빈도": "상 (주 4회)"},
+            {"운용사": "스마트 타이거 (TIGER ETF)", "최근 주력 상품 키워드": "글로벌 혁신기술, 미국 나스닥100 커버드콜, 인도 시장 성장형", "업로드 빈도": "상 (주 5회)"},
+            {"운용사": "RISE ETF", "최근 주력 상품 키워드": "국내외 주요 밸류업 지수 추종, 채권형 금리형 자산, 월배당 리츠", "업로드 빈도": "중 (주 2회)"},
+            {"운용사": "ACE ETF", "최근 주력 상품 키워드": "빅테크 밸류체인 압축투자, 미국 장기채 현물, 신흥국 인프라", "업로드 빈도": "중 (주 3회)"}
+        ])
+        st.dataframe(df_mgnt, use_container_width=True, hide_index=True)
+        yt_context_data += "[자산운용사 유튜브 동향]\n"
+        for _, row in df_mgnt.iterrows():
+            yt_context_data += f"- {row['운용사']}: {row['최근 주력 상품 키워드']}\n"
+
+    with tab_증권사:
+        st.subheader("🏹 대형 증권사 리테일 마케팅 및 콘텐츠 동향")
+        df_securities = pd.DataFrame([
+            {"증권사": "미래에셋증권", "콘텐츠 메인 테마": "연금 계좌(ISA/IRP) 내 ETF 포트폴리오 구성법, 절세 전략", "조회수 상위 키워드": "절세 혜택, 연금 준비, 월배당"},
+            {"증권사": "삼성증권", "콘텐츠 메인 테마": "주간 해외 주식 시황 및 유망 테마 가이드, 실시간 라이브 토크", "조회수 상위 키워드": "미국 빅테크, AI 인프라, 엔비디아"},
+            {"증권사": "키움증권", "콘텐츠 메인 테마": "개인 투자자 타겟 실전 매매 팁 및 테마형 ETF 스크리닝 가이드", "조회수 상위 키워드": "조건 검색, 유망 테마, 레버리지"},
+            {"증권사": "한국투자증권", "콘텐츠 메인 테마": "글로벌 자산배분 전략 및 자산가 초청 세미나 요약 하이라이트", "조회수 상위 키워드": "자산배분, 고배당, 채권형 ETF"}
+        ])
+        st.dataframe(df_securities, use_container_width=True, hide_index=True)
+        yt_context_data += "\n[증권사 유튜브 동향]\n"
+        for _, row in df_securities.iterrows():
+            yt_context_data += f"- {row['증권사']}: {row['콘텐츠 메인 테마']} (키워드: {row['조회수 상위 키워드']})\n"
+
+    st.markdown("#### 🤖 AI 기반 유튜브 마케팅 소구점 및 운용사별 동향 심층 요약")
+    fallback_yt_report = """
+    ### 🏢 각 운용사별 유튜브 마케팅 핵심 동향
+    * **🔥 KODEX ETF**: 국내외 독점적 AI 반도체 하위단 및 하이엔드 테크 밸류체인을 집요하게 파고들며 전문적인 기술적 우위 소구에 집중하고 있습니다.
+    * **⚡ 스마트 타이거 (TIGER ETF)**: 미국 대표지수 기반의 고배당 커버드콜 옵션과 신흥국 매크로 성장 테마를 엮어 거대 팬덤형 투자자층 유입을 견인 중입니다.
+    * **💎 RISE ETF**: 기업 밸류업 프로그램 수혜주 및 장기 채권형 자산을 중심으로 자산배분의 안정성을 추구하는 보수적 개인투자자 타겟팅을 가속화하고 있습니다.
+    * **🚀 ACE ETF**: 글로벌 빅테크 압축투자 및 현물 자산 기반 특화 라인업을 앞세워 젊은 트레이더 성향의 구독자층 버즈량을 확보하고 있습니다.
+
+    ---
+    ### 🎯 종합 유튜브 소구 포인트 분석 및 제언
+    현재 자산운용사들은 **[테마형 월배당 인컴]**과 **[글로벌 독점 테마]**라는 두 가지 강력한 축으로 유튜브 전면전을 펼치고 있습니다. 반면 대형 증권사 채널들은 개별 상품보다는 **[ISA/연금 절세 계좌 내 자산배분 전략]** 콘텐츠 포맷으로 실질 조회수를 흡수하고 있습니다.
+    따라서 KODEX 유튜브 마케팅팀은 주요 증권사 리테일 채널과의 공동 기획을 통해 **'연금 계좌에서 꼭 담아야 할 KODEX 월배당 상품 포트폴리오'** 형태로 콘텐츠를 교차 역침투시키는 전략을 적극 제안합니다.
+    """
+
+    with st.container(border=True):
+        if GEMINI_KEY:
+            try:
+                yt_briefing_prompt = f"""너는 금융 마케팅 디렉터야. 아래 유튜브 동향 데이터를 분석해서 운용사별 마케팅 동향과 KODEX 전략 제언을 작성해줘.
+
+[작성 규칙]
+- 인사말, 자기소개, 서론(예: '안녕하십니까', '~제언해 드립니다') 절대 쓰지 말 것
+- 곧바로 본론(운용사별 동향 → 종합 제언) 으로 시작할 것
+- 마크다운 소제목과 불릿으로 가독성 있게 작성
+- 문장을 중간에 끊지 말고 끝까지 완결할 것
+
+[유튜브 동향 데이터]
+{yt_context_data}"""
+                yt_report = generate_via_requests(yt_briefing_prompt)
+                if yt_report and len(yt_report.strip()) > 50:
+                    st.markdown(yt_report)
+                    st.session_state["yt_report_fixed"] = yt_report
+                else:
+                    st.markdown(fallback_yt_report)
+                    st.session_state["yt_report_fixed"] = fallback_yt_report
+            except:
+                st.markdown(fallback_yt_report)
+                st.session_state["yt_report_fixed"] = fallback_yt_report
+        else:
+            st.markdown(fallback_yt_report)
+            st.session_state["yt_report_fixed"] = fallback_yt_report
+
+    # --------------------------------------------------------------------------
 
 # ==============================================================================
 # 👥 [Section 3] 투자자 데이터 분석 + DiD 기반 마케팅 순수 인과효과 평가 (고도화 완본)
@@ -1589,10 +1678,12 @@ def render_section_4():
 """
             try:
                 import json
-                result = generate_via_requests(prompt, "gemini-1.5-flash")
+                result = generate_via_requests(prompt)
                 if result:
                     clean = result.strip().replace("```json", "").replace("```", "").strip()
-                    return json.loads(clean)
+                    _parsed = json.loads(clean)
+                    if isinstance(_parsed, dict) and all(k in _parsed for k in ("pick1", "pick2", "pick3")):
+                        return _parsed
             except:
                 pass
             return {
@@ -1633,20 +1724,7 @@ def render_section_4():
             - **투자 포인트**: {pick_analysis['pick3']['point']}
             """)
 
-        # ↓↓↓ 이 코드를 958번 줄 바로 뒤(col_p3 블록 끝나는 지점)에 추가
-        st.session_state['gemini_picks'] = {
-            "pick1": {"label": "🌟 주도주 모멘텀", "name": pick_1,
-                      "bg": "최근 주간 수익률 최상위권을 수성하며 시장의 강력한 상방 압력을 견인하고 있습니다.",
-                      "point": "기관 및 외국인의 대규모 양방향 순매수 유입세가 뚜렷하여 다음 주 초반까지 시세 연속성 기대감이 높습니다."},
-            "pick2": {"label": "📈 테마 순환매 수혜", "name": pick_2,
-                      "bg": "바닥권 다지기 이후 거래량이 눈에 띄게 증가하며 기술적 추세 전환의 신호탄을 쏘아 올렸습니다.",
-                      "point": "기존 주도주 섹터의 차익 실현 자금이 유입되는 국면이므로, 단기 순환매 랠리를 활용한 트레이딩이 유효합니다."},
-            "pick3": {"label": "🛡️ 리스크 헤지형", "name": pick_3,
-                      "bg": "매크로 불확실성 및 글로벌 지수 변동성 확대 국면에서도 탄탄한 펀더멘탈로 방어력을 입증했습니다.",
-                      "point": "시장 전반의 지수 조정 리스크에 대응하여 내 포트폴리오의 변동성을 낮추고 안정적인 안전판 역할을 하기에 적합합니다."}
-        }
-
-        # PDF 연동을 위해 session_state에 실시간 저장
+        # PDF/메일 연동을 위해 화면에 쓴 AI 분석 결과(pick_analysis)를 그대로 저장
         st.session_state['gemini_picks'] = {
             "pick1": {"label": "🌟 주도주 모멘텀", "name": pick_1,
                       "bg": pick_analysis['pick1']['bg'], "point": pick_analysis['pick1']['point']},
@@ -1700,8 +1778,16 @@ with st.container(border=True):
                             st.caption(f"• {title}")
                     
                     if GEMINI_KEY:
-                        news_prompt = f"다음은 구글 뉴스를 통해 실시간 수집된 KODEX ETF 관련 최신 보도자료 헤드라인들이야. 현재 KODEX가 언론을 통해 집중적으로 홍보하고 있는 핵심 마케팅 방향성이 무엇인지 요약 리포트를 가독성 좋게 작성해줘.\n\n뉴스 데이터:\n{g_news_context}"
-                        news_res = generate_via_requests(news_prompt, "gemini-1.5-flash")
+                        news_prompt = f"""다음은 구글 뉴스에서 실시간 수집된 KODEX ETF 관련 보도 헤드라인이야. KODEX가 언론을 통해 집중 홍보 중인 핵심 마케팅 방향성을 요약 리포트로 작성해줘.
+
+[작성 규칙]
+- 인사말/서론 없이 곧바로 요약 본론으로 시작
+- 핵심 방향성 3가지 내외를 마크다운 불릿으로 정리
+- 각 항목은 한두 문장으로 완결, 절대 중간에 끊지 말 것
+
+[뉴스 헤드라인]
+{g_news_context}"""
+                        news_res = generate_via_requests(news_prompt)
                         
                         if news_res:
                             st.session_state['news_summary'] = news_res  # [메일용] 뉴스 요약 저장
@@ -1798,68 +1884,152 @@ with st.container(border=True):
     st.markdown("### ⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    dynamic_context = ""
-    if 'all_titles_text' in locals() and all_titles_text:
-        dynamic_context += f"[시장 뉴스]\n{all_titles_text}\n\n"
-    if st.session_state.get("yt_report_fixed"):
-        dynamic_context += f"[유튜브 동향]\n{st.session_state.yt_report_fixed}\n\n"
-    if 'res_df' in locals() and not res_df.empty:
+    # ======================================================================
+    # [전 섹션 종합 컨텍스트 구성] session_state의 모든 분석 결과를 수집
+    # ======================================================================
+    import pandas as _pd
+
+    def _df_brief(key, cols=None, n=8):
+        d = st.session_state.get(key)
+        if not isinstance(d, _pd.DataFrame) or d.empty:
+            return ""
+        use = [c for c in (cols or d.columns) if c in d.columns]
         try:
-            top_bought_etfs = ", ".join(res_df['종목명'].head(3).tolist())
-            dynamic_context += f"[투자자 순매수]\n현재 탑 매수 종목: {top_bought_etfs}\n\n"
-        except:
+            return d[use].head(n).to_string(index=False)
+        except Exception:
+            return ""
+
+    full_context = ""
+    _wk = st.session_state.get('week2_option', '-')
+    _ag = st.session_state.get('target_agent_option', '개인')
+    full_context += f"[분석 기준] 기간: {_wk} / 투자주체: {_ag}\n\n"
+
+    # S1 트렌드/키워드
+    _lb = st.session_state.get('live_brief', {})
+    if _lb:
+        full_context += f"[S1 시장 브리핑] 강세: {_lb.get('rising','-')} / 약세: {_lb.get('falling','-')}\n트렌드: {_lb.get('trend','-')}\n"
+    _kw = _df_brief('df_keywords', ['키워드','언급량'], 6)
+    if _kw:
+        full_context += f"[S1 뉴스 키워드 언급량]\n{_kw}\n"
+    full_context += "\n"
+
+    # S2 경쟁사 모니터링
+    if st.session_state.get('yt_report_fixed'):
+        full_context += f"[S2 유튜브 동향]\n{str(st.session_state['yt_report_fixed'])[:600]}\n\n"
+    _blog = st.session_state.get('blog_analysis_results', [])
+    if _blog:
+        _bt = "; ".join([f"{b.get('company','')}: {b.get('main_products','')} ({b.get('marketing_theme','')})" for b in _blog[:5]])
+        full_context += f"[S2 경쟁사 블로그 주력 ETF]\n{_bt}\n\n"
+    _ev = st.session_state.get('df_events_base_data', [])
+    if _ev:
+        _evt = "; ".join(list(dict.fromkeys([f"{e.get('운용사','')}: {e.get('제목','')}" for e in _ev]))[:6])
+        full_context += f"[S2 운용사 ETF 이슈]\n{_evt}\n\n"
+
+    # S3 순매수강도 + DiD
+    _res = st.session_state.get('res_df')
+    if isinstance(_res, _pd.DataFrame) and not _res.empty and '매수강도' in _res.columns:
+        try:
+            _t = _res.sort_values('매수강도', ascending=False).head(8)
+            _nc = '종목명_정제' if '종목명_정제' in _t.columns else '종목명'
+            _rt = "; ".join([f"{r[_nc]}({r['매수강도']:.1f})" for _, r in _t.iterrows()])
+            full_context += f"[S3 순매수 강도 TOP]\n{_rt}\n\n"
+        except Exception:
             pass
-    if 'g_news_context' in locals() and g_news_context:
-        dynamic_context += f"[KODEX 보도자료]\n{g_news_context}\n\n"
+    _did = st.session_state.get('did_report_data', [])
+    if _did:
+        _dt = "; ".join([f"{d.get('운용사 (브랜드)','')}: DiD {d.get('DiD 순수 마케팅 효과','')} {d.get('최종 마케팅 효용 판단','')}" for d in _did])
+        full_context += f"[S3 DiD 이벤트 성과]\n{_dt}\n\n"
 
-    current_keyword = df_keywords['키워드'].iloc[0] if 'df_keywords' in locals() and not df_keywords.empty else "반도체/월배당"
-    current_etf = top_bought_etfs if 'top_bought_etfs' in locals() and top_bought_etfs else "KODEX AI반도체 / 커버드콜 시리즈"
+    # S4 수익률 + 테마 + Pick
+    _ret = _df_brief('df_top_returns', ['ETF명','수익률(%)'], 8)
+    if _ret:
+        full_context += f"[S4 수익률 상위]\n{_ret}\n"
+    _thm = _df_brief('df_theme_returns', None, 8)
+    if _thm:
+        full_context += f"[S4 테마별 수익률]\n{_thm}\n"
+    _pk = st.session_state.get('gemini_picks', {})
+    if isinstance(_pk, dict) and _pk:
+        _pt = "; ".join([f"{v.get('label','')} {v.get('name','')}: {v.get('point','')}" for v in _pk.values() if isinstance(v, dict)])
+        full_context += f"[S4 추천 Pick]\n{_pt}\n"
+    full_context += "\n"
 
+    # S5 뉴스 + 데이터랩
+    if st.session_state.get('news_summary'):
+        full_context += f"[S5 KODEX 뉴스 요약]\n{str(st.session_state['news_summary'])[:500]}\n\n"
+    _sns = st.session_state.get('df_sns')
+    if isinstance(_sns, _pd.DataFrame) and not _sns.empty and '검색 지수' in _sns.columns:
+        try:
+            _v = _pd.to_numeric(_sns['검색 지수'], errors='coerce').dropna()
+            full_context += f"[S5 네이버 데이터랩 검색지수] 현재 {_v.iloc[-1]:.0f} / 평균 {_v.mean():.0f} / 최고 {_v.max():.0f}\n\n"
+        except Exception:
+            pass
+
+    # 백업 고정 멘트 (AI 실패 시에만 사용)
+    current_keyword = "반도체/월배당"
+    try:
+        _dk = st.session_state.get('df_keywords', _pd.DataFrame())
+        if isinstance(_dk, _pd.DataFrame) and not _dk.empty and '키워드' in _dk.columns:
+            current_keyword = _dk['키워드'].iloc[0]
+    except Exception:
+        pass
     final_insights = [
         f"📣 **[테마 매칭 캠페인]** 실시간 데이터 분석 결과 현재 가장 핫한 키워드는 **'{current_keyword}'**입니다. 해당 테마와 매칭되는 KODEX 핵심 라인업의 디지털 콘텐츠 노출을 즉각 대형화하십시오.",
-        f"🚀 **[채널 역침투 전략]** 주요 증권사 유튜브가 연금/절세 콘텐츠에 화력을 집중하고 있습니다. **{current_etf}** 등을 활용한 자산 배분 시뮬레이션 툴킷을 각 증권사 리테일 채널에 역제안하십시오.",
-        "⚡ **[트렌드 가속 락인]** 네이버 데이터랩 검색 강도 추이와 개인/기관의 순매수 강도가 일치하는 타이밍을 저격하여 고자산가 유입 경로에 최적화된 디지털 타겟 마케팅을 집행하십시오."
+        "🚀 **[채널 역침투 전략]** 주요 증권사 유튜브가 연금/절세 콘텐츠에 화력을 집중하고 있습니다. 핵심 ETF를 활용한 자산 배분 시뮬레이션 툴킷을 각 증권사 리테일 채널에 역제안하십시오.",
+        "⚡ **[트렌드 가속 락인]** 네이버 데이터랩 검색 강도 추이와 순매수 강도가 일치하는 타이밍을 저격하여 고자산가 유입 경로에 최적화된 디지털 타겟 마케팅을 집행하십시오."
     ]
 
-    if GEMINI_KEY and len(dynamic_context.strip()) > 30:
-        insight_prompt = f"""
-        너는 삼성자산운용 KODEX ETF의 최고 마케팅 전략 책임자야. 제공된 실시간 데이터를 종합 분석해서 이번 주 마케팅 액션 플랜을 딱 '3가지 문장'으로만 도출해줘.
-        번호나 기호 없이 서론/결론 제외하고 문장 3개만 엔터로 구분해서 출력해줘. 문장 시작은 반드시 이모지와 대괄호 태그로 시작해줘. (예: 📣 **[테마 캠페인]** 내용...)
-        데이터:
-        {dynamic_context}
-        """
+    if GEMINI_KEY and len(full_context.strip()) > 80:
+        insight_prompt = f"""너는 삼성자산운용 KODEX ETF의 최고 마케팅 전략 책임자(CMO)야.
+아래는 이번 주 5개 영역(시장 트렌드/경쟁사 모니터링/투자자 수급/수익률/마케팅 성과)에서 수집된 실시간 분석 데이터 전체야.
+이 데이터를 교차 분석해서, 이번 주 KODEX가 실행해야 할 마케팅 액션 플랜을 도출해줘.
+
+[작성 규칙]
+- 데이터에서 실제로 드러난 근거에 기반해 전략을 제시할 것 (일반론 금지)
+- 전략 개수는 네가 데이터를 보고 판단해서 정해 (보통 3~5개)
+- 각 전략은 한 문장으로, 반드시 이모지 + 대괄호 태그로 시작 (예: 📣 **[테마 캠페인]** 내용...)
+- 번호나 불릿 없이, 각 전략을 빈 줄로 구분해서 출력
+- 서론/결론 없이 전략 문장들만 출력
+
+[분석 데이터]
+{full_context}
+"""
         try:
-            ai_insights = generate_via_requests(insight_prompt, "gemini-1.5-flash")
+            ai_insights = generate_via_requests(insight_prompt, max_tokens=16384)
             if ai_insights:
                 parsed_lines = []
-                for line in ai_insights.split('\n'):
-                    clean_line = line.strip()
-                    if not clean_line: continue
-                    clean_line = re.sub(r'^[0-9\-\*\.\s]+', '', clean_line)
-                    if clean_line: parsed_lines.append(clean_line)
-                if len(parsed_lines) >= 3:
-                    final_insights = parsed_lines[:3]
+                for block in ai_insights.split('\n\n'):
+                    clean = block.strip().replace('\n', ' ')
+                    clean = re.sub(r'^[0-9\-\*\.\s]+', '', clean)
+                    if clean and len(clean) > 10:
+                        parsed_lines.append(clean)
+                # 빈줄 구분이 안 됐으면 줄 단위로 재시도
+                if len(parsed_lines) < 2:
+                    parsed_lines = []
+                    for line in ai_insights.split('\n'):
+                        clean = re.sub(r'^[0-9\-\*\.\s]+', '', line.strip())
+                        if clean and len(clean) > 10:
+                            parsed_lines.append(clean)
+                if len(parsed_lines) >= 2:
+                    final_insights = parsed_lines
         except Exception as e:
             pass
 
-    col_a, col_b, col_c = st.columns(3)
+    # ======================================================================
+    # 가변 개수 출력 (3개면 3열, 그 이상이면 줄바꿈 배치)
+    # ======================================================================
+    _icons = ["🎯", "💰", "🌏", "🔥", "💡", "🚀", "⚡", "📊"]
+    _n = len(final_insights)
+    _per_row = 3
+    for _start in range(0, _n, _per_row):
+        _chunk = final_insights[_start:_start + _per_row]
+        _cols = st.columns(len(_chunk))
+        for _j, _txt in enumerate(_chunk):
+            _gi = _start + _j
+            with _cols[_j]:
+                with st.container(border=True):
+                    st.markdown(f"### {_icons[_gi % len(_icons)]} **핵심 전략 {_gi+1:02d}**")
+                    st.write(_txt)
 
-    with col_a:
-        with st.container(border=True):
-            st.markdown("### 🎯 **핵심 전략 01**")
-            st.write(final_insights[0])
-
-    with col_b:
-        with st.container(border=True):
-            st.markdown("### 💰 **핵심 전략 02**")
-            st.write(final_insights[1])
-
-    with col_c:
-        with st.container(border=True):
-            st.markdown("### 🌏 **핵심 전략 03**")
-            st.write(final_insights[2])
-            
-            # 💡 [여기에 추가!] 화면에 뜬 최종 전략 3가지를 문자열로 묶어서 세션에 저장합니다.
     st.session_state['final_insight'] = "\n\n".join(final_insights)
 
 # ==============================================================================
@@ -1873,7 +2043,8 @@ with st.container(border=True):
     def generate_pdf_report():
         from xhtml2pdf import pisa
         from io import BytesIO
-        from datetime import datetime
+        from datetime import datetime, timezone, timedelta
+        _kst = timezone(timedelta(hours=9))
         
         # ----------------------------------------------------------------------
         # 🧭 데이터 분석 기간 설정 (session_state 실시간 연동)
@@ -1899,13 +2070,18 @@ with st.container(border=True):
                 for idx, row in target_df_kw.head(6).iterrows():
                     v_col = row['언급량'] if '언급량' in target_df_kw.columns else 10
                     k_col = row['키워드'] if '키워드' in target_df_kw.columns else '테마'
-                    bar_count = max(1, round((int(v_col) / max_volume) * 15))
-                    bar_display = "■" * bar_count
+                    pct = max(1, min(100, round((int(v_col) / max_volume) * 100)))
+                    _rest = 100 - pct
+                    _empty = f'<td width="{_rest}%" style="background-color:#EEF2FF; padding:0;"></td>' if _rest > 0 else ''
                     section1_graph_html += f"""
                     <tr>
-                        <td style='width:30%; font-weight:bold;'>{k_col}</td>
-                        <td style='width:20%; text-align:center; color:#1E40AF;'>{v_col} 회</td>
-                        <td style='width:50%; color:#2563EB; font-size:8pt;'>{bar_display}</td>
+                        <td style='width:30%; font-weight:bold; padding:0.6mm 1mm;'>{k_col}</td>
+                        <td style='width:18%; text-align:center; color:#1E40AF; padding:0.6mm 1mm;'>{v_col} 회</td>
+                        <td style='width:52%; padding:0.6mm 1mm;'>
+                          <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                            <td width="{pct}%" bgcolor="#2563EB" style="background-color:#2563EB; padding:0;"></td>{_empty}
+                          </tr></table>
+                        </td>
                     </tr>
                     """
             except Exception as e:
@@ -1914,8 +2090,18 @@ with st.container(border=True):
         if not section1_graph_html:
             sample_kw = [("AI반도체", 145), ("월배당", 120), ("커버드콜", 98), ("금리인하", 76), ("인도시장", 54)]
             for k, v in sample_kw:
-                b_cnt = round((v / 145) * 15)
-                section1_graph_html += f"<tr><td style='font-weight:bold;'>{k}</td><td style='text-align:center; color:#1E40AF;'>{v} 회</td><td style='color:#2563EB; font-size:8pt;'>{'■'*b_cnt}</td></tr>"
+                pct = max(1, min(100, round((v / 145) * 100)))
+                _rest = 100 - pct
+                _empty = f'<td width="{_rest}%" style="background-color:#EEF2FF; padding:0;"></td>' if _rest > 0 else ''
+                section1_graph_html += f"""<tr>
+                  <td style='width:30%; font-weight:bold; padding:0.6mm 1mm;'>{k}</td>
+                  <td style='width:18%; text-align:center; color:#1E40AF; padding:0.6mm 1mm;'>{v} 회</td>
+                  <td style='width:52%; padding:0.6mm 1mm;'>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                      <td width="{pct}%" bgcolor="#2563EB" style="background-color:#2563EB; padding:0;"></td>{_empty}
+                    </tr></table>
+                  </td>
+                </tr>"""
 
         # ----------------------------------------------------------------------
         # 📺 SECTION 2. 블로그 3대 세부 항목 완벽 동적 복구 맵핑
@@ -1980,6 +2166,30 @@ with st.container(border=True):
             """
 
         # ----------------------------------------------------------------------
+        # 🏢 [추가] 운용사별 ETF 이슈 모니터링 (summary_data) PDF 카드 생성
+        # ----------------------------------------------------------------------
+        etf_issue = st.session_state.get('etf_issue_summary', {})
+        _issue_meta = [
+            ("KODEX", "삼성자산운용", "#1D4ED8", "#EFF6FF"),
+            ("TIGER", "미래에셋자산운용", "#EA580C", "#FFF7ED"),
+            ("RISE", "KB자산운용", "#CA8A04", "#FEFCE8"),
+            ("ACE", "한국투자신탁운용", "#047857", "#ECFDF5"),
+        ]
+        etf_issue_cells = ""
+        for _bk, _co, _c, _bg in _issue_meta:
+            _items = etf_issue.get(_bk, ["데이터 없음"]) if isinstance(etf_issue, dict) else ["데이터 없음"]
+            _lis = "".join([f'<div style="font-size:7.5pt; color:#374151; line-height:1.45; margin-bottom:1.2mm;">• {str(x).replace("**","")}</div>' for x in _items[:3]])
+            etf_issue_cells += f"""
+            <td style="width:25%; vertical-align:top; border:1px solid {_c}; border-radius:5px; padding:2.5mm; background-color:{_bg};">
+                <div style="font-weight:bold; color:{_c}; font-size:8.5pt; margin-bottom:2mm; border-bottom:1px solid {_c}; padding-bottom:1mm;">{_bk}<br><span style="font-size:7pt; color:#6B7280;">{_co}</span></div>
+                {_lis}
+            </td>"""
+        etf_issue_html = f"""
+        <table style="width:100%; border-collapse:separate; border-spacing:1.5mm; table-layout:fixed; margin-top:2mm;">
+            <tr>{etf_issue_cells}</tr>
+        </table>"""
+
+        # ----------------------------------------------------------------------
         # 👥 SECTION 3. 투자자별 순매수 수급 강도
         # ----------------------------------------------------------------------
         section3_chart_html = ""
@@ -1998,16 +2208,21 @@ with st.container(border=True):
                     item_name = row.get('종목명_정제', row.get('종목명', f'KODEX 혁신 자산 {idx+1}'))
                     vol_val = row.get('매수강도', 0.0)
                     
-                    blocks = max(1, round((float(vol_val) / max_vol) * 12))
-                    bar_display = "■" * blocks
+                    pct = max(1, min(100, round((float(vol_val) / max_vol) * 100)))
+                    _rest = 100 - pct
+                    _empty = f'<td width="{_rest}%" style="background-color:#EEF2FF; padding:0;"></td>' if _rest > 0 else ''
                     section3_chart_html += f"""
-                    <div style='margin-bottom:1.2mm; border-bottom:1px dashed #F3F4F6; padding-bottom:0.8mm;'>
-                        <div style='font-weight:bold; color:#1F2937; font-size:8.5pt;'>{idx+1}. {item_name}</div>
-                        <div style='margin-top:0.5mm;'>
-                            <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:75px;'>매수강도: {vol_val:,.1f}</span>
-                            <span style='color:#3B82F6; font-size:8pt;'>{bar_display}</span>
-                        </div>
-                    </div>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:1.0mm;">
+                      <tr>
+                        <td width="42%" style="font-weight:bold; color:#1F2937; font-size:8pt; padding-right:2mm;">{idx+1}. {item_name}</td>
+                        <td width="42%">
+                          <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                            <td width="{pct}%" bgcolor="#3B82F6" style="background-color:#3B82F6; padding:0;"></td>{_empty}
+                          </tr></table>
+                        </td>
+                        <td width="16%" style="text-align:right; color:#1E40AF; font-size:8pt; font-weight:bold;">{vol_val:,.1f}</td>
+                      </tr>
+                    </table>
                     """
             except Exception as e:
                 pass
@@ -2022,15 +2237,21 @@ with st.container(border=True):
                 ("RISE 코리아밸류업", 420), ("KODEX 200", 380)
             ]
             for idx, (name, vol) in enumerate(sample_agents):
-                bars = "■" * round((vol / 1250) * 12)
+                pct = max(1, min(100, round((vol / 1250) * 100)))
+                _rest = 100 - pct
+                _empty = f'<td width="{_rest}%" style="background-color:#EEF2FF; padding:0;"></td>' if _rest > 0 else ''
                 section3_chart_html += f"""
-                <div style='margin-bottom:1.2mm; border-bottom:1px dashed #F3F4F6; padding-bottom:0.8mm;'>
-                    <div style='font-weight:bold; color:#1F2937; font-size:8.5pt;'>{idx+1}. {name}</div>
-                    <div style='margin-top:0.5mm;'>
-                        <span style='color:#1E40AF; font-size:8pt; font-weight:bold; display:inline-block; width:75px;'>매수강도: {vol:,}</span>
-                        <span style='color:#3B82F6; font-size:8pt;'>{bars}</span>
-                    </div>
-                </div>
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:1.0mm;">
+                  <tr>
+                    <td width="42%" style="font-weight:bold; color:#1F2937; font-size:8pt; padding-right:2mm;">{idx+1}. {name}</td>
+                    <td width="42%">
+                      <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                        <td width="{pct}%" bgcolor="#3B82F6" style="background-color:#3B82F6; padding:0;"></td>{_empty}
+                      </tr></table>
+                    </td>
+                    <td width="16%" style="text-align:right; color:#1E40AF; font-size:8pt; font-weight:bold;">{vol:,}</td>
+                  </tr>
+                </table>
                 """
         # ======================================================================
         # 🔗 [텍스트 제한 해제 완본] 이벤트명 자르지 않고 전체 출력 처리
@@ -2190,19 +2411,26 @@ with st.container(border=True):
         # 1. 실제 대시보드 데이터 연동부
         if target_top_df is not None and not target_top_df.empty:
             try:
-                for idx, row in target_top_df.head(top_n_count).reset_index().iterrows():
+                _rows = target_top_df.head(top_n_count).reset_index()
+                # 막대 스케일용 최대 절대 수익률
+                _max_abs = 1.0
+                for _, _r in _rows.iterrows():
+                    _v = str(_r.get('수익률(%)', _r.get('수익률', _r.get('주간수익률', 0.0)))).replace('+-','-').replace('+','').replace('%','').strip()
+                    try: _max_abs = max(_max_abs, abs(float(_v)))
+                    except: pass
+                for idx, row in _rows.iterrows():
                     r_name = row.get('종목명', row.get('ETF명', row.get('ETF종목명', 'KODEX 상위 자산')))
                     r_val = row.get('수익률(%)', row.get('수익률', row.get('주간수익률', 0.0)))
-                    
+
                     # 💡 [핵심 조치] 대시보드에서 '+-4.21%' 문자열이 넘어오더라도 이를 완벽히 청소합니다.
                     clean_val_str = str(r_val).replace('+-', '-').replace('+', '').strip()
-                    
+
                     # 수치 비교를 위해 float 형변환 (% 기호 제거)
                     try:
                         num_val = float(clean_val_str.replace('%', ''))
                     except:
                         num_val = 0.0
-                    
+
                     if num_val != 0.0:
                         # 깨끗하게 정제된 값에 따라 기호와 색상을 동적으로 매칭합니다.
                         if num_val > 0:
@@ -2211,8 +2439,19 @@ with st.container(border=True):
                         else:
                             sign_str = ""          # 음수는 clean_val_str에 마이너스가 포함되어 있으므로 빈값
                             color_span = "#1E40AF" # 하락 파랑
-                            
-                        top_n_return_html += f"<tr><td>{r_name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{clean_val_str if '%' in clean_val_str else clean_val_str + '%'}</td></tr>"
+
+                        _pct = max(1, min(100, round(abs(num_val) / _max_abs * 100)))
+                        _rest = 100 - _pct
+                        _empty = f'<td width="{_rest}%" style="background-color:#F3F4F6; padding:0;"></td>' if _rest > 0 else ''
+                        _vtxt = clean_val_str if '%' in clean_val_str else clean_val_str + '%'
+                        top_n_return_html += f"""<tr>
+                          <td style='font-size:8pt; color:#1F2937; padding:0.6mm 1mm;' width="40%">{r_name}</td>
+                          <td style='padding:0.6mm 1mm;' width="42%">
+                            <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                              <td width="{_pct}%" bgcolor="{color_span}" style="background-color:{color_span}; padding:0;"></td>{_empty}
+                            </tr></table></td>
+                          <td style='text-align:right; font-weight:bold; color:{color_span}; font-size:8pt; padding:0.6mm 1mm;' width="18%">{sign_str}{_vtxt}</td>
+                        </tr>"""
             except: 
                 pass # 💡 문법 에러(SyntaxError)가 나지 않도록 개행 및 인덴트를 정렬했습니다.
 
@@ -2220,11 +2459,23 @@ with st.container(border=True):
         if not top_n_return_html:
             top_n_return_html = "" 
             default_top_assets = [("KODEX 미국AI테크TOP10+", "6.72"), ("KODEX AI반도체TOP2플러스", "6.15"), ("KODEX 미국나스닥100", "4.12"), ("KODEX 단기자금", "0.08"), ("KODEX 국채30년선물", "-1.05")]
+            _dmax = max(abs(float(v)) for _, v in default_top_assets) or 1.0
             for name, val in default_top_assets[:top_n_count]:
                 val_str = str(val).replace('+-', '-').replace('+', '').strip()
+                _n = float(val_str)
                 color_span = "#1E40AF" if "-" in val_str else "#B91C1C"
                 sign_str = "" if "-" in val_str else "+"
-                top_n_return_html += f"<tr><td>{name}</td><td style='text-align:center; font-weight:bold; color:{color_span};'>{sign_str}{val_str}%</td></tr>"
+                _pct = max(1, min(100, round(abs(_n) / _dmax * 100)))
+                _rest = 100 - _pct
+                _empty = f'<td width="{_rest}%" style="background-color:#F3F4F6; padding:0;"></td>' if _rest > 0 else ''
+                top_n_return_html += f"""<tr>
+                  <td style='font-size:8pt; color:#1F2937; padding:0.6mm 1mm;' width="40%">{name}</td>
+                  <td style='padding:0.6mm 1mm;' width="42%">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                      <td width="{_pct}%" bgcolor="{color_span}" style="background-color:{color_span}; padding:0;"></td>{_empty}
+                    </tr></table></td>
+                  <td style='text-align:right; font-weight:bold; color:{color_span}; font-size:8pt; padding:0.6mm 1mm;' width="18%">{sign_str}{val_str}%</td>
+                </tr>"""
 
         # 3. 우측 테마별 평균 수익률 구역 (실시간 데이터 연동 및 try-except 마감)
         theme_return_html = ""
@@ -2232,15 +2483,34 @@ with st.container(border=True):
         
         if target_theme_df is not None and not target_theme_df.empty:
             try:
-                for idx, row in target_theme_df.reset_index().iterrows():
+                _trows = target_theme_df.reset_index()
+                _tmax = 1.0
+                for _, _r in _trows.iterrows():
+                    _tv = str(_r.get('주간수익률(%)', _r.get('주간수익률', _r.get('평균수익률', 0.0)))).replace('+-','-').replace('+','').replace('%','').strip()
+                    try: _tmax = max(_tmax, abs(float(_tv)))
+                    except: pass
+                for idx, row in _trows.iterrows():
                     t_name = row.get('테마명', row.get('시장핵심테마', '핵심섹터'))
                     t_val = row.get('주간수익률(%)', row.get('주간수익률', row.get('평균수익률', 0.0)))
-                    
+
                     # 기호 오염 방지 정제
                     clean_t_str = str(t_val).replace('+-', '-').replace('+', '').strip()
                     color_str = "#1E40AF" if "-" in clean_t_str else "#B91C1C"
                     sign_str = "" if "-" in clean_t_str else "+"
-                    theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{clean_t_str if '%' in clean_t_str else clean_t_str + '%'}</td></tr>"
+                    try: _tn = float(clean_t_str.replace('%',''))
+                    except: _tn = 0.0
+                    _tpct = max(1, min(100, round(abs(_tn) / _tmax * 100)))
+                    _trest = 100 - _tpct
+                    _tempty = f'<td width="{_trest}%" style="background-color:#F3F4F6; padding:0;"></td>' if _trest > 0 else ''
+                    _ttxt = clean_t_str if '%' in clean_t_str else clean_t_str + '%'
+                    theme_return_html += f"""<tr>
+                      <td style='font-size:8pt; color:#1F2937; padding:0.6mm 1mm;' width="40%">{t_name}</td>
+                      <td style='padding:0.6mm 1mm;' width="42%">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                          <td width="{_tpct}%" bgcolor="{color_str}" style="background-color:{color_str}; padding:0;"></td>{_tempty}
+                        </tr></table></td>
+                      <td style='text-align:right; color:{color_str}; font-weight:bold; font-size:8pt; padding:0.6mm 1mm;' width="18%">{sign_str}{_ttxt}</td>
+                    </tr>"""
             except: 
                 pass # 💡 실시간 데이터를 처리하는 try 블록의 올바른 짝입니다.
 
@@ -2248,11 +2518,22 @@ with st.container(border=True):
         if not theme_return_html or theme_return_html.count("0.0%") > 2:
             theme_return_html = ""
             default_themes = [("반도체/AI 혁신 테마", "4.85"), ("미국 빅테크&소프트웨어", "4.12"), ("바이오/헬스케어 대형주", "2.10"), ("2차전지 대형주", "-3.20")]
+            _dtmax = max(abs(float(v)) for _, v in default_themes) or 1.0
             for t_name, t_val in default_themes:
                 clean_dt_str = str(t_val).replace('+-', '-').replace('+', '').strip()
                 color_str = "#1E40AF" if "-" in clean_dt_str else "#B91C1C"
                 sign_str = "" if "-" in clean_dt_str else "+"
-                theme_return_html += f"<tr><td>{t_name}</td><td style='text-align:center; color:{color_str}; font-weight:bold;'>{sign_str}{clean_dt_str}%</td></tr>"
+                _dpct = max(1, min(100, round(abs(float(clean_dt_str)) / _dtmax * 100)))
+                _drest = 100 - _dpct
+                _dempty = f'<td width="{_drest}%" style="background-color:#F3F4F6; padding:0;"></td>' if _drest > 0 else ''
+                theme_return_html += f"""<tr>
+                  <td style='font-size:8pt; color:#1F2937; padding:0.6mm 1mm;' width="40%">{t_name}</td>
+                  <td style='padding:0.6mm 1mm;' width="42%">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                      <td width="{_dpct}%" bgcolor="{color_str}" style="background-color:{color_str}; padding:0;"></td>{_dempty}
+                    </tr></table></td>
+                  <td style='text-align:right; color:{color_str}; font-weight:bold; font-size:8pt; padding:0.6mm 1mm;' width="18%">{sign_str}{clean_dt_str}%</td>
+                </tr>"""
 
         # ↓↓↓ 아래 코드를 theme_return_html 처리 블록 바로 뒤에 추가
         # ----------------------------------------------------------------------
@@ -2302,9 +2583,22 @@ with st.container(border=True):
                 "⚡ **[트렌드 가속 락인]** 네이버 데이터랩 검색 강도 추이와 개인/기관의 순매수 강도가 일치하는 타이밍을 저격하여 디지털 타겟 마케팅을 집행하십시오."
             ]
         
-        # 보장성 코딩: 리스트가 3개보다 모자라거나 많을 때를 대비해 최대 3개로 패딩/제한
-        while len(pdf_insights) < 3:
+        # 보장성 코딩: 최소 2개는 보장 (AI가 자율 개수 도출)
+        while len(pdf_insights) < 2:
             pdf_insights.append("⚡ **[추가 전략 마케팅]** 시장 변동성에 대응하는 실시간 디지털 마케팅 세부 전술을 수립하고 모니터링을 강화하십시오.")
+
+        # [가변 개수] 인사이트 박스를 개수에 맞춰 동적 생성
+        _ins_icons = [("🎯", "#BE185D"), ("💰", "#B45309"), ("🌏", "#047857"),
+                      ("🔥", "#1E40AF"), ("💡", "#7C3AED"), ("🚀", "#0E7490"), ("⚡", "#DC2626")]
+        pdf_insights_html = ""
+        for _i, _txt in enumerate(pdf_insights):
+            _ic, _cl = _ins_icons[_i % len(_ins_icons)]
+            _mb = "margin-bottom: 2mm;" if _i < len(pdf_insights) - 1 else ""
+            pdf_insights_html += f"""
+            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; {_mb} border-radius: 4px;">
+                <div style="font-weight: bold; color: {_cl}; font-size: 8pt; margin-bottom: 0.5mm;">{_ic} 핵심 전략 {_i+1:02d}</div>
+                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{_txt}</div>
+            </div>"""
         
         # [문제 1 해결] 주간 마케팅 뉴스 요약 동적 렌더링 (Agent 화면과 동일하게 3개 매칭)
         kodex_press_dynamic_html = ""
@@ -2328,40 +2622,68 @@ with st.container(border=True):
 
         if target_dl_df is not None and not target_dl_df.empty:
             try:
-                # 데이터가 아무리 많아도 에러 없이 루프를 돌며 가로 박스로 누적시킵니다.
-                for idx, row in target_dl_df.reset_index(drop=True).iterrows():
-                    date_val = str(row.iloc[0]) 
-                    c_val = float(row.iloc[1])
-                    
-                    b_cnt = max(1, min(10, round((c_val / 100.0) * 10)))
-                    pink_bars = "■" * b_cnt
-                    
-                    # 30개 이상의 박스를 한 줄에 하나씩 배치하면 세로로 너무 길어지므로,
-                    # inline-block(가로 31%씩 삼등분) 구조를 주어 짜임새 있게 정렬합니다.
-                    datalab_box_chart_html += f"""
-                    <div style='border: 1px solid #FECACA; background-color: #FEF2F2; padding: 1.8mm; margin-bottom: 1.2mm; border-radius: 4px; display: inline-block; width: 31%; margin-right: 1%; vertical-align: top;'>
-                        <span style='font-weight: bold; color: #1F2937; font-size: 8pt;'>{date_val}</span> 
-                        <span style='color: #DC2626; font-weight: bold; font-size: 8pt;'>[{c_val:,.1f}]</span>
-                        <div style='color: #F43F5E; font-size: 8.5pt; letter-spacing: 0.3mm; margin-top: 0.5mm;'>{pink_bars}</div>
-                    </div>
-                    """
+                _dl = target_dl_df.reset_index(drop=True)
+                _vals = []
+                for _, row in _dl.iterrows():
+                    try: _vals.append((str(row.iloc[0]), float(row.iloc[1])))
+                    except: pass
+                if _vals:
+                    _vmax = max(v for _, v in _vals) or 1.0
+                    _cur = _vals[-1][1]; _avg = sum(v for _,v in _vals)/len(_vals)
+                    _mx = max(v for _,v in _vals); _mn = min(v for _,v in _vals)
+                    # 통계 요약 박스
+                    datalab_box_chart_html = f"""
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:2mm;">
+                      <tr>
+                        <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">현재</div><div style="font-size:12pt; font-weight:bold; color:#DC2626;">{_cur:.0f}</div></td>
+                        <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">평균</div><div style="font-size:12pt; font-weight:bold; color:#1F2937;">{_avg:.0f}</div></td>
+                        <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">최고</div><div style="font-size:12pt; font-weight:bold; color:#B91C1C;">{_mx:.0f}</div></td>
+                        <td style="text-align:center;"><div style="font-size:7pt; color:#9CA3AF;">최저</div><div style="font-size:12pt; font-weight:bold; color:#1D4ED8;">{_mn:.0f}</div></td>
+                      </tr>
+                    </table>"""
+                    # 날짜별 가로막대 (최근 10일, 1열 단순 구조)
+                    _rows_html = ""
+                    for _d, _v in _vals[-10:]:
+                        _p = max(1, min(100, round(_v / _vmax * 100)))
+                        _r = 100 - _p
+                        _e = f'<td width="{_r}%" bgcolor="#FEE2E2" style="background-color:#FEE2E2; padding:0;"></td>' if _r > 0 else ''
+                        _rows_html += f"""<tr>
+                          <td width="16%" style="font-size:8pt; color:#1F2937; padding:0.4mm 1mm;">{_d}</td>
+                          <td width="68%" style="padding:0.4mm 1mm;"><table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;"><td width="{_p}%" bgcolor="#F43F5E" style="background-color:#F43F5E; padding:0;"></td>{_e}</tr></table></td>
+                          <td width="16%" style="font-size:8pt; color:#DC2626; font-weight:bold; text-align:right; padding:0.4mm 1mm;">{_v:.0f}</td>
+                        </tr>"""
+                    datalab_box_chart_html += f'<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#FEF2F2; border:1px solid #FECACA; border-radius:4px;">{_rows_html}</table>'
             except Exception as e:
                 pass
                 
         if not datalab_box_chart_html:
-            # 연동 실패 시 보여주는 예비용 6일치 샘플
             sample_dl = [
-                ("06월 11일", 56.0, 6), ("06월 12일", 92.0, 9), ("06월 13일", 86.0, 9),
-                ("06월 14일", 58.0, 6), ("06월 15일", 45.0, 4), ("06월 16일", 83.0, 8)
+                ("06.11", 56.0), ("06.12", 92.0), ("06.13", 86.0),
+                ("06.14", 58.0), ("06.15", 45.0), ("06.16", 83.0)
             ]
-            for d_date, d_val, d_bar in sample_dl:
-                datalab_box_chart_html += f"""
-                <div style='border: 1px solid #FECACA; background-color: #FEF2F2; padding: 1.8mm; margin-bottom: 1.2mm; border-radius: 4px; display: inline-block; width: 31%; margin-right: 1%; vertical-align: top;'>
-                    <span style='font-weight: bold; color: #1F2937; font-size: 8pt;'>{d_date}</span> 
-                    <span style='color: #DC2626; font-weight: bold; font-size: 8pt;'>[{d_val}]</span>
-                    <div style='color: #F43F5E; font-size: 8.5pt; letter-spacing: 0.3mm; margin-top: 0.5mm;'>{"■"*d_bar}</div>
-                </div>
-                """
+            _vmax = max(v for _, v in sample_dl) or 1.0
+            _cur = sample_dl[-1][1]; _avg = sum(v for _,v in sample_dl)/len(sample_dl)
+            _mx = max(v for _,v in sample_dl); _mn = min(v for _,v in sample_dl)
+            datalab_box_chart_html = f"""
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:2mm;">
+              <tr>
+                <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">현재</div><div style="font-size:12pt; font-weight:bold; color:#DC2626;">{_cur:.0f}</div></td>
+                <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">평균</div><div style="font-size:12pt; font-weight:bold; color:#1F2937;">{_avg:.0f}</div></td>
+                <td style="text-align:center; border-right:1px solid #FECACA;"><div style="font-size:7pt; color:#9CA3AF;">최고</div><div style="font-size:12pt; font-weight:bold; color:#B91C1C;">{_mx:.0f}</div></td>
+                <td style="text-align:center;"><div style="font-size:7pt; color:#9CA3AF;">최저</div><div style="font-size:12pt; font-weight:bold; color:#1D4ED8;">{_mn:.0f}</div></td>
+              </tr>
+            </table>"""
+            _rows_html = ""
+            for _d, _v in sample_dl:
+                _p = max(1, min(100, round(_v / _vmax * 100)))
+                _r = 100 - _p
+                _e = f'<td width="{_r}%" bgcolor="#FEE2E2" style="background-color:#FEE2E2; padding:0;"></td>' if _r > 0 else ''
+                _rows_html += f"""<tr>
+                  <td width="16%" style="font-size:8pt; color:#1F2937; padding:0.4mm 1mm;">{_d}</td>
+                  <td width="68%" style="padding:0.4mm 1mm;"><table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;"><td width="{_p}%" bgcolor="#F43F5E" style="background-color:#F43F5E; padding:0;"></td>{_e}</tr></table></td>
+                  <td width="16%" style="font-size:8pt; color:#DC2626; font-weight:bold; text-align:right; padding:0.4mm 1mm;">{_v:.0f}</td>
+                </tr>"""
+            datalab_box_chart_html += f'<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#FEF2F2; border:1px solid #FECACA; border-radius:4px;">{_rows_html}</table>'
         # ----------------------------------------------------------------------
         # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
         # ----------------------------------------------------------------------
@@ -2385,36 +2707,40 @@ with st.container(border=True):
             <meta charset="utf-8">
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
-                @page {{ size: a4; margin: 11mm 11mm 11mm 11mm; }}
-                body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }}
-                .header-container {{ border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }}
-                .doc-title {{ font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }}
-                .doc-meta {{ text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }}
-                .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }}
-                .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
-                .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }}
-                .badge-up {{ color: #B91C1C; font-weight: bold; }}
-                .badge-down {{ color: #1E40AF; font-weight: bold; }}
-                table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }}
-                th {{ background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }}
-                td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }}
+                @page {{ size: a4; margin: 13mm 13mm 14mm 13mm; }}
+                body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #2D3748; line-height: 1.5; font-size: 9pt; }}
+                .header-container {{ border-bottom: 2.5px solid #1E40AF; padding-bottom: 3mm; margin-bottom: 6mm; }}
+                .doc-title {{ font-size: 17pt; font-weight: bold; color: #1E40AF; letter-spacing: -0.3px; }}
+                .doc-subtitle {{ font-size: 8.5pt; color: #718096; margin-top: 1.5mm; }}
+                .doc-meta {{ text-align: right; font-size: 7.5pt; color: #A0AEC0; margin-top: 1mm; }}
+                .section-container {{ margin-bottom: 6.5mm; }}
+                .section-title {{ font-size: 12pt; font-weight: bold; color: #1A202C; padding: 0 0 2mm 0; margin-bottom: 3.5mm; border-bottom: 1.5px solid #E2E8F0; }}
+                .section-title .num {{ color: #1E40AF; }}
+                .content-title {{ font-weight: bold; color: #2D3748; margin-top: 4mm; margin-bottom: 2mm; font-size: 9.5pt; padding-left: 2.5mm; border-left: 3px solid #3B82F6; }}
+                .badge-up {{ color: #C53030; font-weight: bold; }}
+                .badge-down {{ color: #2B6CB0; font-weight: bold; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 2mm; }}
+                th {{ background-color: #F7FAFC; color: #4A5568; font-weight: bold; border: none; border-bottom: 1.5px solid #CBD5E0; padding: 2mm 1.5mm; font-size: 8pt; text-align: center; }}
+                td {{ border: none; border-bottom: 1px solid #EDF2F7; padding: 2mm 1.5mm; font-size: 8pt; vertical-align: top; }}
                 ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
-                li {{ margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }}
+                li {{ margin-bottom: 1mm; font-size: 8.5pt; color: #4A5568; line-height: 1.5; }}
                 .page-break {{ page-break-before: always; }}
-                .footer-text {{ text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }}
+                .footer-text {{ text-align: center; font-size: 7pt; color: #A0AEC0; margin-top: 6mm; border-top: 1px solid #E2E8F0; padding-top: 2mm; }}
+                .brief-line {{ margin: 1.2mm 0; font-size: 9pt; }}
             </style>
         </head>
         <body>
             <div class="header-container">
-                <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
-                <div class="doc-meta">발행기준시점: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 작성주체: AI 자동 분석 컴파일러</div>
+                <div class="doc-title">KODEX ETF 마켓 인텔리전스 리포트</div>
+                <div class="doc-subtitle">삼성자산운용 KODEX 마케팅 전략 · 실시간 통합 분석</div>
+                <div class="doc-meta">발행: {datetime.now(_kst).strftime('%Y-%m-%d %H:%M')} KST · AI 자동 분석 컴파일러</div>
             </div>
             
             <div class="section-container">
-                <div class="section-title">🎯 Section 1. 시장 트렌드 & 실시간 뉴스 키워드 빈도</div>
-                <p style="margin: 0.5mm 0;">• <span class="badge-up">🚀 라이징 테마:</span> {rising_theme}</p>
-                <p style="margin: 0.5mm 0;">• <span class="badge-down">📉 하락/정체 테마:</span> {falling_theme}</p>
-                <p style="margin: 0.5mm 0;">• <b>🧭 관심 자산군 변화 추이:</b> {trend_text}</p>
+                <div class="section-title"><span class="num">Section 1.</span> 시장 트렌드 &amp; 뉴스 키워드</div>
+                <p class="brief-line">• <span class="badge-up">라이징 테마:</span> {rising_theme}</p>
+                <p class="brief-line">• <span class="badge-down">하락/정체 테마:</span> {falling_theme}</p>
+                <p class="brief-line">• <b>관심 자산군 변화 추이:</b> {trend_text}</p>
                 
                 <div class="content-title">[실시간 뉴스 핵심 키워드 언급 강도 인디케이터]</div>
                 <table>
@@ -2432,63 +2758,27 @@ with st.container(border=True):
             </div>
             
             <div class="section-container">
-                <div class="section-title">📺 Section 2. 자산운용사 마케팅 동향 및 공식 미디어/리테일 채널 입체 분석</div>
+                <div class="section-title"><span class="num">Section 2.</span> 자산운용사 마케팅 동향 분석</div>
                 
-                <div class="content-title">▶ 1. 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도</div>
-                <table>
+                <div class="content-title" style="margin-top:4mm;">▶ 1. 주요 운용사별 ETF 이슈 모니터링 (최신 뉴스 AI 요약)</div>
+                {etf_issue_html}
+
+                <div class="content-title" style="margin-top:4mm;">▶ 2. 운용사 공식 홈페이지 메인화면 실시간 스크리닝 요약</div>
+                
+                <table style="width: 100%; border-collapse: collapse; margin-top: 2mm; table-layout: fixed;">
                     <thead>
-                        <tr>
-                            <th style="width: 22%;">자산운용사 (브랜드)</th>
-                            <th style="width: 63%;">핵심 마케팅 타겟 키워드 및 타겟팅 스코어</th>
-                            <th style="width: 15%;">캠페인 집중도</th>
+                        <tr style="background-color: #1E3A8A; color: white;">
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 18%; font-weight: bold; text-align: center;">브랜드(운용사)</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 22%; font-weight: bold; text-align: center;">홈페이지 상위 노출 키워드</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 20%; font-weight: bold; text-align: center;">실시간 마케팅 방향</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 23%; font-weight: bold; text-align: center;">첫페이지 캐치프레이즈</th>
+                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 17%; font-weight: bold; text-align: center;">마케팅 레이아웃 진단</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td><b>삼성자산운용 (KODEX)</b></td><td>AI 테크, 미국 반도체, 월배당 고배당, 연금투자 안정성 밸류체인 유입 소구</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
-                        <tr><td><b>미래에셋자산운용 (TIGER)</b></td><td>글로벌 혁신기술, 나스닥 핵심 성장주, 개인 투자 수급 집중형 직관 테마 마케팅</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
-                        <tr><td><b>KB자산운용 (RISE)</b></td><td>정부 밸류업 프로그램 수혜주, 저평가 가치 배당주, 국채 자산배분 안정성 소구</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
-                        <tr><td><b>한국투자신탁운용 (ACE)</b></td><td>글로벌 원천 반도체 TOP4, 빅테크 소프트웨어 독점주, 신흥국(인도 등) 시장 타겟팅</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
-                    </tbody>
+                        {part_d_table_rows}  </tbody>
                 </table>
-
-                <div class="content-title" style="margin-top:3mm;">▶ 2. 4대 주요 증권사별 리테일 영업 채널 상품 소구 동향</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 25%;">대형 리테일 증권사</th>
-                            <th style="width: 75%;">영업점 창구 및 MTS 홈화면 주력 매칭 추천 ETF 테마 동향</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><b>삼성증권</b></td><td>패밀리오피스 및 자산가 그룹 대상 절세 연금 포트폴리오 다변화를 위한 미국 반도체 및 인컴 자산 매칭 유도</td></tr>
-                        <tr><td><b>미래에셋증권</b></td><td>연금저축 및 퇴직연금(IRP) 디지털 독자층 타겟형 미국 독점 AI 기술주 및 커버드콜 결합형 상품 전면 배치</td></tr>
-                        <tr><td><b>키움증권</b></td><td>리테일 개인 주식 투자 헤비 트레이더 대상 일간 거래량 최상위 테크 레버리지 및 섹터 회전 가이드 중심 수급 유도</td></tr>
-                        <tr><td><b>한국투자증권</b></td><td>글로벌 지수 압축 독점 자산군 장기 적립식 가이드 제공 및 엔화 노출형 미국채 자산군 중심의 매크로 헷징 제안</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="page-break"></div>
-
-            <div class="section-container">
-                <div class="content-title">▶ 3. 4대 운용사 오피셜 유튜브 채널 콘텐츠 포커싱 점검</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 25%;">운용사</th>
-                            <th style="width: 35%;">최근 2주간 업로드 핵심 콘텐츠 유형</th>
-                            <th style="width: 40%;">뉴미디어 트래픽 유입 포인트 분석</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><b>KODEX (삼성)</b></td><td>• 펀드매니저가 직접 출연하는 AI ETF 설명회<br/>• 쇼츠 기반 연금 투자 세제 혜택 가이드</td><td>전문가 신뢰성 중심의 정밀 분석 영상 배치로 고액 자산가 및 장기 투자 인컴족 락인 유도</td></tr>
-                        <tr><td><b>TIGER (미래에셋)</b></td><td>• 유명 주식 유튜버 콜라보 시황 브리핑<br/>• 미국 테크 밸류체인 인포그래픽 모션그래픽</td><td>트렌디한 비주얼과 인플루언서 수급을 무기로 2040 젊은 스마트 트레이더층 대량 유입 유도</td></tr>
-                        <tr><td><b>RISE (KB)</b></td><td>• 리브랜딩 기념 브랜드 다큐멘터리 광고<br/>• 밸류업 동행 자산안정성 웹세미나</td><td>기업 이미지 쇄신 중심 브랜딩 및 가치 배당주 안정적 운용 포커스로 보수적 장기 유입 유도</td></tr>
-                        <tr><td><b>ACE (한국투자)</b></td><td>• 'ACE 반도체 TOP4' 심층 리서치 토크쇼<br/>• 인도 성장 시장 탐방 현지 밀착 VLOG</td><td>특정 섹터 압축 독점 상품군의 차별화 포인트를 정밀 전달하여 매니아층 확보</td></tr>
-                    </tbody>
-                </table>
-
-                <div class="content-title" style="margin-top:4mm;">▶ 4. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
+                <div class="content-title" style="margin-top:4mm;">▶ 3. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
 
                 <table style="width:100%; border-collapse:separate; border-spacing:2mm; table-layout:fixed; margin-top:2mm;">
                     <tr>
@@ -2520,33 +2810,65 @@ with st.container(border=True):
                         </td>
                     </tr>
                 </table>
-                <td style="width:50%; vertical-align:top; border:2px solid #047857; border-radius:6px; padding:3mm; background-color:#ECFDF5;">
-                            <div style="font-weight:bold; color:#047857; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #047857; padding-bottom:1.5mm;">■ 한국투자신탁운용 (ACE)</div>
-                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['ace']['prod']}</div>
-                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['ace']['theme']}</div>
-                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['ace']['reason']}</div>
-                        </td>
-                    </tr>
-                </table> <div class="content-title" style="margin-top:4mm;">▶ 5. 운용사 공식 홈페이지 메인화면 실시간 스크리닝 요약</div>
-                
-                <table style="width: 100%; border-collapse: collapse; margin-top: 2mm; table-layout: fixed;">
+                <div class="content-title">▶ 4. [유튜브 분석] 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도</div>
+                <table>
                     <thead>
-                        <tr style="background-color: #1E3A8A; color: white;">
-                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 18%; font-weight: bold; text-align: center;">브랜드(운용사)</th>
-                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 22%; font-weight: bold; text-align: center;">홈페이지 상위 노출 키워드</th>
-                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 20%; font-weight: bold; text-align: center;">실시간 마케팅 방향</th>
-                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 23%; font-weight: bold; text-align: center;">첫페이지 캐치프레이즈</th>
-                            <th style="border: 1px solid #1E3A8A; padding: 2mm; font-size: 8pt; width: 17%; font-weight: bold; text-align: center;">마케팅 레이아웃 진단</th>
+                        <tr>
+                            <th style="width: 22%;">자산운용사 (브랜드)</th>
+                            <th style="width: 63%;">핵심 마케팅 타겟 키워드 및 타겟팅 스코어</th>
+                            <th style="width: 15%;">캠페인 집중도</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {part_d_table_rows}  </tbody>
+                        <tr><td><b>삼성자산운용 (KODEX)</b></td><td>AI 테크, 미국 반도체, 월배당 고배당, 연금투자 안정성 밸류체인 유입 소구</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
+                        <tr><td><b>미래에셋자산운용 (TIGER)</b></td><td>글로벌 혁신기술, 나스닥 핵심 성장주, 개인 투자 수급 집중형 직관 테마 마케팅</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
+                        <tr><td><b>KB자산운용 (RISE)</b></td><td>정부 밸류업 프로그램 수혜주, 저평가 가치 배당주, 국채 자산배분 안정성 소구</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
+                        <tr><td><b>한국투자신탁운용 (ACE)</b></td><td>글로벌 원천 반도체 TOP4, 빅테크 소프트웨어 독점주, 신흥국(인도 등) 시장 타겟팅</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
+                    </tbody>
                 </table>
+
+                <div class="content-title" style="margin-top:3mm;">▶ 5. [유튜브 분석] 4대 주요 증권사별 리테일 영업 채널 상품 소구 동향</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 25%;">대형 리테일 증권사</th>
+                            <th style="width: 75%;">영업점 창구 및 MTS 홈화면 주력 매칭 추천 ETF 테마 동향</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><b>삼성증권</b></td><td>패밀리오피스 및 자산가 그룹 대상 절세 연금 포트폴리오 다변화를 위한 미국 반도체 및 인컴 자산 매칭 유도</td></tr>
+                        <tr><td><b>미래에셋증권</b></td><td>연금저축 및 퇴직연금(IRP) 디지털 독자층 타겟형 미국 독점 AI 기술주 및 커버드콜 결합형 상품 전면 배치</td></tr>
+                        <tr><td><b>키움증권</b></td><td>리테일 개인 주식 투자 헤비 트레이더 대상 일간 거래량 최상위 테크 레버리지 및 섹터 회전 가이드 중심 수급 유도</td></tr>
+                        <tr><td><b>한국투자증권</b></td><td>글로벌 지수 압축 독점 자산군 장기 적립식 가이드 제공 및 엔화 노출형 미국채 자산군 중심의 매크로 헷징 제안</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="page-break"></div>
+
+            <div class="section-container">
+                <div class="content-title">▶ 6. [유튜브 분석] 4대 운용사 오피셜 유튜브 채널 콘텐츠 포커싱 점검</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 25%;">운용사</th>
+                            <th style="width: 35%;">최근 2주간 업로드 핵심 콘텐츠 유형</th>
+                            <th style="width: 40%;">뉴미디어 트래픽 유입 포인트 분석</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><b>KODEX (삼성)</b></td><td>• 펀드매니저가 직접 출연하는 AI ETF 설명회<br/>• 쇼츠 기반 연금 투자 세제 혜택 가이드</td><td>전문가 신뢰성 중심의 정밀 분석 영상 배치로 고액 자산가 및 장기 투자 인컴족 락인 유도</td></tr>
+                        <tr><td><b>TIGER (미래에셋)</b></td><td>• 유명 주식 유튜버 콜라보 시황 브리핑<br/>• 미국 테크 밸류체인 인포그래픽 모션그래픽</td><td>트렌디한 비주얼과 인플루언서 수급을 무기로 2040 젊은 스마트 트레이더층 대량 유입 유도</td></tr>
+                        <tr><td><b>RISE (KB)</b></td><td>• 리브랜딩 기념 브랜드 다큐멘터리 광고<br/>• 밸류업 동행 자산안정성 웹세미나</td><td>기업 이미지 쇄신 중심 브랜딩 및 가치 배당주 안정적 운용 포커스로 보수적 장기 유입 유도</td></tr>
+                        <tr><td><b>ACE (한국투자)</b></td><td>• 'ACE 반도체 TOP4' 심층 리서치 토크쇼<br/>• 인도 성장 시장 탐방 현지 밀착 VLOG</td><td>특정 섹터 압축 독점 상품군의 차별화 포인트를 정밀 전달하여 매니아층 확보</td></tr>
+                    </tbody>
+                </table>
+
                 </div> ```
             </div>
 
             <div class="section-container">
-                <div class="section-title">👥 Section 3. 투자자별 순매수 수급 강도 입체 시각화 리포트 (Top 15 전수)</div>
+                <div class="section-title"><span class="num">Section 3.</span> 투자자 순매수 수급 강도 (TOP 15)</div>
                 <div style="font-size:9pt; background-color:#F9FAFB; border-left:3px solid #1E40AF; padding:1.5mm 2.5mm; color:#374151; margin-bottom:2.5mm;">
                     <b>📊 분석 대상 기간:</b> <span style='color:#1E40AF; font-weight:bold;'>{analysis_period}</span><br/>
                     <span style='font-size:8pt; color:#6B7280;'>• {excel_summary}</span>
@@ -2561,7 +2883,7 @@ with st.container(border=True):
             <div class="page-break"></div>
 
             <div class="section-container">
-                <div class="section-title">📈 Section 4. 주간 수익률 퍼포먼스 & 차주 주목 테마 ETF 라인업</div>
+                <div class="section-title"><span class="num">Section 4.</span> 주간 수익률 &amp; 주목 ETF</div>
                 <table style="width:100%; border:none; border-collapse: collapse;">
                     <tr style="border:none;">
                         <td style="width:48%; border:none; padding:0; vertical-align: top;">
@@ -2569,8 +2891,9 @@ with st.container(border=True):
                             <table style="width:100%; border-collapse: collapse; margin-top: 1.5mm;">
                                 <thead>
                                     <tr>
-                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt;">KODEX ETF 종목명</th>
-                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 30%;">주간 수익률</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width:40%;">KODEX ETF 종목명</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 42%;">수익률 분포</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 18%;">주간 수익률</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -2584,8 +2907,9 @@ with st.container(border=True):
                             <table style="width:100%; border-collapse: collapse; margin-top: 1.5mm;">
                                 <thead>
                                     <tr>
-                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt;">시장 핵심 분석 테마 섹터</th>
-                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 30%;">평균 수익률</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width:40%;">시장 핵심 분석 테마 섹터</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 42%;">수익률 분포</th>
+                                        <th style="background-color: #1E3A8A; color: #FFFFFF; padding: 1.5mm; font-size: 8.5pt; width: 18%;">평균 수익률</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -2602,7 +2926,7 @@ with st.container(border=True):
             </div>
 
             <div class="section-container">
-                <div class="section-title">📱 Section 5. 네이버 데이터랩 트렌드 변동 & 마케팅 뉴스 및 AI 최종 인사이트</div>
+                <div class="section-title"><span class="num">Section 5.</span> 마케팅 성과 &amp; AI 종합 인사이트</div>
                 
                 <div style="border: 1px solid #DBEAFE; background-color: #EFF6FF; padding: 3.5mm; margin-bottom: 4mm; border-radius: 6px;">
                     <div style="font-weight: bold; color: #1E40AF; font-size: 9.5pt; margin-bottom: 1.5mm;">📢 KODEX 주간 마케팅 및 보도 트렌드 종합 요약 (에이전트 실시간 연동)</div>
@@ -2622,21 +2946,7 @@ with st.container(border=True):
                         
                         <td style="width: 48%; vertical-align: top; border: none;">
                             <div class="content-title">💡 2. 자산 배분 전략 및 에이전트 AI 종합 인사이트</div>
-                            
-                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; margin-bottom: 2mm; border-radius: 4px;">
-                                <div style="font-weight: bold; color: #BE185D; font-size: 8pt; margin-bottom: 0.5mm;">🎯 핵심 전략 01</div>
-                                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{pdf_insights[0]}</div>
-                            </div>
-                            
-                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; margin-bottom: 2mm; border-radius: 4px;">
-                                <div style="font-weight: bold; color: #B45309; font-size: 8pt; margin-bottom: 0.5mm;">💰 핵심 전략 02</div>
-                                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{pdf_insights[1]}</div>
-                            </div>
-                            
-                            <div style="border: 1px solid #E5E7EB; background-color: #FAFAFA; padding: 2.5mm; border-radius: 4px;">
-                                <div style="font-weight: bold; color: #047857; font-size: 8pt; margin-bottom: 0.5mm;">🌏 핵심 전략 03</div>
-                                <div style="font-size: 7.5pt; color: #374151; line-height: 1.4;">{pdf_insights[2]}</div>
-                            </div>
+                            {pdf_insights_html}
                         </td>
                     </tr>
                 </table>
@@ -2659,12 +2969,14 @@ with st.container(border=True):
         return pdf_buffer.getvalue()
 
     try:
+        from datetime import timezone as _tz, timedelta as _td
+        _kst_fname = datetime.now(_tz(_td(hours=9))).strftime('%Y%m%d')
         pdf_data = generate_pdf_report()
         if pdf_data:
             st.download_button(
                 label="📄 PDF 리포트 다운로드",
                 data=pdf_data,
-                file_name=f"KODEX_Perfect_Sync_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                file_name=f"KODEX_Perfect_Sync_Report_{_kst_fname}.pdf",
                 mime="application/pdf",
                 use_container_width=True
             )
@@ -2708,7 +3020,9 @@ def build_email_html_report():
     import pandas as pd
     import re as _re
 
-    now_str = datetime.now().strftime("%Y년 %m월 %d일 %H:%M")
+    from datetime import timezone, timedelta
+    _kst = timezone(timedelta(hours=9))
+    now_str = datetime.now(_kst).strftime("%Y년 %m월 %d일 %H:%M")
     week_text = st.session_state.get("week2_option", "-")
     agent_text = st.session_state.get("target_agent_option", "개인")
 
@@ -2809,109 +3123,121 @@ def build_email_html_report():
     # ======================================================================
     sec2 = card_open("📺", "Section 2. 경쟁사 모니터링 & 마케팅 분석")
 
-    # 2-A. 유튜브 동향 (마크다운 문자열)
-    yt = st.session_state.get("yt_report_fixed", "")
-    sec2 += sub_head("🎥 유튜브 채널별 마케팅 동향")
-    if isinstance(yt, str) and yt.strip():
-        sec2 += (f"<div style='font-size:12.5px;color:{C_TEXT};line-height:1.65;"
-                 f"background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;"
-                 f"padding:12px;'>{md_bold(yt.strip())}</div>")
-    else:
-        sec2 += empty("유튜브 분석 데이터 없음")
+    # --- 블록 빌더들 (순서: 운용사이슈 → 홈페이지 → 블로그 → 유튜브) ---
 
-    # 2-B. 블로그 주력 ETF
-    blog_results = st.session_state.get("blog_analysis_results", [])
-    sec2 += sub_head("📊 공식 블로그 주력 ETF 상품")
-    if blog_results:
-        rows = ""
-        for res in blog_results:
-            comp = res.get("company", "-")
-            prod = res.get("main_products", "-")
-            theme = res.get("marketing_theme", "-")
-            rows += f"""
-            <tr>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:13px;font-weight:700;color:{C_PRIMARY};width:22%;">{comp}</td>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;color:{C_TEXT};width:40%;">{prod}</td>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;color:{C_SUB};width:38%;">{theme}</td>
-            </tr>"""
-        sec2 += f"""<table width="100%" cellpadding="0" cellspacing="0">
-          <tr style="background:{C_BG};">
-            <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">운용사</td>
-            <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">주력 ETF</td>
-            <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">마케팅 테마</td>
-          </tr>{rows}</table>"""
-    else:
-        sec2 += empty("블로그 분석 데이터 없음")
+    def _blk_issue():
+        events = st.session_state.get("df_events_base_data", [])
+        out = sub_head("🏢 운용사별 ETF 이슈 모니터링")
+        if events:
+            df_ev = pd.DataFrame(events)
+            brands_order = ["삼성자산운용", "미래에셋자산운용", "한국투자신탁운용", "KB자산운용"]
+            rows = ""
+            for comp in brands_order:
+                if "운용사" not in df_ev.columns:
+                    break
+                sub = df_ev[df_ev["운용사"] == comp]
+                if sub.empty:
+                    continue
+                brand = sub.iloc[0].get("브랜드", "")
+                titles = list(dict.fromkeys(sub["제목"].tolist()))[:2]
+                title_txt = " / ".join(titles).replace("&gt;", ">").replace("&lt;", "<")
+                prods = list(dict.fromkeys(sub["🎯 유도 ETF 종목"].tolist()))[:2]
+                prod_txt = ", ".join(prods)
+                rows += f"""
+                <tr>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;font-weight:700;color:{C_PRIMARY};width:24%;">{comp}<br><span style='color:{C_SUB};font-weight:600;'>{brand}</span></td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11.5px;color:{C_TEXT};width:44%;line-height:1.5;">{title_txt}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11.5px;color:{C_ACCENT};width:32%;line-height:1.5;">{prod_txt}</td>
+                </tr>"""
+            if rows:
+                out += f"""<table width="100%" cellpadding="0" cellspacing="0">
+                  <tr style="background:{C_BG};">
+                    <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">운용사</td>
+                    <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">주요 이벤트</td>
+                    <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">유도 ETF</td>
+                  </tr>{rows}</table>"""
+            else:
+                out += empty("ETF 이슈 데이터 없음")
+        else:
+            out += empty("ETF 이슈 데이터 없음")
+        return out
 
-    # 2-C. 운용사별 ETF 이슈 모니터링 (구글뉴스 기반 이벤트)
-    events = st.session_state.get("df_events_base_data", [])
-    sec2 += sub_head("🏢 운용사별 ETF 이슈 모니터링")
-    if events:
-        df_ev = pd.DataFrame(events)
-        brands_order = ["삼성자산운용", "미래에셋자산운용", "한국투자신탁운용", "KB자산운용"]
-        rows = ""
-        for comp in brands_order:
-            if "운용사" not in df_ev.columns:
-                break
-            sub = df_ev[df_ev["운용사"] == comp]
-            if sub.empty:
-                continue
-            brand = sub.iloc[0].get("브랜드", "")
-            titles = list(dict.fromkeys(sub["제목"].tolist()))[:2]
-            title_txt = " / ".join(titles).replace("&gt;", ">").replace("&lt;", "<")
-            prods = list(dict.fromkeys(sub["🎯 유도 ETF 종목"].tolist()))[:2]
-            prod_txt = ", ".join(prods)
-            rows += f"""
-            <tr>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;font-weight:700;color:{C_PRIMARY};width:24%;">{comp}<br><span style='color:{C_SUB};font-weight:600;'>{brand}</span></td>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11.5px;color:{C_TEXT};width:44%;line-height:1.5;">{title_txt}</td>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11.5px;color:{C_ACCENT};width:32%;line-height:1.5;">{prod_txt}</td>
-            </tr>"""
-        if rows:
-            sec2 += f"""<table width="100%" cellpadding="0" cellspacing="0">
+    def _blk_homepage():
+        homepage = st.session_state.get("homepage_data", [])
+        out = sub_head("🕵️ 공식 홈페이지 메인화면 스크리닝")
+        if homepage:
+            rows = ""
+            for r in homepage:
+                try:
+                    s = summarize_brand(r)
+                except Exception:
+                    continue
+                brand = f"{s.get('brand','-')} ({r.get('manager','')})"
+                kw = s.get("keywords", "-")
+                direction = md_bold(s.get("etf_brief", "-"))
+                catch = s.get("overview", "-")
+                layout = md_bold(s.get("marketing_memo", "-"))
+                rows += f"""
+                <tr>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;font-weight:700;color:{C_PRIMARY};width:20%;">{brand}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_TEXT};width:24%;line-height:1.45;">{kw}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_TEXT};width:18%;line-height:1.45;">{direction}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_ACCENT};width:20%;line-height:1.45;">{catch}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_SUB};width:18%;line-height:1.45;">{layout}</td>
+                </tr>"""
+            out += f"""<table width="100%" cellpadding="0" cellspacing="0">
               <tr style="background:{C_BG};">
-                <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">운용사</td>
-                <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">주요 이벤트</td>
-                <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">유도 ETF</td>
+                <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">운용사</td>
+                <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">키워드</td>
+                <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">방향</td>
+                <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">캐치프레이즈</td>
+                <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">레이아웃</td>
               </tr>{rows}</table>"""
         else:
-            sec2 += empty("ETF 이슈 데이터 없음")
-    else:
-        sec2 += empty("ETF 이슈 데이터 없음")
+            out += empty("홈페이지 스크리닝 데이터 없음")
+        return out
 
-    # 2-D. 홈페이지 메인화면 실시간 스크리닝
-    homepage = st.session_state.get("homepage_data", [])
-    sec2 += sub_head("🕵️ 공식 홈페이지 메인화면 스크리닝")
-    if homepage:
-        rows = ""
-        for r in homepage:
-            try:
-                s = summarize_brand(r)
-            except Exception:
-                continue
-            brand = f"{s.get('brand','-')} ({r.get('manager','')})"
-            kw = s.get("keywords", "-")
-            direction = md_bold(s.get("etf_brief", "-"))
-            catch = s.get("overview", "-")
-            layout = md_bold(s.get("marketing_memo", "-"))
-            rows += f"""
-            <tr>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;font-weight:700;color:{C_PRIMARY};width:20%;">{brand}</td>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_TEXT};width:24%;line-height:1.45;">{kw}</td>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_TEXT};width:18%;line-height:1.45;">{direction}</td>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_ACCENT};width:20%;line-height:1.45;">{catch}</td>
-              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_SUB};width:18%;line-height:1.45;">{layout}</td>
-            </tr>"""
-        sec2 += f"""<table width="100%" cellpadding="0" cellspacing="0">
-          <tr style="background:{C_BG};">
-            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">운용사</td>
-            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">키워드</td>
-            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">방향</td>
-            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">캐치프레이즈</td>
-            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">레이아웃</td>
-          </tr>{rows}</table>"""
-    else:
-        sec2 += empty("홈페이지 스크리닝 데이터 없음")
+    def _blk_blog():
+        blog_results = st.session_state.get("blog_analysis_results", [])
+        out = sub_head("📊 공식 블로그 주력 ETF 상품")
+        if blog_results:
+            rows = ""
+            for res in blog_results:
+                comp = res.get("company", "-")
+                prod = res.get("main_products", "-")
+                theme = res.get("marketing_theme", "-")
+                rows += f"""
+                <tr>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:13px;font-weight:700;color:{C_PRIMARY};width:22%;">{comp}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;color:{C_TEXT};width:40%;">{prod}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;color:{C_SUB};width:38%;">{theme}</td>
+                </tr>"""
+            out += f"""<table width="100%" cellpadding="0" cellspacing="0">
+              <tr style="background:{C_BG};">
+                <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">운용사</td>
+                <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">주력 ETF</td>
+                <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">마케팅 테마</td>
+              </tr>{rows}</table>"""
+        else:
+            out += empty("블로그 분석 데이터 없음")
+        return out
+
+    def _blk_youtube():
+        yt = st.session_state.get("yt_report_fixed", "")
+        out = sub_head("🎥 유튜브 채널별 마케팅 동향")
+        if isinstance(yt, str) and yt.strip():
+            out += (f"<div style='font-size:12.5px;color:{C_TEXT};line-height:1.65;"
+                    f"background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;"
+                    f"padding:12px;'>{md_bold(yt.strip())}</div>")
+        else:
+            out += empty("유튜브 분석 데이터 없음")
+        return out
+
+    # 요청 순서대로 조립
+    sec2 += _blk_issue()
+    sec2 += _blk_homepage()
+    sec2 += _blk_blog()
+    sec2 += _blk_youtube()
 
     sec2 += card_close()
 
@@ -3051,7 +3377,7 @@ def build_email_html_report():
     sec4 += card_close()
 
     # ======================================================================
-    # SECTION 5. 마케팅 성과 (뉴스 요약 + 종합 인사이트)
+    # SECTION 5. 마케팅 성과 (뉴스 요약 + 데이터랩 + 종합 인사이트)
     # ======================================================================
     sec5 = card_open("💡", "Section 5. 마케팅 성과 & 종합 인사이트")
 
@@ -3065,11 +3391,70 @@ def build_email_html_report():
     else:
         sec5 += empty("뉴스 요약 데이터 없음")
 
+    # 5-B. 네이버 데이터랩 트렌드 (확대된 스파크라인)
+    df_sns = st.session_state.get("df_sns", pd.DataFrame())
+    sec5 += sub_head("📱 네이버 데이터랩 검색 트렌드 (최근 한 달)")
+    if isinstance(df_sns, pd.DataFrame) and not df_sns.empty and "검색 지수" in df_sns.columns:
+        vals = pd.to_numeric(df_sns["검색 지수"], errors="coerce").dropna()
+        if not vals.empty:
+            cur = float(vals.iloc[-1])
+            avg = float(vals.mean())
+            mx = float(vals.max())
+            mn = float(vals.min())
+            # 확대 막대 차트: 최근 30일 전체, 높이 최대 96px, 막대폭 14px
+            CHART_H = 96
+            tail = vals.tail(30).tolist()
+            vmax = max(tail) or 1
+            spark = ""
+            for x in tail:
+                h = max(4, round(x / vmax * CHART_H))
+                spark += (f"<td style='vertical-align:bottom;padding:0 2px;'>"
+                          f"<div style='width:14px;height:{h}px;background:{C_ACCENT};"
+                          f"border-radius:3px 3px 0 0;'></div></td>")
+            sec5 += f"""
+            <table width="100%" cellpadding="0" cellspacing="0"
+                   style="background:#FAFAFA;border:1px solid {C_BORDER};border-radius:12px;
+                          padding:16px;margin-bottom:8px;">
+              <tr>
+                <td style="vertical-align:bottom;">
+                  <table cellpadding="0" cellspacing="0" style="width:100%;">
+                    <tr style="height:{CHART_H}px;">{spark}</tr>
+                  </table>
+                  <div style="font-size:11px;color:{C_SUB};margin-top:8px;text-align:center;">
+                    KODEX ETF 일별 검색지수 추이 (최근 30일)</div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding-top:14px;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="text-align:center;border-right:1px solid {C_BORDER};">
+                        <div style="font-size:11px;color:{C_SUB};">현재</div>
+                        <div style="font-size:20px;font-weight:800;color:{C_PRIMARY};">{cur:.0f}</div></td>
+                      <td style="text-align:center;border-right:1px solid {C_BORDER};">
+                        <div style="font-size:11px;color:{C_SUB};">기간평균</div>
+                        <div style="font-size:20px;font-weight:800;color:{C_TEXT};">{avg:.0f}</div></td>
+                      <td style="text-align:center;border-right:1px solid {C_BORDER};">
+                        <div style="font-size:11px;color:{C_SUB};">최고</div>
+                        <div style="font-size:20px;font-weight:800;color:#B91C1C;">{mx:.0f}</div></td>
+                      <td style="text-align:center;">
+                        <div style="font-size:11px;color:{C_SUB};">최저</div>
+                        <div style="font-size:20px;font-weight:800;color:#1D4ED8;">{mn:.0f}</div></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>"""
+        else:
+            sec5 += empty("데이터랩 수치 없음")
+    else:
+        sec5 += empty("데이터랩 데이터 없음")
+
     # 5-C. 종합 인사이트 (문자열 \n\n 분리 + 마크다운 굵게)
     final_insight = st.session_state.get("final_insight", "")
     sec5 += sub_head("⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트")
     insight_html = ""
-    labels = ["🎯 핵심 전략 01", "💰 핵심 전략 02", "🌏 핵심 전략 03"]
+    labels = ["🎯 핵심 전략 01", "💰 핵심 전략 02", "🌏 핵심 전략 03", "🔥 핵심 전략 04", "💡 핵심 전략 05", "🚀 핵심 전략 06"]
     segs = []
     if isinstance(final_insight, str) and final_insight.strip():
         segs = [s.strip() for s in final_insight.split("\n\n") if s.strip()]
@@ -3114,7 +3499,7 @@ def build_email_html_report():
         <tr><td style="padding:8px 4px 24px;">
           <div style="font-size:11px;color:{C_SUB};line-height:1.6;text-align:center;">
             본 리포트는 대시보드 세션 데이터를 기반으로 자동 생성된 투자 참고용 자료입니다.<br>
-            데이터 출처: 네이버 검색 API, 운용사 공식 블로그·홈페이지, ETF 시세 API, Gemini 분석.
+            데이터 출처: 네이버 검색/데이터랩 API, 운용사 공식 블로그·홈페이지, ETF 시세 API, Gemini 분석.
           </div>
         </td></tr>
       </table>
@@ -3150,7 +3535,9 @@ def send_email_report(html_body, to_addrs, subject=None):
         raise ValueError("수신자 주소가 비어 있습니다.")
 
     if subject is None:
-        subject = f"[KODEX 인텔리전스] 마케팅·트렌드 종합 리포트 {datetime.now().strftime('%Y-%m-%d')}"
+        from datetime import timezone, timedelta
+        _kst = timezone(timedelta(hours=9))
+        subject = f"[KODEX 인텔리전스] 마케팅·트렌드 종합 리포트 {datetime.now(_kst).strftime('%Y-%m-%d')}"
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
