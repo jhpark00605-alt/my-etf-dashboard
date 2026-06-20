@@ -2659,10 +2659,10 @@ from email.mime.text import MIMEText
 def send_html_dashboard_email(to_email, subject, html_content):
     """HTML 대시보드를 수신자에게 전송하는 SMTP 메일 엔진"""
     # ⚠️ 사용 시 본인의 SMTP 서버 정보와 앱 비밀번호를 매칭해 주어야 작동합니다.
-    SMTP_SERVER = "smtp.gmail.com"  # 네이버일 경우 smtp.naver.com
-    SMTP_PORT = 587
-    SMTP_USER = "your_email@gmail.com"       # 발신용 이메일 주소
-    SMTP_PASSWORD = "your_app_password"     # 발신 이메일의 앱 비밀번호
+    SMTP_SERVER = "smtp.naver.com"  # 네이버일 경우 smtp.naver.com
+    SMTP_PORT = 465
+    SMTP_USER = "jhpark0065@naver.com"       # 발신용 이메일 주소
+    SMTP_PASSWORD = "7RF4P35T95ZZ"     # 발신 이메일의 앱 비밀번호
 
     try:
         msg = MIMEMultipart('alternative')
