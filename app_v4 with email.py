@@ -197,7 +197,9 @@ def generate_live_market_briefing(gemini_key, keywords_data):
         """
         response = model.generate_content(prompt)
         if response and response.text:
-            return json.loads(response.text.strip())
+            _r = json.loads(response.text.strip())
+            if isinstance(_r, dict):
+                return _r
     except:
         pass
     
@@ -464,12 +466,15 @@ with st.container(border=True):
             prompt = f"다음 뉴스에서 브랜드별 핵심 이슈 2개를 추출해 반드시 형식을 갖춘 JSON 구조로 반환해줘:\n{news_context}"
             response = model.generate_content(prompt)
             if response and response.text:
-                summary_data = json.loads(response.text.strip())
-                ai_success = True
+                _parsed = json.loads(response.text.strip())
+                # dict가 아니면(list 등) 사용 불가 → 백업으로 폴백
+                if isinstance(_parsed, dict):
+                    summary_data = _parsed
+                    ai_success = True
         except:
             ai_success = False
 
-    if not ai_success or not summary_data:
+    if not ai_success or not isinstance(summary_data, dict) or not summary_data:
         summary_data = backup_display_data
 
     col_a, col_b, col_c, col_d = st.columns(4)
@@ -583,7 +588,10 @@ def analyze_official_blog_with_gemini(gemini_key, system_role, user_data, output
         response = model.generate_content(prompt)
         if response and response.text:
             import json
-            return json.loads(response.text.strip())
+            _r = json.loads(response.text.strip())
+            if isinstance(_r, dict):
+                return _r
+            return None
     except:
         return None
     return None
