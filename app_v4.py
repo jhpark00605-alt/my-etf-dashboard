@@ -160,12 +160,9 @@ def send_report_email(recipients, subject, html_body, pdf_bytes=None, pdf_filena
         return False, "받는 사람 이메일 주소가 비어 있습니다."
 
     try:
-        from email.utils import formataddr
-        from email.header import Header
-
         msg = MIMEMultipart("mixed")
         msg["Subject"] = subject
-        msg["From"] = formataddr((str(Header(sender_name, "utf-8")), smtp_user))
+        msg["From"] = f"{sender_name} <{smtp_user}>"
         msg["To"] = ", ".join(recipients)
 
         # 본문은 HTML 그대로 표시 (메일 클라이언트에서 열면 바로 리포트가 보임)
@@ -2433,6 +2430,411 @@ with st.container(border=True):
                     <div style='color: #F43F5E; font-size: 8.5pt; letter-spacing: 0.3mm; margin-top: 0.5mm;'>{"■"*d_bar}</div>
                 </div>
                 """
+
+        # ==============================================================================
+# 📧 [추가 모듈] 대시보드 → 카드형 HTML 이메일 발송 모듈
+# ------------------------------------------------------------------------------
+# 사용법:
+#   1) app_v4.py 파일 맨 끝(기존 PDF 다운로드 버튼 try/except 블록 아래)에
+#      이 파일의 내용을 그대로 붙여넣기.
+#   2) Streamlit Secrets에 이미 설정된 키 사용 (네이버 SMTP 기준):
+#         SMTP_HOST        = "smtp.naver.com"
+#         SMTP_PORT        = 587            # 587=STARTTLS / 465=SSL
+#         SMTP_USER        = "your_id@naver.com"
+#         SMTP_PASSWORD    = "네이버 로그인(또는 메일앱) 비밀번호"
+#         SMTP_SENDER_NAME = "KODEX 마케팅 AI 에이전트"
+#         SMTP_USE_SSL     = false          # 587이면 false, 465면 true
+#         # (선택) MAIL_TO   = "받는사람@x.com"   # 없으면 앱 화면에서 직접 입력
+#
+#   ※ 네이버: 메일 > 환경설정 > POP3/IMAP 설정에서 'IMAP/SMTP 사용 ON' 필수.
+#     발신자(From)는 반드시 SMTP_USER 계정과 동일해야 발송 거부 안 됨.
+# ==============================================================================
+
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formataddr
+from datetime import datetime
+
+
+# ------------------------------------------------------------------------------
+# 1. session_state 데이터 → 카드형 이메일 HTML 빌더
+#    (PDF 함수가 쓰던 동일 세션 키를 그대로 재활용 → 데이터 중복 수집 없음)
+# ------------------------------------------------------------------------------
+def build_email_html_report():
+    import pandas as pd
+
+    now_str = datetime.now().strftime("%Y년 %m월 %d일 (%a) %H:%M")
+    week_text = st.session_state.get("week2_option", "-")
+    agent_text = st.session_state.get("target_agent_option", "개인")
+
+    # ---- 디자인 토큰 (이메일 클라이언트 호환 위해 전부 인라인 스타일) ----
+    C_PRIMARY = "#1E40AF"
+    C_ACCENT = "#2563EB"
+    C_BG = "#F4F6FB"
+    C_CARD = "#FFFFFF"
+    C_BORDER = "#E5E7EB"
+    C_TEXT = "#1F2937"
+    C_SUB = "#6B7280"
+
+    def card_open(icon, title, sub=""):
+        sub_html = (
+            f"<div style='font-size:12px;color:{C_SUB};margin-top:2px;'>{sub}</div>"
+            if sub else ""
+        )
+        return f"""
+        <tr><td style="padding:0 0 18px 0;">
+          <table width="100%" cellpadding="0" cellspacing="0"
+                 style="background:{C_CARD};border:1px solid {C_BORDER};
+                        border-radius:14px;overflow:hidden;
+                        box-shadow:0 1px 3px rgba(16,24,40,0.06);">
+            <tr><td style="background:{C_PRIMARY};padding:14px 20px;">
+              <div style="color:#fff;font-size:16px;font-weight:700;letter-spacing:-0.3px;">
+                {icon}&nbsp;{title}
+              </div>{sub_html}
+            </td></tr>
+            <tr><td style="padding:18px 20px;">
+        """
+
+    def card_close():
+        return "</td></tr></table></td></tr>"
+
+    # ====== SECTION 1. 시장 트렌드 & 키워드 ======
+    live_brief = st.session_state.get("live_brief", {})
+    rising = live_brief.get("rising", "데이터 없음 (대시보드에서 먼저 분석 수행)")
+    falling = live_brief.get("falling", "데이터 없음")
+    trend = live_brief.get("trend", "데이터 없음")
+
+    df_kw = st.session_state.get("df_keywords", pd.DataFrame())
+    kw_rows = ""
+    if isinstance(df_kw, pd.DataFrame) and not df_kw.empty and "언급량" in df_kw.columns:
+        max_v = int(df_kw["언급량"].max()) or 1
+        for _, r in df_kw.head(6).iterrows():
+            k = r.get("키워드", "-")
+            v = int(r.get("언급량", 0))
+            pct = max(4, round(v / max_v * 100))
+            kw_rows += f"""
+            <tr>
+              <td style="font-size:13px;font-weight:600;color:{C_TEXT};padding:4px 0;width:34%;">{k}</td>
+              <td style="width:52%;padding:4px 0;">
+                <div style="background:#EEF2FF;border-radius:6px;height:14px;">
+                  <div style="background:{C_ACCENT};width:{pct}%;height:14px;border-radius:6px;"></div>
+                </div>
+              </td>
+              <td style="font-size:12px;color:{C_PRIMARY};font-weight:600;text-align:right;width:14%;">{v}회</td>
+            </tr>"""
+    else:
+        kw_rows = f"<tr><td style='font-size:12px;color:{C_SUB};'>실시간 키워드 데이터 없음</td></tr>"
+
+    sec1 = card_open("🎯", "Section 1. 시장 트렌드 & 이슈", f"분석기준: {week_text} / {agent_text}")
+    sec1 += f"""
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
+        <tr>
+          <td style="background:#F0FDF4;border-radius:10px;padding:12px;width:49%;vertical-align:top;">
+            <div style="font-size:12px;font-weight:700;color:#166534;">▲ 강세 테마</div>
+            <div style="font-size:13px;color:{C_TEXT};margin-top:5px;line-height:1.5;">{rising}</div>
+          </td>
+          <td style="width:2%;"></td>
+          <td style="background:#FEF2F2;border-radius:10px;padding:12px;width:49%;vertical-align:top;">
+            <div style="font-size:12px;font-weight:700;color:#B91C1C;">▼ 약세 테마</div>
+            <div style="font-size:13px;color:{C_TEXT};margin-top:5px;line-height:1.5;">{falling}</div>
+          </td>
+        </tr>
+      </table>
+      <div style="font-size:13px;color:{C_TEXT};line-height:1.6;background:#F8FAFC;
+                  border-left:3px solid {C_PRIMARY};padding:10px 12px;border-radius:0 8px 8px 0;">
+        <b style="color:{C_PRIMARY};">시장 브리핑</b><br>{trend}
+      </div>
+      <div style="font-size:13px;font-weight:700;color:{C_TEXT};margin:16px 0 6px;">📰 뉴스 키워드 언급량 TOP 6</div>
+      <table width="100%" cellpadding="0" cellspacing="0">{kw_rows}</table>
+    """
+    sec1 += card_close()
+
+    # ====== SECTION 2. 경쟁사 블로그 주력 ETF ======
+    blog_results = st.session_state.get("blog_analysis_results", [])
+    blog_rows = ""
+    if blog_results:
+        for res in blog_results:
+            comp = res.get("company", "-")
+            prod = res.get("main_products", "-")
+            theme = res.get("marketing_theme", "-")
+            blog_rows += f"""
+            <tr>
+              <td style="border-bottom:1px solid {C_BORDER};padding:10px 8px;font-size:13px;font-weight:700;color:{C_PRIMARY};width:22%;">{comp}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:10px 8px;font-size:12px;color:{C_TEXT};width:40%;">{prod}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:10px 8px;font-size:12px;color:{C_SUB};width:38%;">{theme}</td>
+            </tr>"""
+    else:
+        blog_rows = f"<tr><td colspan='3' style='padding:14px;text-align:center;font-size:12px;color:{C_SUB};'>경쟁사 블로그 분석 데이터 없음</td></tr>"
+
+    sec2 = card_open("📺", "Section 2. 경쟁사 모니터링 & 마케팅 분석")
+    sec2 += f"""
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr style="background:{C_BG};">
+          <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">운용사</td>
+          <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">주력 ETF 상품</td>
+          <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">핵심 마케팅 테마</td>
+        </tr>
+        {blog_rows}
+      </table>
+    """
+    sec2 += card_close()
+
+    # ====== SECTION 3. 투자자 순매수 강도 TOP ======
+    res_df = st.session_state.get("res_df", None)
+    rank_rows = ""
+    if isinstance(res_df, pd.DataFrame) and not res_df.empty and "매수강도" in res_df.columns:
+        top = res_df.sort_values(by="매수강도", ascending=False).head(10).reset_index(drop=True)
+        max_v = float(top["매수강도"].max()) or 1.0
+        for i, r in top.iterrows():
+            name = r.get("종목명_정제", r.get("종목명", f"종목 {i+1}"))
+            vol = float(r.get("매수강도", 0.0))
+            pct = max(4, round(vol / max_v * 100))
+            rank_rows += f"""
+            <tr>
+              <td style="font-size:13px;font-weight:700;color:{C_PRIMARY};padding:6px 8px 6px 0;width:8%;">{i+1}</td>
+              <td style="font-size:13px;color:{C_TEXT};padding:6px 0;width:46%;">{name}</td>
+              <td style="width:32%;padding:6px 8px;">
+                <div style="background:#EEF2FF;border-radius:6px;height:12px;">
+                  <div style="background:{C_ACCENT};width:{pct}%;height:12px;border-radius:6px;"></div>
+                </div>
+              </td>
+              <td style="font-size:12px;color:{C_PRIMARY};font-weight:600;text-align:right;width:14%;">{vol:,.1f}</td>
+            </tr>"""
+    else:
+        rank_rows = f"<tr><td style='padding:14px;text-align:center;font-size:12px;color:{C_SUB};'>순매수 수급 데이터 없음</td></tr>"
+
+    sec3 = card_open("👥", "Section 3. 투자자 순매수 강도 분석", f"{agent_text} 기준 TOP 10")
+    sec3 += f'<table width="100%" cellpadding="0" cellspacing="0">{rank_rows}</table>'
+    sec3 += card_close()
+
+    # ====== SECTION 4. 주간 수익률 & Gemini's Pick ======
+    df_ret = st.session_state.get("df_top_returns", pd.DataFrame())
+    period_text = st.session_state.get("chosen_period_text", "최근")
+    ret_rows = ""
+    if isinstance(df_ret, pd.DataFrame) and not df_ret.empty:
+        cols = df_ret.columns.tolist()
+        name_col = next((c for c in cols if "종목" in c or "name" in c.lower()), cols[0])
+        rate_col = next((c for c in cols if "수익" in c or "등락" in c or "rate" in c.lower()),
+                        cols[-1])
+        for i, r in df_ret.head(5).reset_index(drop=True).iterrows():
+            nm = r.get(name_col, "-")
+            rt = r.get(rate_col, "")
+            ret_rows += f"""
+            <tr>
+              <td style="font-size:13px;font-weight:700;color:{C_PRIMARY};padding:6px 8px 6px 0;width:8%;">{i+1}</td>
+              <td style="font-size:13px;color:{C_TEXT};padding:6px 0;">{nm}</td>
+              <td style="font-size:13px;font-weight:700;color:#B91C1C;text-align:right;padding:6px 0;">{rt}</td>
+            </tr>"""
+    else:
+        ret_rows = f"<tr><td colspan='3' style='padding:14px;text-align:center;font-size:12px;color:{C_SUB};'>수익률 데이터 없음</td></tr>"
+
+    picks = st.session_state.get("gemini_picks", {})
+    picks_html = ""
+    if isinstance(picks, dict) and picks:
+        for key in ("pick1", "pick2", "pick3"):
+            p = picks.get(key)
+            if not isinstance(p, dict):
+                continue
+            label = p.get("label", "")
+            name = p.get("name", "-")
+            bg = p.get("bg", "")
+            point = p.get("point", "")
+            picks_html += f"""
+            <div style="background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;padding:12px;margin-top:8px;">
+              <div style="font-size:13px;font-weight:700;color:{C_PRIMARY};">{label} &middot; {name}</div>
+              <div style="font-size:12px;color:{C_TEXT};margin-top:5px;line-height:1.5;"><b>선정 배경</b> {bg}</div>
+              <div style="font-size:12px;color:{C_SUB};margin-top:3px;line-height:1.5;"><b>투자 포인트</b> {point}</div>
+            </div>"""
+    if not picks_html:
+        picks_html = f"<div style='font-size:12px;color:{C_SUB};margin-top:8px;'>Gemini Pick 데이터 없음</div>"
+
+    sec4 = card_open("📈", "Section 4. 주간 수익률 & 추천 리스트", f"{period_text} 기준")
+    sec4 += f"""
+      <div style="font-size:13px;font-weight:700;color:{C_TEXT};margin-bottom:6px;">🏆 수익률 TOP 5</div>
+      <table width="100%" cellpadding="0" cellspacing="0">{ret_rows}</table>
+      <div style="font-size:13px;font-weight:700;color:{C_TEXT};margin:16px 0 4px;">🎯 다음주 주목 ETF (Gemini's Pick)</div>
+      {picks_html}
+    """
+    sec4 += card_close()
+
+    # ====== SECTION 5. 종합 인사이트 ======
+    final_insight = st.session_state.get("final_insight", "")
+    insight_html = ""
+
+    def _md_bold_to_html(text):
+        # **굵게** → <b>굵게</b> 변환
+        import re as _re
+        return _re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", str(text))
+
+    if isinstance(final_insight, str) and final_insight.strip():
+        # "\n\n"으로 묶인 3개 전략 문자열을 분리
+        parts = [seg.strip() for seg in final_insight.split("\n\n") if seg.strip()]
+        labels = ["🎯 핵심 전략 01", "💰 핵심 전략 02", "🌏 핵심 전략 03"]
+        for i, seg in enumerate(parts):
+            lb = labels[i] if i < len(labels) else f"핵심 전략 {i+1:02d}"
+            insight_html += f"""
+            <div style="background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;padding:12px;margin-top:8px;">
+              <div style="font-size:12px;font-weight:700;color:#047857;">{lb}</div>
+              <div style="font-size:13px;color:{C_TEXT};margin-top:4px;line-height:1.6;">{_md_bold_to_html(seg)}</div>
+            </div>"""
+    elif isinstance(final_insight, (list, tuple)) and final_insight:
+        labels = ["🎯 핵심 전략 01", "💰 핵심 전략 02", "🌏 핵심 전략 03"]
+        for lb, txt in zip(labels, list(final_insight)[:3]):
+            insight_html += f"""
+            <div style="background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;padding:12px;margin-top:8px;">
+              <div style="font-size:12px;font-weight:700;color:#047857;">{lb}</div>
+              <div style="font-size:13px;color:{C_TEXT};margin-top:4px;line-height:1.6;">{_md_bold_to_html(txt)}</div>
+            </div>"""
+    else:
+        insight_html = f"<div style='font-size:12px;color:{C_SUB};'>종합 인사이트 데이터 없음</div>"
+
+    sec5 = card_open("💡", "Section 5. 마케팅 성과 & 종합 인사이트")
+    sec5 += insight_html
+    sec5 += card_close()
+
+    # ---- 전체 조립 ----
+    html = f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:{C_BG};
+             font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG};">
+    <tr><td align="center" style="padding:24px 12px;">
+      <table width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;">
+
+        <!-- 헤더 -->
+        <tr><td style="padding:0 0 20px 0;">
+          <table width="100%" cellpadding="0" cellspacing="0"
+                 style="background:linear-gradient(135deg,#1E3A8A,#2563EB);border-radius:16px;">
+            <tr><td style="padding:26px 24px;">
+              <div style="color:#BFDBFE;font-size:12px;font-weight:600;letter-spacing:1px;">KODEX ETF INTELLIGENCE</div>
+              <div style="color:#fff;font-size:22px;font-weight:800;margin-top:4px;letter-spacing:-0.5px;">
+                마케팅 &amp; 트렌드 모니터링 종합 리포트
+              </div>
+              <div style="color:#DBEAFE;font-size:13px;margin-top:8px;">발행: {now_str}</div>
+            </td></tr>
+          </table>
+        </td></tr>
+
+        {sec1}
+        {sec2}
+        {sec3}
+        {sec4}
+        {sec5}
+
+        <!-- 푸터 -->
+        <tr><td style="padding:8px 4px 24px;">
+          <div style="font-size:11px;color:{C_SUB};line-height:1.6;text-align:center;">
+            본 리포트는 대시보드 세션 데이터를 기반으로 자동 생성된 투자 참고용 자료입니다.<br>
+            데이터 출처: 네이버 검색/데이터랩 API, 운용사 공식 블로그·홈페이지, ETF 시세 API, Gemini 분석.
+          </div>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+    return html
+
+
+# ------------------------------------------------------------------------------
+# 2. SMTP 발송 함수  (네이버 SMTP / 사용자 secrets 키 기준)
+#    secrets 키: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD,
+#                SMTP_SENDER_NAME, SMTP_USE_SSL
+#    ※ 수신자(MAIL_TO)는 secrets에 있으면 사용, 없으면 인자로 받음
+# ------------------------------------------------------------------------------
+def send_email_report(html_body, to_addrs, subject=None):
+    host = st.secrets["SMTP_HOST"]
+    port = int(st.secrets["SMTP_PORT"])
+    user = st.secrets["SMTP_USER"]
+    pw = st.secrets["SMTP_PASSWORD"]
+    sender_name = st.secrets.get("SMTP_SENDER_NAME", "KODEX Intelligence")
+
+    # SMTP_USE_SSL 값을 bool로 정규화 (문자열 "true"/"false" 또는 bool 모두 허용)
+    use_ssl_raw = st.secrets.get("SMTP_USE_SSL", port == 465)
+    if isinstance(use_ssl_raw, str):
+        use_ssl = use_ssl_raw.strip().lower() in ("true", "1", "yes", "y")
+    else:
+        use_ssl = bool(use_ssl_raw)
+
+    # 발신자 = 인증 계정(네이버는 From과 로그인 계정이 일치해야 발송 거부 안 됨)
+    mail_from = user
+
+    # 수신자 정규화
+    if isinstance(to_addrs, str):
+        to_list = [a.strip() for a in to_addrs.split(",") if a.strip()]
+    else:
+        to_list = [a.strip() for a in to_addrs if a and a.strip()]
+    if not to_list:
+        raise ValueError("수신자 주소가 비어 있습니다.")
+
+    if subject is None:
+        subject = f"[KODEX 인텔리전스] 마케팅·트렌드 종합 리포트 {datetime.now().strftime('%Y-%m-%d')}"
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = formataddr((sender_name, mail_from))
+    msg["To"] = ", ".join(to_list)
+    msg.attach(MIMEText("HTML 미지원 클라이언트입니다. HTML 보기를 지원하는 메일앱에서 열어주세요.", "plain", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    # SSL(465) vs STARTTLS(587) 분기
+    if use_ssl or port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=30) as server:
+            server.login(user, pw)
+            server.sendmail(mail_from, to_list, msg.as_string())
+    else:
+        with smtplib.SMTP(host, port, timeout=30) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(user, pw)
+            server.sendmail(mail_from, to_list, msg.as_string())
+    return to_list
+
+
+# ------------------------------------------------------------------------------
+# 3. Streamlit UI (PDF 버튼 아래에 배치)
+# ------------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("📧 카드형 HTML 리포트 메일 발송")
+
+# 수신자 입력: secrets에 MAIL_TO가 있으면 기본값으로, 없으면 빈칸
+default_to = st.secrets.get("MAIL_TO", "")
+mail_to_input = st.text_input(
+    "받는 사람 (콤마로 여러 명 구분)",
+    value=default_to,
+    placeholder="name1@naver.com, name2@company.com",
+)
+
+col_prev, col_send = st.columns([1, 1])
+
+with col_prev:
+    if st.button("👀 메일 미리보기 생성", use_container_width=True):
+        try:
+            html_preview = build_email_html_report()
+            st.session_state["email_html_cache"] = html_preview
+            components.html(html_preview, height=600, scrolling=True)
+        except Exception as e:
+            st.error(f"미리보기 생성 실패: {e}")
+
+with col_send:
+    if st.button("🚀 지금 메일 발송", use_container_width=True, type="primary"):
+        if not mail_to_input.strip():
+            st.warning("받는 사람 주소를 입력해 주세요.")
+        else:
+            try:
+                html_body = st.session_state.get("email_html_cache") or build_email_html_report()
+                sent_to = send_email_report(html_body, mail_to_input)
+                st.success(f"✅ 발송 완료 → {', '.join(sent_to)}")
+            except KeyError as e:
+                st.error(f"⚠️ Streamlit Secrets에 SMTP 설정 누락: {e} "
+                         "(SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD 확인)")
+            except smtplib.SMTPAuthenticationError:
+                st.error("⚠️ SMTP 인증 실패. 네이버 메일 환경설정에서 'POP3/IMAP 사용'이 켜져 있는지, "
+                         "그리고 계정/비밀번호가 맞는지 확인 필요.")
+            except Exception as e:
+                st.error(f"발송 중 오류: {e}")
         # ----------------------------------------------------------------------
         # 👑 수정 보완된 마스터 HTML / CSS 템플릿 코드 빌드
         # ----------------------------------------------------------------------
