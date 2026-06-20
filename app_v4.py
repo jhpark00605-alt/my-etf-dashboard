@@ -160,9 +160,12 @@ def send_report_email(recipients, subject, html_body, pdf_bytes=None, pdf_filena
         return False, "받는 사람 이메일 주소가 비어 있습니다."
 
     try:
+        from email.utils import formataddr
+        from email.header import Header
+
         msg = MIMEMultipart("mixed")
         msg["Subject"] = subject
-        msg["From"] = f"{sender_name} <{smtp_user}>"
+        msg["From"] = formataddr((str(Header(sender_name, "utf-8")), smtp_user))
         msg["To"] = ", ".join(recipients)
 
         # 본문은 HTML 그대로 표시 (메일 클라이언트에서 열면 바로 리포트가 보임)
