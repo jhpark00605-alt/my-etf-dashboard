@@ -1164,6 +1164,8 @@ with st.container(border=True):
                     })
 
                 df_final_report = pd.DataFrame(summary_report_rows)
+                # [메일용] DiD 결과 세션 저장
+                st.session_state['did_report_data'] = summary_report_rows
 
                 # 💡 [수정 및 반영 위치] 리포트 타이틀 바로 아래에 가이드 바 레이아웃 배치
                 st.markdown("<br>#### ✍️ DiD 분석 기반 이벤트 성과 분석", unsafe_allow_html=True)
@@ -1687,6 +1689,7 @@ with st.container(border=True):
                 news_items = news_soup.find_all("item")
                 
                 g_news_titles = [item.title.text for item in news_items[:15]]
+                st.session_state['g_news_titles'] = g_news_titles  # [메일용] 뉴스 저장
                 
                 if g_news_titles:
                     g_news_context = "\n".join(g_news_titles)
@@ -1749,6 +1752,7 @@ with col5_top_right:
                     df_raw['period'] = pd.to_datetime(df_raw['period'])
                     df_raw['날짜'] = df_raw['period'].dt.strftime('%m월 %d일')
                     df_raw['검색 지수'] = df_raw['ratio'].astype(float)
+                    st.session_state['df_sns'] = df_raw[['날짜','검색 지수']].copy()  # [메일용] 데이터랩 저장
                     
                     fig_line = px.line(df_raw, x="날짜", y="검색 지수", markers=True, title="📊 네이버 데이터랩 KODEX ETF 일별 검색 트렌드")
                     
@@ -1768,6 +1772,7 @@ with col5_top_right:
         base = datetime.now()
         date_list = [(base - timedelta(days=i)).strftime('%m월 %d일') for i in range(29, -1, -1)]
         df_sns = pd.DataFrame({"날짜": date_list, "검색 지수": np.random.randint(45, 95, size=30)})
+        st.session_state['df_sns'] = df_sns.copy()  # [메일용] 데이터랩 백업 저장
         fig_line = px.line(df_sns, x="날짜", y="검색 지수", markers=True, title="📈 KODEX ETF 트렌드 추이 (백업 컨텍스트)")
         
         fig_line.update_layout(
@@ -2695,12 +2700,13 @@ from datetime import datetime
 # ------------------------------------------------------------------------------
 def build_email_html_report():
     import pandas as pd
+    import re as _re
 
-    now_str = datetime.now().strftime("%Y년 %m월 %d일 (%a) %H:%M")
+    now_str = datetime.now().strftime("%Y년 %m월 %d일 %H:%M")
     week_text = st.session_state.get("week2_option", "-")
     agent_text = st.session_state.get("target_agent_option", "개인")
 
-    # ---- 디자인 토큰 (이메일 클라이언트 호환 위해 전부 인라인 스타일) ----
+    # ---- 디자인 토큰 (이메일 호환: 전부 인라인) ----
     C_PRIMARY = "#1E40AF"
     C_ACCENT = "#2563EB"
     C_BG = "#F4F6FB"
@@ -2709,11 +2715,15 @@ def build_email_html_report():
     C_TEXT = "#1F2937"
     C_SUB = "#6B7280"
 
+    def md_bold(text):
+        # **굵게** → <b>, 줄바꿈 → <br>
+        t = _re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", str(text))
+        t = t.replace("\n", "<br>")
+        return t
+
     def card_open(icon, title, sub=""):
-        sub_html = (
-            f"<div style='font-size:12px;color:{C_SUB};margin-top:2px;'>{sub}</div>"
-            if sub else ""
-        )
+        sub_html = (f"<div style='font-size:12px;color:#DBEAFE;margin-top:3px;'>{sub}</div>"
+                    if sub else "")
         return f"""
         <tr><td style="padding:0 0 18px 0;">
           <table width="100%" cellpadding="0" cellspacing="0"
@@ -2722,8 +2732,7 @@ def build_email_html_report():
                         box-shadow:0 1px 3px rgba(16,24,40,0.06);">
             <tr><td style="background:{C_PRIMARY};padding:14px 20px;">
               <div style="color:#fff;font-size:16px;font-weight:700;letter-spacing:-0.3px;">
-                {icon}&nbsp;{title}
-              </div>{sub_html}
+                {icon}&nbsp;{title}</div>{sub_html}
             </td></tr>
             <tr><td style="padding:18px 20px;">
         """
@@ -2731,9 +2740,18 @@ def build_email_html_report():
     def card_close():
         return "</td></tr></table></td></tr>"
 
-    # ====== SECTION 1. 시장 트렌드 & 키워드 ======
+    def sub_head(text):
+        return (f"<div style='font-size:13px;font-weight:700;color:{C_TEXT};"
+                f"margin:16px 0 6px;'>{text}</div>")
+
+    def empty(msg):
+        return f"<div style='font-size:12px;color:{C_SUB};padding:6px 0;'>{msg}</div>"
+
+    # ======================================================================
+    # SECTION 1. 시장 트렌드 & 키워드  (분석기준 라벨 제거)
+    # ======================================================================
     live_brief = st.session_state.get("live_brief", {})
-    rising = live_brief.get("rising", "데이터 없음 (대시보드에서 먼저 분석 수행)")
+    rising = live_brief.get("rising", "데이터 없음")
     falling = live_brief.get("falling", "데이터 없음")
     trend = live_brief.get("trend", "데이터 없음")
 
@@ -2751,14 +2769,13 @@ def build_email_html_report():
               <td style="width:52%;padding:4px 0;">
                 <div style="background:#EEF2FF;border-radius:6px;height:14px;">
                   <div style="background:{C_ACCENT};width:{pct}%;height:14px;border-radius:6px;"></div>
-                </div>
-              </td>
+                </div></td>
               <td style="font-size:12px;color:{C_PRIMARY};font-weight:600;text-align:right;width:14%;">{v}회</td>
             </tr>"""
     else:
-        kw_rows = f"<tr><td style='font-size:12px;color:{C_SUB};'>실시간 키워드 데이터 없음</td></tr>"
+        kw_rows = f"<tr><td>{empty('실시간 키워드 데이터 없음')}</td></tr>"
 
-    sec1 = card_open("🎯", "Section 1. 시장 트렌드 & 이슈", f"분석기준: {week_text} / {agent_text}")
+    sec1 = card_open("🎯", "Section 1. 시장 트렌드 & 이슈")
     sec1 += f"""
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
         <tr>
@@ -2775,48 +2792,130 @@ def build_email_html_report():
       </table>
       <div style="font-size:13px;color:{C_TEXT};line-height:1.6;background:#F8FAFC;
                   border-left:3px solid {C_PRIMARY};padding:10px 12px;border-radius:0 8px 8px 0;">
-        <b style="color:{C_PRIMARY};">시장 브리핑</b><br>{trend}
-      </div>
-      <div style="font-size:13px;font-weight:700;color:{C_TEXT};margin:16px 0 6px;">📰 뉴스 키워드 언급량 TOP 6</div>
+        <b style="color:{C_PRIMARY};">시장 브리핑</b><br>{trend}</div>
+      {sub_head("📰 뉴스 키워드 언급량 TOP 6")}
       <table width="100%" cellpadding="0" cellspacing="0">{kw_rows}</table>
     """
     sec1 += card_close()
 
-    # ====== SECTION 2. 경쟁사 블로그 주력 ETF ======
+    # ======================================================================
+    # SECTION 2. 경쟁사 모니터링 (유튜브 + ETF 이슈 + 블로그 + 홈페이지)
+    # ======================================================================
+    sec2 = card_open("📺", "Section 2. 경쟁사 모니터링 & 마케팅 분석")
+
+    # 2-A. 유튜브 동향 (마크다운 문자열)
+    yt = st.session_state.get("yt_report_fixed", "")
+    sec2 += sub_head("🎥 유튜브 채널별 마케팅 동향")
+    if isinstance(yt, str) and yt.strip():
+        sec2 += (f"<div style='font-size:12.5px;color:{C_TEXT};line-height:1.65;"
+                 f"background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;"
+                 f"padding:12px;'>{md_bold(yt.strip())}</div>")
+    else:
+        sec2 += empty("유튜브 분석 데이터 없음")
+
+    # 2-B. 블로그 주력 ETF
     blog_results = st.session_state.get("blog_analysis_results", [])
-    blog_rows = ""
+    sec2 += sub_head("📊 공식 블로그 주력 ETF 상품")
     if blog_results:
+        rows = ""
         for res in blog_results:
             comp = res.get("company", "-")
             prod = res.get("main_products", "-")
             theme = res.get("marketing_theme", "-")
-            blog_rows += f"""
+            rows += f"""
             <tr>
-              <td style="border-bottom:1px solid {C_BORDER};padding:10px 8px;font-size:13px;font-weight:700;color:{C_PRIMARY};width:22%;">{comp}</td>
-              <td style="border-bottom:1px solid {C_BORDER};padding:10px 8px;font-size:12px;color:{C_TEXT};width:40%;">{prod}</td>
-              <td style="border-bottom:1px solid {C_BORDER};padding:10px 8px;font-size:12px;color:{C_SUB};width:38%;">{theme}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:13px;font-weight:700;color:{C_PRIMARY};width:22%;">{comp}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;color:{C_TEXT};width:40%;">{prod}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;color:{C_SUB};width:38%;">{theme}</td>
             </tr>"""
+        sec2 += f"""<table width="100%" cellpadding="0" cellspacing="0">
+          <tr style="background:{C_BG};">
+            <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">운용사</td>
+            <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">주력 ETF</td>
+            <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">마케팅 테마</td>
+          </tr>{rows}</table>"""
     else:
-        blog_rows = f"<tr><td colspan='3' style='padding:14px;text-align:center;font-size:12px;color:{C_SUB};'>경쟁사 블로그 분석 데이터 없음</td></tr>"
+        sec2 += empty("블로그 분석 데이터 없음")
 
-    sec2 = card_open("📺", "Section 2. 경쟁사 모니터링 & 마케팅 분석")
-    sec2 += f"""
-      <table width="100%" cellpadding="0" cellspacing="0">
-        <tr style="background:{C_BG};">
-          <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">운용사</td>
-          <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">주력 ETF 상품</td>
-          <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">핵심 마케팅 테마</td>
-        </tr>
-        {blog_rows}
-      </table>
-    """
+    # 2-C. 운용사별 ETF 이슈 모니터링 (구글뉴스 기반 이벤트)
+    events = st.session_state.get("df_events_base_data", [])
+    sec2 += sub_head("🏢 운용사별 ETF 이슈 모니터링")
+    if events:
+        df_ev = pd.DataFrame(events)
+        brands_order = ["삼성자산운용", "미래에셋자산운용", "한국투자신탁운용", "KB자산운용"]
+        rows = ""
+        for comp in brands_order:
+            if "운용사" not in df_ev.columns:
+                break
+            sub = df_ev[df_ev["운용사"] == comp]
+            if sub.empty:
+                continue
+            brand = sub.iloc[0].get("브랜드", "")
+            titles = list(dict.fromkeys(sub["제목"].tolist()))[:2]
+            title_txt = " / ".join(titles).replace("&gt;", ">").replace("&lt;", "<")
+            prods = list(dict.fromkeys(sub["🎯 유도 ETF 종목"].tolist()))[:2]
+            prod_txt = ", ".join(prods)
+            rows += f"""
+            <tr>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;font-weight:700;color:{C_PRIMARY};width:24%;">{comp}<br><span style='color:{C_SUB};font-weight:600;'>{brand}</span></td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11.5px;color:{C_TEXT};width:44%;line-height:1.5;">{title_txt}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11.5px;color:{C_ACCENT};width:32%;line-height:1.5;">{prod_txt}</td>
+            </tr>"""
+        if rows:
+            sec2 += f"""<table width="100%" cellpadding="0" cellspacing="0">
+              <tr style="background:{C_BG};">
+                <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">운용사</td>
+                <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">주요 이벤트</td>
+                <td style="padding:8px;font-size:11px;font-weight:700;color:{C_SUB};">유도 ETF</td>
+              </tr>{rows}</table>"""
+        else:
+            sec2 += empty("ETF 이슈 데이터 없음")
+    else:
+        sec2 += empty("ETF 이슈 데이터 없음")
+
+    # 2-D. 홈페이지 메인화면 실시간 스크리닝
+    homepage = st.session_state.get("homepage_data", [])
+    sec2 += sub_head("🕵️ 공식 홈페이지 메인화면 스크리닝")
+    if homepage:
+        rows = ""
+        for r in homepage:
+            try:
+                s = summarize_brand(r)
+            except Exception:
+                continue
+            brand = f"{s.get('brand','-')} ({r.get('manager','')})"
+            kw = s.get("keywords", "-")
+            direction = md_bold(s.get("etf_brief", "-"))
+            catch = s.get("overview", "-")
+            layout = md_bold(s.get("marketing_memo", "-"))
+            rows += f"""
+            <tr>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;font-weight:700;color:{C_PRIMARY};width:20%;">{brand}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_TEXT};width:24%;line-height:1.45;">{kw}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_TEXT};width:18%;line-height:1.45;">{direction}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_ACCENT};width:20%;line-height:1.45;">{catch}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_SUB};width:18%;line-height:1.45;">{layout}</td>
+            </tr>"""
+        sec2 += f"""<table width="100%" cellpadding="0" cellspacing="0">
+          <tr style="background:{C_BG};">
+            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">운용사</td>
+            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">키워드</td>
+            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">방향</td>
+            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">캐치프레이즈</td>
+            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">레이아웃</td>
+          </tr>{rows}</table>"""
+    else:
+        sec2 += empty("홈페이지 스크리닝 데이터 없음")
+
     sec2 += card_close()
 
-    # ====== SECTION 3. 투자자 순매수 강도 TOP ======
+    # ======================================================================
+    # SECTION 3. 투자자 순매수 강도 (분석기준 표시 + TOP15 + DiD)
+    # ======================================================================
     res_df = st.session_state.get("res_df", None)
     rank_rows = ""
     if isinstance(res_df, pd.DataFrame) and not res_df.empty and "매수강도" in res_df.columns:
-        top = res_df.sort_values(by="매수강도", ascending=False).head(10).reset_index(drop=True)
+        top = res_df.sort_values(by="매수강도", ascending=False).head(15).reset_index(drop=True)
         max_v = float(top["매수강도"].max()) or 1.0
         for i, r in top.iterrows():
             name = r.get("종목명_정제", r.get("종목명", f"종목 {i+1}"))
@@ -2824,43 +2923,102 @@ def build_email_html_report():
             pct = max(4, round(vol / max_v * 100))
             rank_rows += f"""
             <tr>
-              <td style="font-size:13px;font-weight:700;color:{C_PRIMARY};padding:6px 8px 6px 0;width:8%;">{i+1}</td>
-              <td style="font-size:13px;color:{C_TEXT};padding:6px 0;width:46%;">{name}</td>
-              <td style="width:32%;padding:6px 8px;">
-                <div style="background:#EEF2FF;border-radius:6px;height:12px;">
-                  <div style="background:{C_ACCENT};width:{pct}%;height:12px;border-radius:6px;"></div>
-                </div>
-              </td>
-              <td style="font-size:12px;color:{C_PRIMARY};font-weight:600;text-align:right;width:14%;">{vol:,.1f}</td>
+              <td style="font-size:13px;font-weight:700;color:{C_PRIMARY};padding:5px 6px 5px 0;width:7%;">{i+1}</td>
+              <td style="font-size:12.5px;color:{C_TEXT};padding:5px 0;width:45%;">{name}</td>
+              <td style="width:33%;padding:5px 8px;">
+                <div style="background:#EEF2FF;border-radius:6px;height:11px;">
+                  <div style="background:{C_ACCENT};width:{pct}%;height:11px;border-radius:6px;"></div>
+                </div></td>
+              <td style="font-size:12px;color:{C_PRIMARY};font-weight:600;text-align:right;width:15%;">{vol:,.1f}</td>
             </tr>"""
     else:
-        rank_rows = f"<tr><td style='padding:14px;text-align:center;font-size:12px;color:{C_SUB};'>순매수 수급 데이터 없음</td></tr>"
+        rank_rows = f"<tr><td>{empty('순매수 수급 데이터 없음')}</td></tr>"
 
-    sec3 = card_open("👥", "Section 3. 투자자 순매수 강도 분석", f"{agent_text} 기준 TOP 10")
+    sec3 = card_open("👥", "Section 3. 투자자 순매수 강도 분석",
+                     f"분석기간: {week_text} &nbsp;|&nbsp; 분석주체: {agent_text}")
+    sec3 += sub_head("📊 순매수 강도 TOP 15")
     sec3 += f'<table width="100%" cellpadding="0" cellspacing="0">{rank_rows}</table>'
+
+    # DiD 분석
+    did_rows = st.session_state.get("did_report_data", [])
+    sec3 += sub_head("🧬 DiD 기반 이벤트 성과 분석")
+    sec3 += (f"<div style='font-size:11px;color:{C_SUB};margin-bottom:6px;line-height:1.5;'>"
+             "※ DiD = (마케팅 상품 수급강도 변화) − (동일 자산군 경쟁사 대조군 변화)</div>")
+    if did_rows:
+        rows = ""
+        for d in did_rows:
+            comp = d.get("운용사 (브랜드)", "-")
+            event = d.get("진행 중인 주요 이벤트", "-")
+            push = d.get("마케팅 푸쉬 종목", "-")
+            money = d.get("실제 개인 누적 순매수액", "-")
+            did = d.get("DiD 순수 마케팅 효과", "-")
+            verdict = d.get("최종 마케팅 효용 판단", "-")
+            rows += f"""
+            <tr>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11.5px;font-weight:700;color:{C_PRIMARY};width:22%;line-height:1.4;">{comp}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_TEXT};width:30%;line-height:1.4;">{push}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_SUB};width:18%;text-align:right;">{money}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:12px;font-weight:700;color:{C_ACCENT};width:14%;text-align:right;">{did}</td>
+              <td style="border-bottom:1px solid {C_BORDER};padding:9px 8px;font-size:11px;color:{C_TEXT};width:16%;line-height:1.4;">{verdict}</td>
+            </tr>"""
+        sec3 += f"""<table width="100%" cellpadding="0" cellspacing="0">
+          <tr style="background:{C_BG};">
+            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">운용사(브랜드)</td>
+            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">푸쉬 종목</td>
+            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};text-align:right;">누적순매수</td>
+            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};text-align:right;">DiD효과</td>
+            <td style="padding:7px;font-size:10.5px;font-weight:700;color:{C_SUB};">효용판단</td>
+          </tr>{rows}</table>"""
+    else:
+        sec3 += empty("DiD 분석 데이터 없음 (대시보드에서 상관관계 분석 먼저 실행)")
     sec3 += card_close()
 
-    # ====== SECTION 4. 주간 수익률 & Gemini's Pick ======
+    # ======================================================================
+    # SECTION 4. 주간 수익률 (종목명 + 동적 TOP N + 테마별 수익률)
+    # ======================================================================
     df_ret = st.session_state.get("df_top_returns", pd.DataFrame())
+    df_theme = st.session_state.get("df_theme_returns", pd.DataFrame())
+    top_n = int(st.session_state.get("selected_top_n", 5) or 5)
     period_text = st.session_state.get("chosen_period_text", "최근")
+
+    # 4-A. 수익률 TOP N (ETF명 사용)
     ret_rows = ""
-    if isinstance(df_ret, pd.DataFrame) and not df_ret.empty:
-        cols = df_ret.columns.tolist()
-        name_col = next((c for c in cols if "종목" in c or "name" in c.lower()), cols[0])
-        rate_col = next((c for c in cols if "수익" in c or "등락" in c or "rate" in c.lower()),
-                        cols[-1])
-        for i, r in df_ret.head(5).reset_index(drop=True).iterrows():
-            nm = r.get(name_col, "-")
-            rt = r.get(rate_col, "")
+    if isinstance(df_ret, pd.DataFrame) and not df_ret.empty and "ETF명" in df_ret.columns:
+        rate_col = "수익률(%)" if "수익률(%)" in df_ret.columns else None
+        for i, r in df_ret.head(top_n).reset_index(drop=True).iterrows():
+            nm = r.get("ETF명", "-")
+            rt = r.get(rate_col, "") if rate_col else ""
+            rt_txt = f"{rt:+.2f}%" if isinstance(rt, (int, float)) and pd.notna(rt) else (str(rt) if rt != "" else "-")
+            rt_color = "#B91C1C" if (isinstance(rt, (int, float)) and rt >= 0) else "#1D4ED8"
             ret_rows += f"""
             <tr>
               <td style="font-size:13px;font-weight:700;color:{C_PRIMARY};padding:6px 8px 6px 0;width:8%;">{i+1}</td>
               <td style="font-size:13px;color:{C_TEXT};padding:6px 0;">{nm}</td>
-              <td style="font-size:13px;font-weight:700;color:#B91C1C;text-align:right;padding:6px 0;">{rt}</td>
+              <td style="font-size:13px;font-weight:700;color:{rt_color};text-align:right;padding:6px 0;">{rt_txt}</td>
             </tr>"""
     else:
-        ret_rows = f"<tr><td colspan='3' style='padding:14px;text-align:center;font-size:12px;color:{C_SUB};'>수익률 데이터 없음</td></tr>"
+        ret_rows = f"<tr><td>{empty('수익률 데이터 없음')}</td></tr>"
 
+    # 4-B. 테마별 수익률
+    theme_rows = ""
+    if isinstance(df_theme, pd.DataFrame) and not df_theme.empty:
+        tcols = df_theme.columns.tolist()
+        theme_col = next((c for c in tcols if "테마" in c), tcols[0])
+        rate_col2 = "주간수익률(%)" if "주간수익률(%)" in tcols else next((c for c in tcols if "수익" in c), tcols[-1])
+        for _, r in df_theme.iterrows():
+            tn = r.get(theme_col, "-")
+            tr = r.get(rate_col2, "")
+            tr_txt = f"{tr:+.2f}%" if isinstance(tr, (int, float)) and pd.notna(tr) else (str(tr) if tr != "" else "-")
+            tr_color = "#B91C1C" if (isinstance(tr, (int, float)) and tr >= 0) else "#1D4ED8"
+            theme_rows += f"""
+            <tr>
+              <td style="font-size:13px;color:{C_TEXT};padding:6px 0;border-bottom:1px solid {C_BORDER};">{tn}</td>
+              <td style="font-size:13px;font-weight:700;color:{tr_color};text-align:right;padding:6px 0;border-bottom:1px solid {C_BORDER};">{tr_txt}</td>
+            </tr>"""
+    else:
+        theme_rows = f"<tr><td>{empty('테마별 수익률 데이터 없음')}</td></tr>"
+
+    # 4-C. Gemini's Pick (dict 구조: pick1/2/3 → label/name/bg/point)
     picks = st.session_state.get("gemini_picks", {})
     picks_html = ""
     if isinstance(picks, dict) and picks:
@@ -2868,64 +3026,106 @@ def build_email_html_report():
             p = picks.get(key)
             if not isinstance(p, dict):
                 continue
-            label = p.get("label", "")
-            name = p.get("name", "-")
-            bg = p.get("bg", "")
-            point = p.get("point", "")
             picks_html += f"""
             <div style="background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;padding:12px;margin-top:8px;">
-              <div style="font-size:13px;font-weight:700;color:{C_PRIMARY};">{label} &middot; {name}</div>
-              <div style="font-size:12px;color:{C_TEXT};margin-top:5px;line-height:1.5;"><b>선정 배경</b> {bg}</div>
-              <div style="font-size:12px;color:{C_SUB};margin-top:3px;line-height:1.5;"><b>투자 포인트</b> {point}</div>
+              <div style="font-size:13px;font-weight:700;color:{C_PRIMARY};">{p.get('label','')} &middot; {p.get('name','-')}</div>
+              <div style="font-size:12px;color:{C_TEXT};margin-top:5px;line-height:1.5;"><b>선정 배경</b> {p.get('bg','')}</div>
+              <div style="font-size:12px;color:{C_SUB};margin-top:3px;line-height:1.5;"><b>투자 포인트</b> {p.get('point','')}</div>
             </div>"""
     if not picks_html:
-        picks_html = f"<div style='font-size:12px;color:{C_SUB};margin-top:8px;'>Gemini Pick 데이터 없음</div>"
+        picks_html = empty("Gemini Pick 데이터 없음")
 
     sec4 = card_open("📈", "Section 4. 주간 수익률 & 추천 리스트", f"{period_text} 기준")
-    sec4 += f"""
-      <div style="font-size:13px;font-weight:700;color:{C_TEXT};margin-bottom:6px;">🏆 수익률 TOP 5</div>
-      <table width="100%" cellpadding="0" cellspacing="0">{ret_rows}</table>
-      <div style="font-size:13px;font-weight:700;color:{C_TEXT};margin:16px 0 4px;">🎯 다음주 주목 ETF (Gemini's Pick)</div>
-      {picks_html}
-    """
+    sec4 += sub_head(f"🏆 수익률 TOP {top_n}")
+    sec4 += f'<table width="100%" cellpadding="0" cellspacing="0">{ret_rows}</table>'
+    sec4 += sub_head("🗂️ 주요 테마별 평균 수익률")
+    sec4 += f'<table width="100%" cellpadding="0" cellspacing="0">{theme_rows}</table>'
+    sec4 += sub_head("🎯 다음주 주목 ETF (Gemini's Pick)")
+    sec4 += picks_html
     sec4 += card_close()
 
-    # ====== SECTION 5. 종합 인사이트 ======
+    # ======================================================================
+    # SECTION 5. 마케팅 성과 (뉴스 + 데이터랩 + 종합 인사이트)
+    # ======================================================================
+    sec5 = card_open("💡", "Section 5. 마케팅 성과 & 종합 인사이트")
+
+    # 5-A. KODEX 마케팅/보도 뉴스
+    news = st.session_state.get("g_news_titles", [])
+    sec5 += sub_head("📰 KODEX 마케팅/보도 뉴스 동향")
+    if isinstance(news, list) and news:
+        items = ""
+        for t in news[:8]:
+            items += (f"<li style='font-size:12.5px;color:{C_TEXT};margin-bottom:5px;"
+                      f"line-height:1.5;'>{t}</li>")
+        sec5 += f"<ul style='margin:4px 0 4px 0;padding-left:18px;'>{items}</ul>"
+    else:
+        sec5 += empty("뉴스 데이터 없음")
+
+    # 5-B. 네이버 데이터랩 트렌드 (텍스트 미니 추이)
+    df_sns = st.session_state.get("df_sns", pd.DataFrame())
+    sec5 += sub_head("📱 네이버 데이터랩 검색 트렌드 (최근 한 달)")
+    if isinstance(df_sns, pd.DataFrame) and not df_sns.empty and "검색 지수" in df_sns.columns:
+        vals = pd.to_numeric(df_sns["검색 지수"], errors="coerce").dropna()
+        if not vals.empty:
+            cur = float(vals.iloc[-1])
+            avg = float(vals.mean())
+            mx = float(vals.max())
+            mn = float(vals.min())
+            # 막대 스파크라인 (최근 14일)
+            spark = ""
+            tail = vals.tail(14).tolist()
+            vmax = max(tail) or 1
+            for x in tail:
+                h = max(3, round(x / vmax * 34))
+                spark += (f"<td style='vertical-align:bottom;padding:0 1px;'>"
+                          f"<div style='width:8px;height:{h}px;background:{C_ACCENT};"
+                          f"border-radius:2px 2px 0 0;'></div></td>")
+            sec5 += f"""
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+              <tr>
+                <td style="width:62%;vertical-align:bottom;">
+                  <table cellpadding="0" cellspacing="0"><tr style="height:38px;">{spark}</tr></table>
+                  <div style="font-size:10px;color:{C_SUB};margin-top:4px;">최근 14일 검색지수 추이</div>
+                </td>
+                <td style="width:38%;vertical-align:top;padding-left:10px;">
+                  <div style="font-size:12px;color:{C_TEXT};line-height:1.7;">
+                    현재 <b style="color:{C_PRIMARY};">{cur:.0f}</b><br>
+                    기간평균 {avg:.0f}<br>
+                    최고 {mx:.0f} / 최저 {mn:.0f}</div>
+                </td>
+              </tr>
+            </table>"""
+        else:
+            sec5 += empty("데이터랩 수치 없음")
+    else:
+        sec5 += empty("데이터랩 데이터 없음")
+
+    # 5-C. 종합 인사이트 (문자열 \n\n 분리 + 마크다운 굵게)
     final_insight = st.session_state.get("final_insight", "")
+    sec5 += sub_head("⚡ 금주 KODEX 마케팅 전략 AI 종합 인사이트")
     insight_html = ""
-
-    def _md_bold_to_html(text):
-        # **굵게** → <b>굵게</b> 변환
-        import re as _re
-        return _re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", str(text))
-
+    labels = ["🎯 핵심 전략 01", "💰 핵심 전략 02", "🌏 핵심 전략 03"]
+    segs = []
     if isinstance(final_insight, str) and final_insight.strip():
-        # "\n\n"으로 묶인 3개 전략 문자열을 분리
-        parts = [seg.strip() for seg in final_insight.split("\n\n") if seg.strip()]
-        labels = ["🎯 핵심 전략 01", "💰 핵심 전략 02", "🌏 핵심 전략 03"]
-        for i, seg in enumerate(parts):
+        segs = [s.strip() for s in final_insight.split("\n\n") if s.strip()]
+    elif isinstance(final_insight, (list, tuple)):
+        segs = [str(s).strip() for s in final_insight if str(s).strip()]
+    if segs:
+        for i, seg in enumerate(segs):
             lb = labels[i] if i < len(labels) else f"핵심 전략 {i+1:02d}"
             insight_html += f"""
             <div style="background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;padding:12px;margin-top:8px;">
               <div style="font-size:12px;font-weight:700;color:#047857;">{lb}</div>
-              <div style="font-size:13px;color:{C_TEXT};margin-top:4px;line-height:1.6;">{_md_bold_to_html(seg)}</div>
-            </div>"""
-    elif isinstance(final_insight, (list, tuple)) and final_insight:
-        labels = ["🎯 핵심 전략 01", "💰 핵심 전략 02", "🌏 핵심 전략 03"]
-        for lb, txt in zip(labels, list(final_insight)[:3]):
-            insight_html += f"""
-            <div style="background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;padding:12px;margin-top:8px;">
-              <div style="font-size:12px;font-weight:700;color:#047857;">{lb}</div>
-              <div style="font-size:13px;color:{C_TEXT};margin-top:4px;line-height:1.6;">{_md_bold_to_html(txt)}</div>
+              <div style="font-size:13px;color:{C_TEXT};margin-top:4px;line-height:1.6;">{md_bold(seg)}</div>
             </div>"""
     else:
-        insight_html = f"<div style='font-size:12px;color:{C_SUB};'>종합 인사이트 데이터 없음</div>"
-
-    sec5 = card_open("💡", "Section 5. 마케팅 성과 & 종합 인사이트")
+        insight_html = empty("종합 인사이트 데이터 없음")
     sec5 += insight_html
     sec5 += card_close()
 
-    # ---- 전체 조립 ----
+    # ======================================================================
+    # 전체 조립
+    # ======================================================================
     html = f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -2933,36 +3133,25 @@ def build_email_html_report():
              font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:{C_BG};">
     <tr><td align="center" style="padding:24px 12px;">
-      <table width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;">
-
-        <!-- 헤더 -->
+      <table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%;">
         <tr><td style="padding:0 0 20px 0;">
           <table width="100%" cellpadding="0" cellspacing="0"
                  style="background:linear-gradient(135deg,#1E3A8A,#2563EB);border-radius:16px;">
             <tr><td style="padding:26px 24px;">
               <div style="color:#BFDBFE;font-size:12px;font-weight:600;letter-spacing:1px;">KODEX ETF INTELLIGENCE</div>
               <div style="color:#fff;font-size:22px;font-weight:800;margin-top:4px;letter-spacing:-0.5px;">
-                마케팅 &amp; 트렌드 모니터링 종합 리포트
-              </div>
+                마케팅 &amp; 트렌드 모니터링 종합 리포트</div>
               <div style="color:#DBEAFE;font-size:13px;margin-top:8px;">발행: {now_str}</div>
             </td></tr>
           </table>
         </td></tr>
-
-        {sec1}
-        {sec2}
-        {sec3}
-        {sec4}
-        {sec5}
-
-        <!-- 푸터 -->
+        {sec1}{sec2}{sec3}{sec4}{sec5}
         <tr><td style="padding:8px 4px 24px;">
           <div style="font-size:11px;color:{C_SUB};line-height:1.6;text-align:center;">
             본 리포트는 대시보드 세션 데이터를 기반으로 자동 생성된 투자 참고용 자료입니다.<br>
             데이터 출처: 네이버 검색/데이터랩 API, 운용사 공식 블로그·홈페이지, ETF 시세 API, Gemini 분석.
           </div>
         </td></tr>
-
       </table>
     </td></tr>
   </table>
@@ -2970,12 +3159,6 @@ def build_email_html_report():
     return html
 
 
-# ------------------------------------------------------------------------------
-# 2. SMTP 발송 함수  (네이버 SMTP / 사용자 secrets 키 기준)
-#    secrets 키: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD,
-#                SMTP_SENDER_NAME, SMTP_USE_SSL
-#    ※ 수신자(MAIL_TO)는 secrets에 있으면 사용, 없으면 인자로 받음
-# ------------------------------------------------------------------------------
 def send_email_report(html_body, to_addrs, subject=None):
     host = st.secrets["SMTP_HOST"]
     port = int(st.secrets["SMTP_PORT"])
