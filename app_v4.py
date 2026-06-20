@@ -2657,12 +2657,11 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 def send_html_dashboard_email(to_email, subject, html_content):
-    """HTML 대시보드를 수신자에게 전송하는 SMTP 메일 엔진"""
-    # ⚠️ 사용 시 본인의 SMTP 서버 정보와 앱 비밀번호를 매칭해 주어야 작동합니다.
-    SMTP_SERVER = "smtp.naver.com"  # 네이버일 경우 smtp.naver.com
-    SMTP_PORT = 465
-    SMTP_USER = "jhpark0065@naver.com"       # 발신용 이메일 주소
-    SMTP_PASSWORD = "7RF4P35T95ZZ"     # 발신 이메일의 앱 비밀번호
+    """HTML 대시보드를 수신자에게 전송하는 SMTP 메일 엔진 (네이버 호환성 개선 버전)"""
+    SMTP_SERVER = "smtp.naver.com"  
+    SMTP_PORT = 587                 # 🔄 465에서 587 범용 TLS 포트로 변경
+    SMTP_USER = "jhpark0065@naver.com"  
+    SMTP_PASSWORD = "7RF4P35T95ZZ"       
 
     try:
         msg = MIMEMultipart('alternative')
@@ -2673,13 +2672,16 @@ def send_html_dashboard_email(to_email, subject, html_content):
         mime_html = MIMEText(html_content, 'html', 'utf-8')
         msg.attach(mime_html)
 
+        # 🔄 호환성이 더 높은 smtplib.SMTP + starttls 보안 접속 구조로 전환합니다.
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
+            server.ehlo()          # 서버와 악수(인사) 구문 추가
+            server.starttls()      # TLS 암호화 시작
+            server.ehlo()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_USER, to_email, msg.as_string())
         return True
     except Exception as e:
-        st.error(f"📧 메일 전송 중 통신 에러 발생: {e}")
+        st.error(f"📧 네이버 메일 전송 중 통신 에러 발생: {e}")
         return False
 
 # 🖥️ 대시보드 화면 최하단 UI 렌더링
