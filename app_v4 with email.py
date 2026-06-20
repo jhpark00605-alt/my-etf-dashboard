@@ -501,6 +501,7 @@ with st.container(border=True):
 
     if not ai_success or not isinstance(summary_data, dict) or not summary_data:
         summary_data = backup_display_data
+    st.session_state['etf_issue_summary'] = summary_data  # [PDF용] 운용사 ETF 이슈 저장
 
     col_a, col_b, col_c, col_d = st.columns(4)
 
@@ -1973,27 +1974,6 @@ with st.container(border=True):
         "⚡ **[트렌드 가속 락인]** 네이버 데이터랩 검색 강도 추이와 순매수 강도가 일치하는 타이밍을 저격하여 고자산가 유입 경로에 최적화된 디지털 타겟 마케팅을 집행하십시오."
     ]
 
-    # ===== [임시 진단] 인사이트 분기 상태 표시 =====
-    with st.expander("🔧 인사이트 진단 (디버그)", expanded=True):
-        st.caption(f"GEMINI_KEY 존재: {bool(GEMINI_KEY)}")
-        st.caption(f"full_context 길이: {len(full_context.strip())}자 (80자 초과해야 AI 호출)")
-        # 본인 키에서 실제 사용 가능한 모델 목록 조회
-        if GEMINI_KEY:
-            try:
-                _lm = requests.get(
-                    f"https://generativelanguage.googleapis.com/v1/models?key={GEMINI_KEY}",
-                    timeout=15)
-                if _lm.status_code == 200:
-                    _avail = [m["name"].replace("models/", "")
-                              for m in _lm.json().get("models", [])
-                              if "generateContent" in m.get("supportedGenerationMethods", [])]
-                    st.caption(f"✅ 사용 가능 모델 ({len(_avail)}개): {', '.join(_avail[:15])}")
-                else:
-                    st.caption(f"⚠️ 모델 목록 조회 실패 HTTP {_lm.status_code}: {_lm.text[:150]}")
-            except Exception as e:
-                st.caption(f"⚠️ 모델 목록 조회 예외: {e}")
-        st.text_area("수집된 컨텍스트 미리보기", full_context[:1500], height=200)
-
     if GEMINI_KEY and len(full_context.strip()) > 80:
         insight_prompt = f"""너는 삼성자산운용 KODEX ETF의 최고 마케팅 전략 책임자(CMO)야.
 아래는 이번 주 5개 영역(시장 트렌드/경쟁사 모니터링/투자자 수급/수익률/마케팅 성과)에서 수집된 실시간 분석 데이터 전체야.
@@ -2010,9 +1990,7 @@ with st.container(border=True):
 {full_context}
 """
         try:
-            ai_insights, _ai_err = generate_via_requests(insight_prompt, max_tokens=8192, return_error=True)
-            if _ai_err:
-                st.caption(f"⚠️ AI 호출 실패 원인: {_ai_err}")
+            ai_insights = generate_via_requests(insight_prompt, max_tokens=8192)
             if ai_insights:
                 parsed_lines = []
                 for block in ai_insights.split('\n\n'):
@@ -2029,15 +2007,8 @@ with st.container(border=True):
                             parsed_lines.append(clean)
                 if len(parsed_lines) >= 2:
                     final_insights = parsed_lines
-                    st.caption(f"✅ AI 인사이트 적용됨 (파싱 {len(parsed_lines)}개)")
-                else:
-                    st.caption(f"⚠️ AI 응답 파싱 실패 (파싱 {len(parsed_lines)}개) → 백업 사용. 원문: {str(ai_insights)[:200]}")
-            else:
-                st.caption("⚠️ AI 응답이 비어있음 → 백업 사용")
         except Exception as e:
-            st.caption(f"⚠️ AI 호출 예외 발생: {e} → 백업 사용")
-    else:
-        st.caption(f"⚠️ AI 호출 조건 미달 (KEY={bool(GEMINI_KEY)}, 길이={len(full_context.strip())}) → 백업 사용")
+            pass
 
     # ======================================================================
     # 가변 개수 출력 (3개면 3열, 그 이상이면 줄바꿈 배치)
@@ -2189,6 +2160,30 @@ with st.container(border=True):
                 </td>
             </tr>
             """
+
+        # ----------------------------------------------------------------------
+        # 🏢 [추가] 운용사별 ETF 이슈 모니터링 (summary_data) PDF 카드 생성
+        # ----------------------------------------------------------------------
+        etf_issue = st.session_state.get('etf_issue_summary', {})
+        _issue_meta = [
+            ("KODEX", "삼성자산운용", "#1D4ED8", "#EFF6FF"),
+            ("TIGER", "미래에셋자산운용", "#EA580C", "#FFF7ED"),
+            ("RISE", "KB자산운용", "#CA8A04", "#FEFCE8"),
+            ("ACE", "한국투자신탁운용", "#047857", "#ECFDF5"),
+        ]
+        etf_issue_cells = ""
+        for _bk, _co, _c, _bg in _issue_meta:
+            _items = etf_issue.get(_bk, ["데이터 없음"]) if isinstance(etf_issue, dict) else ["데이터 없음"]
+            _lis = "".join([f'<div style="font-size:7.5pt; color:#374151; line-height:1.45; margin-bottom:1.2mm;">• {str(x).replace("**","")}</div>' for x in _items[:3]])
+            etf_issue_cells += f"""
+            <td style="width:25%; vertical-align:top; border:1px solid {_c}; border-radius:5px; padding:2.5mm; background-color:{_bg};">
+                <div style="font-weight:bold; color:{_c}; font-size:8.5pt; margin-bottom:2mm; border-bottom:1px solid {_c}; padding-bottom:1mm;">{_bk}<br><span style="font-size:7pt; color:#6B7280;">{_co}</span></div>
+                {_lis}
+            </td>"""
+        etf_issue_html = f"""
+        <table style="width:100%; border-collapse:separate; border-spacing:1.5mm; table-layout:fixed; margin-top:2mm;">
+            <tr>{etf_issue_cells}</tr>
+        </table>"""
 
         # ----------------------------------------------------------------------
         # 👥 SECTION 3. 투자자별 순매수 수급 강도
@@ -2708,36 +2703,40 @@ with st.container(border=True):
             <meta charset="utf-8">
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');
-                @page {{ size: a4; margin: 11mm 11mm 11mm 11mm; }}
-                body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #333333; line-height: 1.4; font-size: 9pt; }}
-                .header-container {{ border-bottom: 2px solid #1E3A8A; padding-bottom: 2mm; margin-bottom: 4mm; }}
-                .doc-title {{ font-size: 18pt; font-weight: bold; color: #1E3A8A; text-align: center; }}
-                .doc-meta {{ text-align: right; font-size: 8pt; color: #4B5563; margin-top: 1mm; }}
-                .section-container {{ margin-bottom: 4mm; padding: 3.5mm; border: 1px solid #E5E7EB; border-radius: 6px; background-color: #FFFFFF; }}
-                .section-title {{ font-size: 11pt; font-weight: bold; color: #1E40AF; background-color: #EFF6FF; padding: 1.5mm 2.5mm; border-left: 4px solid #1E40AF; margin-bottom: 2.5mm; }}
-                .content-title {{ font-weight: bold; color: #1F2937; margin-top: 2.5mm; margin-bottom: 1mm; font-size: 9.5pt; }}
-                .badge-up {{ color: #B91C1C; font-weight: bold; }}
-                .badge-down {{ color: #1E40AF; font-weight: bold; }}
-                table {{ width: 100%; border-collapse: collapse; margin-top: 1.5mm; margin-bottom: 1.5mm; }}
-                th {{ background-color: #1E3A8A; color: #FFFFFF; font-weight: bold; border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8.5pt; text-align: center; }}
-                td {{ border: 1px solid #E5E7EB; padding: 1.5mm; font-size: 8pt; vertical-align: top; }}
+                @page {{ size: a4; margin: 13mm 13mm 14mm 13mm; }}
+                body {{ font-family: "Nanum Gothic", "Helvetica", "Arial", sans-serif; color: #2D3748; line-height: 1.5; font-size: 9pt; }}
+                .header-container {{ border-bottom: 2.5px solid #1E40AF; padding-bottom: 3mm; margin-bottom: 6mm; }}
+                .doc-title {{ font-size: 17pt; font-weight: bold; color: #1E40AF; letter-spacing: -0.3px; }}
+                .doc-subtitle {{ font-size: 8.5pt; color: #718096; margin-top: 1.5mm; }}
+                .doc-meta {{ text-align: right; font-size: 7.5pt; color: #A0AEC0; margin-top: 1mm; }}
+                .section-container {{ margin-bottom: 6.5mm; }}
+                .section-title {{ font-size: 12pt; font-weight: bold; color: #1A202C; padding: 0 0 2mm 0; margin-bottom: 3.5mm; border-bottom: 1.5px solid #E2E8F0; }}
+                .section-title .num {{ color: #1E40AF; }}
+                .content-title {{ font-weight: bold; color: #2D3748; margin-top: 4mm; margin-bottom: 2mm; font-size: 9.5pt; padding-left: 2.5mm; border-left: 3px solid #3B82F6; }}
+                .badge-up {{ color: #C53030; font-weight: bold; }}
+                .badge-down {{ color: #2B6CB0; font-weight: bold; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 2mm; }}
+                th {{ background-color: #F7FAFC; color: #4A5568; font-weight: bold; border: none; border-bottom: 1.5px solid #CBD5E0; padding: 2mm 1.5mm; font-size: 8pt; text-align: center; }}
+                td {{ border: none; border-bottom: 1px solid #EDF2F7; padding: 2mm 1.5mm; font-size: 8pt; vertical-align: top; }}
                 ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
-                li {{ margin-bottom: 0.8mm; font-size: 8pt; color: #4B5563; }}
+                li {{ margin-bottom: 1mm; font-size: 8.5pt; color: #4A5568; line-height: 1.5; }}
                 .page-break {{ page-break-before: always; }}
-                .footer-text {{ text-align: center; font-size: 7.5pt; color: #9CA3AF; margin-top: 5mm; border-top: 1px solid #E5E7EB; padding-top: 1.5mm; }}
+                .footer-text {{ text-align: center; font-size: 7pt; color: #A0AEC0; margin-top: 6mm; border-top: 1px solid #E2E8F0; padding-top: 2mm; }}
+                .brief-line {{ margin: 1.2mm 0; font-size: 9pt; }}
             </style>
         </head>
         <body>
             <div class="header-container">
-                <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
-                <div class="doc-meta">발행기준시점: {datetime.now(_kst).strftime('%Y-%m-%d %H:%M:%S')} | 작성주체: AI 자동 분석 컴파일러</div>
+                <div class="doc-title">KODEX ETF 마켓 인텔리전스 리포트</div>
+                <div class="doc-subtitle">삼성자산운용 KODEX 마케팅 전략 · 실시간 통합 분석</div>
+                <div class="doc-meta">발행: {datetime.now(_kst).strftime('%Y-%m-%d %H:%M')} KST · AI 자동 분석 컴파일러</div>
             </div>
             
             <div class="section-container">
-                <div class="section-title">🎯 Section 1. 시장 트렌드 & 실시간 뉴스 키워드 빈도</div>
-                <p style="margin: 0.5mm 0;">• <span class="badge-up">🚀 라이징 테마:</span> {rising_theme}</p>
-                <p style="margin: 0.5mm 0;">• <span class="badge-down">📉 하락/정체 테마:</span> {falling_theme}</p>
-                <p style="margin: 0.5mm 0;">• <b>🧭 관심 자산군 변화 추이:</b> {trend_text}</p>
+                <div class="section-title"><span class="num">Section 1.</span> 시장 트렌드 &amp; 뉴스 키워드</div>
+                <p class="brief-line">• <span class="badge-up">라이징 테마:</span> {rising_theme}</p>
+                <p class="brief-line">• <span class="badge-down">하락/정체 테마:</span> {falling_theme}</p>
+                <p class="brief-line">• <b>관심 자산군 변화 추이:</b> {trend_text}</p>
                 
                 <div class="content-title">[실시간 뉴스 핵심 키워드 언급 강도 인디케이터]</div>
                 <table>
@@ -2755,7 +2754,7 @@ with st.container(border=True):
             </div>
             
             <div class="section-container">
-                <div class="section-title">📺 Section 2. 자산운용사 마케팅 동향 및 공식 미디어/리테일 채널 입체 분석</div>
+                <div class="section-title"><span class="num">Section 2.</span> 자산운용사 마케팅 동향 분석</div>
                 
                 <div class="content-title">▶ 1. 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도</div>
                 <table>
@@ -2811,7 +2810,10 @@ with st.container(border=True):
                     </tbody>
                 </table>
 
-                <div class="content-title" style="margin-top:4mm;">▶ 4. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
+                <div class="content-title" style="margin-top:4mm;">▶ 4. 주요 운용사별 ETF 이슈 모니터링 (최신 뉴스 AI 요약)</div>
+                {etf_issue_html}
+
+                <div class="content-title" style="margin-top:4mm;">▶ 5. 4대 운용사 오피셜 블로그 주간 상품 실시간 심층 분석 리포트</div>
 
                 <table style="width:100%; border-collapse:separate; border-spacing:2mm; table-layout:fixed; margin-top:2mm;">
                     <tr>
@@ -2843,14 +2845,7 @@ with st.container(border=True):
                         </td>
                     </tr>
                 </table>
-                <td style="width:50%; vertical-align:top; border:2px solid #047857; border-radius:6px; padding:3mm; background-color:#ECFDF5;">
-                            <div style="font-weight:bold; color:#047857; font-size:9pt; margin-bottom:2mm; border-bottom:1px solid #047857; padding-bottom:1.5mm;">■ 한국투자신탁운용 (ACE)</div>
-                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 현재 주력 ETF 상품:</b> {sec2_data['ace']['prod']}</div>
-                            <div style="font-size:8pt; color:#374151; margin-bottom:1mm;"><b>• 핵심 투자 테마:</b> {sec2_data['ace']['theme']}</div>
-                            <div style="font-size:8pt; color:#374151;"><b>• 주력 판단 근거:</b> {sec2_data['ace']['reason']}</div>
-                        </td>
-                    </tr>
-                </table> <div class="content-title" style="margin-top:4mm;">▶ 5. 운용사 공식 홈페이지 메인화면 실시간 스크리닝 요약</div>
+                <div class="content-title" style="margin-top:4mm;">▶ 6. 운용사 공식 홈페이지 메인화면 실시간 스크리닝 요약</div>
                 
                 <table style="width: 100%; border-collapse: collapse; margin-top: 2mm; table-layout: fixed;">
                     <thead>
@@ -2869,7 +2864,7 @@ with st.container(border=True):
             </div>
 
             <div class="section-container">
-                <div class="section-title">👥 Section 3. 투자자별 순매수 수급 강도 입체 시각화 리포트 (Top 15 전수)</div>
+                <div class="section-title"><span class="num">Section 3.</span> 투자자 순매수 수급 강도 (TOP 15)</div>
                 <div style="font-size:9pt; background-color:#F9FAFB; border-left:3px solid #1E40AF; padding:1.5mm 2.5mm; color:#374151; margin-bottom:2.5mm;">
                     <b>📊 분석 대상 기간:</b> <span style='color:#1E40AF; font-weight:bold;'>{analysis_period}</span><br/>
                     <span style='font-size:8pt; color:#6B7280;'>• {excel_summary}</span>
@@ -2884,7 +2879,7 @@ with st.container(border=True):
             <div class="page-break"></div>
 
             <div class="section-container">
-                <div class="section-title">📈 Section 4. 주간 수익률 퍼포먼스 & 차주 주목 테마 ETF 라인업</div>
+                <div class="section-title"><span class="num">Section 4.</span> 주간 수익률 &amp; 주목 ETF</div>
                 <table style="width:100%; border:none; border-collapse: collapse;">
                     <tr style="border:none;">
                         <td style="width:48%; border:none; padding:0; vertical-align: top;">
@@ -2927,7 +2922,7 @@ with st.container(border=True):
             </div>
 
             <div class="section-container">
-                <div class="section-title">📱 Section 5. 네이버 데이터랩 트렌드 변동 & 마케팅 뉴스 및 AI 최종 인사이트</div>
+                <div class="section-title"><span class="num">Section 5.</span> 마케팅 성과 &amp; AI 종합 인사이트</div>
                 
                 <div style="border: 1px solid #DBEAFE; background-color: #EFF6FF; padding: 3.5mm; margin-bottom: 4mm; border-radius: 6px;">
                     <div style="font-weight: bold; color: #1E40AF; font-size: 9.5pt; margin-bottom: 1.5mm;">📢 KODEX 주간 마케팅 및 보도 트렌드 종합 요약 (에이전트 실시간 연동)</div>
