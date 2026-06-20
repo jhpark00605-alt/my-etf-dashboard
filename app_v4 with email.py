@@ -1189,7 +1189,7 @@ with st.container(border=True):
                     if df_comp_ev.empty:
                         summary_report_rows.append({
                             "운용사 (브랜드)": f"{comp_name} ({b_name})", "진행 중인 주요 이벤트": "확인 가능한 최근 이벤트 없음",
-                            "마케팅 푸쉬 종목": "이력 없음", "실제 개인 누적 순매수액": "0 원", "DiD 순수 마케팅 효과": "0.000%p", "최종 마케팅 효용 판단": "⚪ 데이터 없음"
+                            "마케팅 푸쉬 종목": "이력 없음", "실제 개인 누적 순매수액": "0 원", "DiD 순수 마케팅 효과": "N/A", "최종 마케팅 효용 판단": "⚪ 데이터 없음"
                         })
                         continue
 
@@ -1205,37 +1205,65 @@ with st.container(border=True):
                     push_products_text = ", ".join(all_prods[:3]) if all_prods else f"{b_name} 주요 라인업"
 
                     # 🧬 핵심 DiD(이중차분) 연산 파트
-                    treatment_diffs = [] 
-                    control_diffs = []   
+                    # 정통 DiD = (처치군 사후-사전 변화) - (동일 자산군 대조군 사후-사전 변화)
+                    # 대조군: 같은 핵심 테마를 추종하는 '타 브랜드' ETF (예: KODEX200 ↔ TIGER200)
+                    treatment_diffs = []
+                    control_diffs = []
                     total_comp_money = 0.0
                     matched_any_stock = False
+                    matched_control = False  # 대조군 매칭 여부 추적
+
+                    # 불용어(공통 접미사) 제거용 — 핵심 테마어만 남기기 위함
+                    _stop_tokens = ["TOP", "PLUS", "플러스", "액티브", "ETF", "선물", "레버리지",
+                                    "인버스", "합성", "(H)", "TR", "고배당", "커버드콜"]
+
+                    def _core_theme(name_norm, brand):
+                        """종목명에서 브랜드명·공통접미사를 제거해 핵심 테마 키워드 추출.
+                        단 200/100 같은 지수 번호는 유지(KODEX200↔TIGER200 매칭 위함)."""
+                        core = name_norm.replace(brand, "")
+                        for st_tok in _stop_tokens:
+                            core = core.replace(st_tok.replace(" ", ""), "")
+                        return core.strip()
 
                     for kw in all_prods:
                         kw_norm = kw.replace(" ", "")
-                        df_treat = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
-                        
+                        df_treat = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False, regex=False)]
+
                         if not df_treat.empty:
                             matched_any_stock = True
                             total_comp_money += df_treat['정제된_금주순매수(억원)'].sum()
                             t_diff = (df_treat['금주_매수강도'] - df_treat['전주_매수강도']).mean()
                             treatment_diffs.append(t_diff)
-                            
-                            core_keyword = kw_norm.replace(b_name, "") 
-                            if len(core_keyword) >= 2: 
+
+                            # 대조군: 같은 핵심 테마 + 타 브랜드 (처치 종목 자체는 제외)
+                            core_keyword = _core_theme(kw_norm, b_name)
+                            treat_names = set(df_treat['종목명_정제'].str.replace(" ", ""))
+                            if len(core_keyword) >= 2:
                                 df_ctrl = res_df[
-                                    (res_df['종목명_정제'].str.replace(" ", "").str.contains(core_keyword, na=False)) & 
-                                    (~res_df['종목명_정제'].str.contains(b_name, na=False))
+                                    (res_df['종목명_정제'].str.replace(" ", "").str.contains(core_keyword, na=False, regex=False)) &
+                                    (~res_df['종목명_정제'].str.contains(b_name, na=False)) &
+                                    (~res_df['종목명_정제'].str.replace(" ", "").isin(treat_names))
                                 ]
                                 if not df_ctrl.empty:
+                                    matched_control = True
                                     c_diff = (df_ctrl['금주_매수강도'] - df_ctrl['전주_매수강도']).mean()
                                     control_diffs.append(c_diff)
 
                     avg_t_diff = np.mean(treatment_diffs) if treatment_diffs else 0.0
                     avg_c_diff = np.mean(control_diffs) if control_diffs else 0.0
-                    did_score = avg_t_diff - avg_c_diff 
+                    # 대조군이 있을 때만 진짜 DiD. 없으면 단순 변화량(이중차분 아님)임을 구분.
+                    did_score = avg_t_diff - avg_c_diff
 
                     if not matched_any_stock:
                         efficacy_result = "⚪ 효용성 판단 불가 (시장 무반응)"
+                    elif not matched_control:
+                        # 대조군 없음 → 이중차분 불성립. 단순 변화량으로만 참고 표기
+                        if avg_t_diff > 0.05:
+                            efficacy_result = "🟢 순유입 (단순 변화·대조군 없음)"
+                        elif avg_t_diff > -0.05 and total_comp_money > 0:
+                            efficacy_result = "🟡 보통 (단순 변화·대조군 없음)"
+                        else:
+                            efficacy_result = "🔴 순유출 (단순 변화·대조군 없음)"
                     elif did_score > 0.05:
                         efficacy_result = "🟢 효용성 탁월 (시장 평균 뛰어넘는 순수 유입)"
                     elif did_score > -0.05 and total_comp_money > 0:
@@ -1243,12 +1271,20 @@ with st.container(border=True):
                     else:
                         efficacy_result = "🔴 효용성 없음 (이벤트에도 경쟁사 대비 이탈)"
 
+                    # 대조군 유무에 따라 DiD 표기 구분 (없으면 단순 변화량 Δ로 명시)
+                    if matched_control:
+                        did_label = f"{did_score:+.3f}%p"
+                    elif matched_any_stock:
+                        did_label = f"Δ{avg_t_diff:+.3f}%p (대조군 없음)"
+                    else:
+                        did_label = "N/A"
+
                     summary_report_rows.append({
                         "운용사 (브랜드)": f"{comp_name} ({b_name})",
                         "진행 중인 주요 이벤트": event_titles,
                         "마케팅 푸쉬 종목": push_products_text,
                         "실제 개인 누적 순매수액": f"{total_comp_money:,.2f} 억 원" if matched_any_stock else "0 원",
-                        "DiD 순수 마케팅 효과": f"{did_score:+.3f}%p",
+                        "DiD 순수 마케팅 효과": did_label,
                         "최종 마케팅 효용 판단": efficacy_result
                     })
 
