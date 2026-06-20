@@ -130,30 +130,27 @@ def generate_via_requests(prompt, model_name=None, max_tokens=8192, return_error
     for m in models_to_try:
         # v1 우선, 실패 시 v1beta 재시도
         for ver in ("v1", "v1beta"):
-            for _pl in (payload, payload_no_think):
+            for _pl in (payload_no_think, payload):
                 try:
                     url = f"https://generativelanguage.googleapis.com/{ver}/models/{m}:generateContent?key={GEMINI_KEY}"
                     res = requests.post(url, headers=headers, json=_pl, timeout=40)
                     if res.status_code != 200:
                         last_err = f"HTTP {res.status_code} [{m}/{ver}]: {res.text[:150]}"
-                        # thinkingConfig 미지원(400)이면 no_think로 재시도, 그 외엔 다음 버전
-                        if res.status_code == 400 and _pl is payload:
-                            continue
-                        break
+                        continue  # 다음 payload(또는 버전)로
                     data = res.json()
                     cands = data.get("candidates", [])
                     if not cands:
                         last_err = f"NO_CANDIDATES [{m}/{ver}]: {str(data)[:150]}"
-                        break
+                        continue
                     parts = cands[0].get("content", {}).get("parts", [])
                     text = "".join(p.get("text", "") for p in parts).strip()
                     if not text:
                         last_err = f"EMPTY_TEXT [{m}/{ver}] finishReason={cands[0].get('finishReason','?')}"
-                        break
+                        continue
                     return (text, "") if return_error else text
                 except Exception as e:
                     last_err = f"EXCEPTION [{m}/{ver}]: {e}"
-                    break
+                    continue
     return ("", last_err) if return_error else None
 
 
@@ -1990,7 +1987,9 @@ with st.container(border=True):
 {full_context}
 """
         try:
-            ai_insights = generate_via_requests(insight_prompt, max_tokens=8192)
+            ai_insights, _err = generate_via_requests(insight_prompt, max_tokens=16384, return_error=True)
+            if _err:
+                st.caption(f"⚠️ 인사이트 AI 실패: {_err}")
             if ai_insights:
                 parsed_lines = []
                 for block in ai_insights.split('\n\n'):
@@ -2007,8 +2006,10 @@ with st.container(border=True):
                             parsed_lines.append(clean)
                 if len(parsed_lines) >= 2:
                     final_insights = parsed_lines
+                else:
+                    st.caption(f"⚠️ 인사이트 파싱 {len(parsed_lines)}개. 원문 일부: {str(ai_insights)[:150]}")
         except Exception as e:
-            pass
+            st.caption(f"⚠️ 인사이트 예외: {e}")
 
     # ======================================================================
     # 가변 개수 출력 (3개면 3열, 그 이상이면 줄바꿈 배치)
