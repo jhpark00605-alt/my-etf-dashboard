@@ -12,3 +12,4 @@ playwright
 pillow
 selenium
 webdriver-manager
+pykrx
