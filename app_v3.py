@@ -1892,6 +1892,12 @@ with st.container(border=True):
         "⚡ **[트렌드 가속 락인]** 네이버 데이터랩 검색 강도 추이와 순매수 강도가 일치하는 타이밍을 저격하여 고자산가 유입 경로에 최적화된 디지털 타겟 마케팅을 집행하십시오."
     ]
 
+    # ===== [임시 진단] 인사이트 분기 상태 표시 =====
+    with st.expander("🔧 인사이트 진단 (디버그)", expanded=True):
+        st.caption(f"GEMINI_KEY 존재: {bool(GEMINI_KEY)}")
+        st.caption(f"full_context 길이: {len(full_context.strip())}자 (80자 초과해야 AI 호출)")
+        st.text_area("수집된 컨텍스트 미리보기", full_context[:1500], height=200)
+
     if GEMINI_KEY and len(full_context.strip()) > 80:
         insight_prompt = f"""너는 삼성자산운용 KODEX ETF의 최고 마케팅 전략 책임자(CMO)야.
 아래는 이번 주 5개 영역(시장 트렌드/경쟁사 모니터링/투자자 수급/수익률/마케팅 성과)에서 수집된 실시간 분석 데이터 전체야.
@@ -1925,8 +1931,15 @@ with st.container(border=True):
                             parsed_lines.append(clean)
                 if len(parsed_lines) >= 2:
                     final_insights = parsed_lines
+                    st.caption(f"✅ AI 인사이트 적용됨 (파싱 {len(parsed_lines)}개)")
+                else:
+                    st.caption(f"⚠️ AI 응답 파싱 실패 (파싱 {len(parsed_lines)}개) → 백업 사용. 원문: {str(ai_insights)[:200]}")
+            else:
+                st.caption("⚠️ AI 응답이 비어있음 → 백업 사용")
         except Exception as e:
-            pass
+            st.caption(f"⚠️ AI 호출 예외 발생: {e} → 백업 사용")
+    else:
+        st.caption(f"⚠️ AI 호출 조건 미달 (KEY={bool(GEMINI_KEY)}, 길이={len(full_context.strip())}) → 백업 사용")
 
     # ======================================================================
     # 가변 개수 출력 (3개면 3열, 그 이상이면 줄바꿈 배치)
