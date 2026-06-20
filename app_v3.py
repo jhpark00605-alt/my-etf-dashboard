@@ -1873,7 +1873,8 @@ with st.container(border=True):
     def generate_pdf_report():
         from xhtml2pdf import pisa
         from io import BytesIO
-        from datetime import datetime
+        from datetime import datetime, timezone, timedelta
+        _kst = timezone(timedelta(hours=9))
         
         # ----------------------------------------------------------------------
         # 🧭 데이터 분석 기간 설정 (session_state 실시간 연동)
@@ -2407,7 +2408,7 @@ with st.container(border=True):
         <body>
             <div class="header-container">
                 <div class="doc-title">📊 KODEX ETF 마켓 인텔리전스 종합 마스터 리포트</div>
-                <div class="doc-meta">발행기준시점: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 작성주체: AI 자동 분석 컴파일러</div>
+                <div class="doc-meta">발행기준시점: {datetime.now(_kst).strftime('%Y-%m-%d %H:%M:%S')} | 작성주체: AI 자동 분석 컴파일러</div>
             </div>
             
             <div class="section-container">
@@ -2664,7 +2665,7 @@ with st.container(border=True):
             st.download_button(
                 label="📄 PDF 리포트 다운로드",
                 data=pdf_data,
-                file_name=f"KODEX_Perfect_Sync_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                file_name=f"KODEX_Perfect_Sync_Report_{datetime.now(_kst).strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",
                 use_container_width=True
             )
