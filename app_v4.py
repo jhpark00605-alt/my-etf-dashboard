@@ -2650,7 +2650,7 @@ with st.container(border=True):
 
 
 # ==============================================================================
-# 📨 [최종 교정본] 모던 HTML 대시보드 리포트 이메일 구독 및 실시간 발송 엔진
+# 📨 [대시보드 100% 동기화] 뉴스·블로그·PDF 요약 전체 포함 프리미엄 HTML 리포트 메일 엔진
 # ==============================================================================
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -2664,13 +2664,11 @@ def send_html_dashboard_email(to_email, subject, html_content):
     SMTP_PASSWORD = "7RF4P35T95ZZ"       # 👈 네이버 기기별 전용 비밀번호 입력
 
     try:
-        # 💡 [교정] 메일 객체를 생성할 때 alternative 구조를 완벽히 명시합니다.
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = SMTP_USER
         msg['To'] = to_email
 
-        # 💡 [핵심교정] 두 번째 인자에 'html'을 정확히 지정하여 텍스트 깨짐을 방지합니다.
         mime_html = MIMEText(html_content, 'html', 'utf-8')
         msg.attach(mime_html)
 
@@ -2687,28 +2685,35 @@ def send_html_dashboard_email(to_email, subject, html_content):
 
 # 🖥️ 대시보드 화면 최하단 UI 렌더링
 st.markdown("<br><hr>", unsafe_allow_html=True)
-st.markdown("### 📨 AI Agent 인텔리전스 리포트 이메일 구독")
-st.caption("대시보드 상단의 실시간 시장 트렌드와 4대 운용사 블로그 분석 결과를 고급 인라인 HTML 템플릿으로 가공하여 전송합니다.")
+st.markdown("### 📨 AI Agent 인텔리전스 종합 리포트 이메일 구독")
+st.caption("대시보드의 실시간 뉴스 동향, 4대 운용사 블로그 원문 리스트, 그리고 업로드한 PDF 분석 결과까지 하나도 빠짐없이 완벽히 담아 메일로 전송합니다.")
 
 with st.form("dashboard_email_form", clear_on_submit=False):
     col_em1, col_em2 = st.columns([3, 1])
     with col_em1:
         receiver_address = st.text_input("수신할 이메일 주소를 입력하세요:", placeholder="executive@company.com", label_visibility="collapsed")
     with col_em2:
-        send_clicked = st.form_submit_button("🚀 프리미엄 HTML 리포트 발송")
+        send_clicked = st.form_submit_button("🚀 종합 HTML 리포트 발송")
 
 if send_clicked:
     if not receiver_address:
         st.warning("⚠️ 이메일 주소를 정확히 입력해 주세요.")
     else:
-        with st.spinner("🎨 대시보드 데이터를 모던 인라인 HTML 구조로 렌더링 중입니다..."):
+        with st.spinner("🎨 대시보드의 대용량 데이터를 고해상도 인라인 HTML 구조로 컴파일 중..."):
             
-            # 📊 세션 메모리에 세이브된 데이터 동적 추출
+            # 📊 [대시보드 완전 동기화 데이터 추출]
             kw_df = st.session_state.get('df_keywords', pd.DataFrame())
-            brief = st.session_state.get('live_brief', {"rising": "데이터 로드 중", "falling": "데이터 로드 중", "trend": "데이터 로드 중"})
+            brief = st.session_state.get('live_brief', {"rising": "데이터 없음", "falling": "데이터 없음", "trend": "데이터 없음"})
             blog_results = st.session_state.get('blog_analysis_results', [])
-
-            # 💡 [교정] f-string 안에서 템플릿 문법 깨짐을 방지하기 위해 HTML 변수를 사전 컴파일합니다.
+            
+            # 📄 1. PDF 핵심 전략 요약본 가져오기 (사용자님 코드의 pdf_insights 매칭)
+            pdf_insights = st.session_state.get('pdf_insights', [
+                "업로드된 금융 보고서(AI전략서) 분석 데이터가 아직 세션에 로드되지 않았습니다.",
+                "대시보드 상단에서 PDF 분석을 먼저 진행하시면 리포트에 자동 포함됩니다.",
+                "대시보드 내부 세션 연동 대기 중"
+            ])
+            
+            # 📰 2. 뉴스 언급량 Top 5 테이블 빌드
             table_rows_html = ""
             if not kw_df.empty:
                 for idx, row in kw_df.head(5).iterrows():
@@ -2719,71 +2724,103 @@ if send_clicked:
                     </tr>
                     """
 
+            # 🏢 3. 4대 운용사 블로그 수집 분석 카드 빌드 (이벤트, 주력상품, 핵심카피 통합)
             cards_html = ""
             if blog_results:
                 for res in blog_results:
                     cards_html += f"""
                     <div style="background-color: #F8FAFC; border: 1px solid {res['hex']}; border-left: 6px solid {res['hex']}; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
                         <h4 style="margin: 0 0 8px 0; color: #0F172A; font-size: 15px;">🏢 {res['company']}</h4>
-                        <p style="margin: 5px 0; font-size: 12.5px; color: #334155;">🎯 <b>주력 ETF:</b> <span style="color: {res['hex']}; font-weight: bold;">{res['main_products']}</span></p>
-                        <p style="margin: 5px 0; font-size: 12.5px; color: #475569;">💡 <b>투자 테마:</b> {res['marketing_theme']}</p>
-                        <p style="margin: 5px 0; font-size: 12.5px; color: #1E293B; font-style: italic; background-color: #FFFFFF; padding: 6px; border-radius: 4px; border: 1px solid #E2E8F0;">"{res['key_copy']}"</p>
+                        <p style="margin: 4px 0; font-size: 12.5px; color: #334155;">📣 <b>진행 이벤트:</b> {res.get('event_titles', '진행 중인 이벤트 데이터 파싱 대기')}</p>
+                        <p style="margin: 4px 0; font-size: 12.5px; color: #334155;">🎯 <b>주력 ETF 상품:</b> <span style="color: {res['hex']}; font-weight: bold;">{res['main_products']}</span></p>
+                        <p style="margin: 4px 0; font-size: 12.5px; color: #475569;">💡 <b>투자 마케팅 테마:</b> {res['marketing_theme']}</p>
+                        <p style="margin: 4px 0; font-size: 12.5px; color: #1E293B; font-style: italic; background-color: #FFFFFF; padding: 8px; border-radius: 4px; border: 1px solid #E2E8F0;">"{res['key_copy']}"</p>
                     </div>
                     """
+            else:
+                cards_html = "<div style='text-align:center; color:#94A3B8; font-size:13px; padding:15px; border: 1px dashed #CBD5E1; border-radius:6px;'>4대 자산운용사 블로그 수집 데이터가 부재합니다. 대시보드 조회를 수행해 주세요.</div>"
 
-            # 🎨 네이버 메일 맞춤형 인라인 스타일 템플릿 대입
+            # 🎨 [초고도화 템플릿] 대시보드의 모든 알맹이가 완벽하게 통합된 임원 보고용 마크업
             email_template = f"""
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="utf-8">
             </head>
-            <body style="margin: 0; padding: 0; background-color: #F8FAFC; font-family: 'Malgun Gothic', dotum, sans-serif;">
-                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8FAFC; padding: 30px 0;">
+            <body style="margin: 0; padding: 0; background-color: #F1F5F9; font-family: 'Malgun Gothic', dotum, sans-serif;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F1F5F9; padding: 40px 0;">
                     <tr>
                         <td align="center">
-                            <table border="0" cellpadding="0" cellspacing="0" width="650" style="background-color: #FFFFFF; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 15px rgba(15,23,42,0.05); border: 1px solid #E2E8F0;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="650" style="background-color: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(15,23,42,0.08); border: 1px solid #E2E8F0;">
+                                
                                 <tr>
-                                    <td style="background-color: #0F172A; padding: 35px 40px; text-align: left;">
-                                        <div style="font-size: 11px; font-weight: bold; color: #38BDF8; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 5px;">AI Agent Intelligence System</div>
-                                        <h1 style="margin: 0; color: #FFFFFF; font-size: 24px; font-weight: bold; letter-spacing: -0.5px;">ETF 마케팅 트렌드 모니터링 종합 요약본</h1>
+                                    <td style="background-color: #0F172A; padding: 40px; text-align: left;">
+                                        <div style="font-size: 11px; font-weight: bold; color: #38BDF8; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px;">AI Agent Multi-Intelligence System</div>
+                                        <h1 style="margin: 0; color: #FFFFFF; font-size: 24px; font-weight: bold; letter-spacing: -0.5px;">KODEX 마케팅 인텔리전스 대시보드 종합 보고서</h1>
                                     </td>
                                 </tr>
+                                
                                 <tr>
-                                    <td style="padding: 35px 40px;">
-                                        <p style="margin: 0 0 25px 0; font-size: 14px; color: #475569; line-height: 1.6;">
-                                            안녕하세요. 본 메일은 AI 에이전트 시스템이 실시간 구글 뉴스 파싱 데이터 및 주요 경쟁 운용사의 공식 블로그 트렌드를 종합 진단하여 자동 생성한 <b>C-Level 보고용 프리미엄 HTML 리포트</b>입니다.
+                                    <td style="padding: 40px;">
+                                        <p style="margin: 0 0 30px 0; font-size: 14.5px; color: #334155; line-height: 1.65;">
+                                            본 보고서는 대시보드 내부 인텔리전스 시스템이 실시간 구글 뉴스 트렌드, 네이버 블로그 원문 데이터 및 업로드하신 <b>[금융 AI 전략서 PDF]</b>의 핵심 분석 데이터까지 모두 결합하여 동적 컴파일한 의사결정용 프리미엄 HTML 리포트입니다.
                                         </p>
                                         
-                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">🔥 시장 주요 트렌드 브리핑</h3>
-                                        <div style="background-color: #F0FDF4; border-left: 5px solid #22C55E; padding: 12px 15px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #166534;">
-                                            🚀 <b>라이징 테마:</b> {brief['rising']}
+                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">📋 PDF 보고서 기반 AI 핵심 전략 요약</h3>
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 30px;">
+                                            <tr>
+                                                <td style="padding: 12px 15px; background-color: #FAFAFA; border: 1px solid #E5E7EB; border-radius: 6px; margin-bottom: 10px;">
+                                                    <div style="font-weight: bold; color: #1E40AF; font-size: 13px; margin-bottom: 4px;">🌏 핵심 전략 01</div>
+                                                    <div style="font-size: 12.5px; color: #374151; line-height: 1.5;">{pdf_insights[0]}</div>
+                                                </td>
+                                            </tr>
+                                            <tr><td style="height:10px;"></td></tr>
+                                            <tr>
+                                                <td style="padding: 12px 15px; background-color: #FAFAFA; border: 1px solid #E5E7EB; border-radius: 6px; margin-bottom: 10px;">
+                                                    <div style="font-weight: bold; color: #C2410C; font-size: 13px; margin-bottom: 4px;">🌏 핵심 전략 02</div>
+                                                    <div style="font-size: 12.5px; color: #374151; line-height: 1.5;">{pdf_insights[1]}</div>
+                                                </td>
+                                            </tr>
+                                            <tr><td style="height:10px;"></td></tr>
+                                            <tr>
+                                                <td style="padding: 12px 15px; background-color: #FAFAFA; border: 1px solid #E5E7EB; border-radius: 6px;">
+                                                    <div style="font-weight: bold; color: #047857; font-size: 13px; margin-bottom: 4px;">🌏 핵심 전략 03</div>
+                                                    <div style="font-size: 12.5px; color: #374151; line-height: 1.5;">{pdf_insights[2]}</div>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                        
+                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">🔥 시장 실시간 트렌드 브리핑</h3>
+                                        <div style="background-color: #F0FDF4; border-left: 5px solid #22C55E; padding: 14px 16px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #166534; line-height: 1.5;">
+                                            🚀 <b>라이징 마켓 테마:</b> {brief['rising']}
                                         </div>
-                                        <div style="background-color: #FEF2F2; border-left: 5px solid #EF4444; padding: 12px 15px; border-radius: 4px; margin-bottom: 25px; font-size: 13px; color: #991B1B;">
-                                            📉 <b>하락/정체 테마:</b> {brief['falling']}
+                                        <div style="background-color: #FEF2F2; border-left: 5px solid #EF4444; padding: 14px 16px; border-radius: 4px; margin-bottom: 30px; font-size: 13px; color: #991B1B; line-height: 1.5;">
+                                            📉 <b>하락 및 소외 테마:</b> {brief['falling']}
                                         </div>
 
-                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">📰 실시간 뉴스 명사 빈도 TOP 5</h3>
-                                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 30px; border-collapse: collapse;">
+                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">📰 실시간 구글 뉴스 파싱 키워드 TOP 5</h3>
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 35px; border-collapse: collapse;">
                                             <thead>
                                                 <tr style="background-color: #F1F5F9;">
-                                                    <th align="left" style="padding: 10px; font-size: 12px; color: #64748B; font-weight: bold;">핵심 키워드 테마</th>
-                                                    <th align="right" style="padding: 10px; font-size: 12px; color: #64748B; font-weight: bold;">실시간 뉴스 언급량</th>
+                                                    <th align="left" style="padding: 12px 10px; font-size: 12px; color: #64748B; font-weight: bold;">핵심 키워드 주제</th>
+                                                    <th align="right" style="padding: 12px 10px; font-size: 12px; color: #64748B; font-weight: bold;">뉴스 언급 빈도</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {table_rows_html if table_rows_html else "<tr><td colspan='2' style='padding:15px; text-align:center; color:#94A3B8; font-size:13px;'>수집된 실시간 키워드 데이터가 없습니다.</td></tr>"}
+                                                {table_rows_html if table_rows_html else "<tr><td colspan='2' style='padding:20px; text-align:center; color:#94A3B8; font-size:13px;'>수집된 실시간 구글 뉴스 키워드가 없습니다.</td></tr>"}
                                             </tbody>
                                         </table>
 
-                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">📊 4대 자산운용사 공식 블로그 마케팅 주력 진단</h3>
-                                        {cards_html if cards_html else "<div style='text-align:center; color:#94A3B8; font-size:13px; padding:15px;'>블로그 추적 데이터가 부재합니다.</div>"}
+                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">📊 4대 경쟁 자산운용사 공식 블로그 모니터링</h3>
+                                        {cards_html}
+                                        
                                     </td>
                                 </tr>
+                                
                                 <tr>
-                                    <td style="background-color: #F8FAFC; padding: 25px 40px; border-top: 1px solid #E2E8F0; text-align: center;">
-                                        <div style="font-size: 11px; color: #94A3B8; line-height: 1.5;">
-                                            본 메일은 내부 시스템 세션 메모리와 연동되어 발송되는 자동화 인텔리전스 리포트입니다.<br/>
+                                    <td style="background-color: #F8FAFC; padding: 30px 40px; border-top: 1px solid #E2E8F0; text-align: center;">
+                                        <div style="font-size: 11px; color: #94A3B8; line-height: 1.6;">
+                                            본 보고서는 내부 시스템의 인텔리전스 세션 메모리와 연동되어 실시간 암호화 전송되는 금융 리포트입니다.<br/>
                                             © 2026 KODEX AI Marketing Agent Dashboard. All rights reserved.
                                         </div>
                                     </td>
@@ -2796,6 +2833,6 @@ if send_clicked:
             </html>
             """
             
-            success = send_html_dashboard_email(receiver_address, "[AI Agent] 실시간 ETF 트렌드 및 마케팅 인텔리전스 보고서", email_template)
+            success = send_html_dashboard_email(receiver_address, "[AI Agent] 실시간 ETF 마케팅 동향 및 PDF 핵심전략 인텔리전스 종합 보고서", email_template)
             if success:
-                st.success(f"🎉 아름답게 디자인된 고급 HTML 리포트 대시보드가 '{receiver_address}' 주소로 정상 전송되었습니다!")
+                st.success(f"🎉 PDF 핵심 전략을 포함한 대시보드 전체 리포트가 '{receiver_address}' 주소로 완벽하게 발송되었습니다!")
