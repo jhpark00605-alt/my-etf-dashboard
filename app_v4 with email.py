@@ -2713,18 +2713,21 @@ with st.container(border=True):
                 .doc-title {{ font-size: 17pt; font-weight: bold; color: #1E40AF; letter-spacing: -0.3px; }}
                 .doc-subtitle {{ font-size: 8.5pt; color: #718096; margin-top: 1.5mm; }}
                 .doc-meta {{ text-align: right; font-size: 7.5pt; color: #A0AEC0; margin-top: 1mm; }}
-                .section-container {{ margin-bottom: 6.5mm; }}
+                .section-container {{ margin-bottom: 6.5mm; page-break-before: always; }}
+                .section-first {{ page-break-before: avoid; }}
                 .section-title {{ font-size: 12pt; font-weight: bold; color: #1A202C; padding: 0 0 2mm 0; margin-bottom: 3.5mm; border-bottom: 1.5px solid #E2E8F0; }}
                 .section-title .num {{ color: #1E40AF; }}
                 .content-title {{ font-weight: bold; color: #2D3748; margin-top: 4mm; margin-bottom: 2mm; font-size: 9.5pt; padding-left: 2.5mm; border-left: 3px solid #3B82F6; }}
                 .badge-up {{ color: #C53030; font-weight: bold; }}
                 .badge-down {{ color: #2B6CB0; font-weight: bold; }}
-                table {{ width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 2mm; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 2mm; page-break-inside: avoid; }}
                 th {{ background-color: #F7FAFC; color: #4A5568; font-weight: bold; border: none; border-bottom: 1.5px solid #CBD5E0; padding: 2mm 1.5mm; font-size: 8pt; text-align: center; }}
                 td {{ border: none; border-bottom: 1px solid #EDF2F7; padding: 2mm 1.5mm; font-size: 8pt; vertical-align: top; }}
+                tr {{ page-break-inside: avoid; }}
                 ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
                 li {{ margin-bottom: 1mm; font-size: 8.5pt; color: #4A5568; line-height: 1.5; }}
                 .page-break {{ page-break-before: always; }}
+                .no-break {{ page-break-inside: avoid; }}
                 .footer-text {{ text-align: center; font-size: 7pt; color: #A0AEC0; margin-top: 6mm; border-top: 1px solid #E2E8F0; padding-top: 2mm; }}
                 .brief-line {{ margin: 1.2mm 0; font-size: 9pt; }}
             </style>
@@ -2736,7 +2739,7 @@ with st.container(border=True):
                 <div class="doc-meta">발행: {datetime.now(_kst).strftime('%Y-%m-%d %H:%M')} KST · AI 자동 분석 컴파일러</div>
             </div>
             
-            <div class="section-container">
+            <div class="section-container section-first">
                 <div class="section-title"><span class="num">Section 1.</span> 시장 트렌드 &amp; 뉴스 키워드</div>
                 <p class="brief-line">• <span class="badge-up">라이징 테마:</span> {rising_theme}</p>
                 <p class="brief-line">• <span class="badge-down">하락/정체 테마:</span> {falling_theme}</p>
@@ -2842,11 +2845,7 @@ with st.container(border=True):
                         <tr><td><b>한국투자증권</b></td><td>글로벌 지수 압축 독점 자산군 장기 적립식 가이드 제공 및 엔화 노출형 미국채 자산군 중심의 매크로 헷징 제안</td></tr>
                     </tbody>
                 </table>
-            </div>
 
-            <div class="page-break"></div>
-
-            <div class="section-container">
                 <div class="content-title">▶ 6. [유튜브 분석] 4대 운용사 오피셜 유튜브 채널 콘텐츠 포커싱 점검</div>
                 <table>
                     <thead>
@@ -2863,8 +2862,6 @@ with st.container(border=True):
                         <tr><td><b>ACE (한국투자)</b></td><td>• 'ACE 반도체 TOP4' 심층 리서치 토크쇼<br/>• 인도 성장 시장 탐방 현지 밀착 VLOG</td><td>특정 섹터 압축 독점 상품군의 차별화 포인트를 정밀 전달하여 매니아층 확보</td></tr>
                     </tbody>
                 </table>
-
-                </div> ```
             </div>
 
             <div class="section-container">
@@ -2879,8 +2876,6 @@ with st.container(border=True):
                     {section3_chart_html}
                 </div>
             </div>
-            
-            <div class="page-break"></div>
 
             <div class="section-container">
                 <div class="section-title"><span class="num">Section 4.</span> 주간 수익률 &amp; 주목 ETF</div>
