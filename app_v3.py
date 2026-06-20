@@ -86,10 +86,10 @@ st.set_page_config(page_title="KODEX 마케팅 AI 에이전트", page_icon="📈
 
 # API 키 및 보안 관리 변수 설정
 GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
-# Gemini 모델명: 1.5-flash는 폐기(404)되어 최신 별칭으로 통일.
-# 계정별 가용성이 달라 후보를 순차 시도함.
-GEMINI_MODEL = "gemini-flash-latest"
-GEMINI_MODEL_FALLBACKS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite"]
+# Gemini 모델명: 1.5-flash는 폐기(404)됨. 사용자 계정 가용 모델로 설정.
+# (진단 결과 확인된 목록: gemini-2.5-flash, gemini-2.0-flash 등)
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
 API_KEY_YT = st.secrets.get("YOUTUBE_API_KEY")
 NAVER_ID = st.secrets.get("NAVER_CLIENT_ID")
 NAVER_SECRET = st.secrets.get("NAVER_CLIENT_SECRET")
@@ -104,7 +104,7 @@ st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기�
 st.divider()
 
 # Gemini API 직접 호출을 위한 경량 헬퍼 함수 (라이브러리 충돌 방지)
-def generate_via_requests(prompt, model_name=None, max_tokens=2048, return_error=False):
+def generate_via_requests(prompt, model_name=None, max_tokens=8192, return_error=False):
     if not GEMINI_KEY:
         return ("", "NO_KEY") if return_error else None
     # 시도할 모델 목록 구성 (지정 모델 우선, 이후 폴백)
@@ -113,34 +113,47 @@ def generate_via_requests(prompt, model_name=None, max_tokens=2048, return_error
     else:
         models_to_try = list(GEMINI_MODEL_FALLBACKS)
     headers = {"Content-Type": "application/json"}
+    # thinkingBudget=0 → 2.5계열의 사고 토큰 소비를 막아 출력이 잘리지 않게 함
     payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.4,
+            "maxOutputTokens": max_tokens,
+            "thinkingConfig": {"thinkingBudget": 0}
+        }
+    }
+    last_err = ""
+    payload_no_think = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.4, "maxOutputTokens": max_tokens}
     }
-    last_err = ""
     for m in models_to_try:
         # v1 우선, 실패 시 v1beta 재시도
         for ver in ("v1", "v1beta"):
-            try:
-                url = f"https://generativelanguage.googleapis.com/{ver}/models/{m}:generateContent?key={GEMINI_KEY}"
-                res = requests.post(url, headers=headers, json=payload, timeout=30)
-                if res.status_code != 200:
-                    last_err = f"HTTP {res.status_code} [{m}/{ver}]: {res.text[:150]}"
-                    continue
-                data = res.json()
-                cands = data.get("candidates", [])
-                if not cands:
-                    last_err = f"NO_CANDIDATES [{m}/{ver}]: {str(data)[:150]}"
-                    continue
-                parts = cands[0].get("content", {}).get("parts", [])
-                text = "".join(p.get("text", "") for p in parts).strip()
-                if not text:
-                    last_err = f"EMPTY_TEXT [{m}/{ver}] finishReason={cands[0].get('finishReason','?')}"
-                    continue
-                return (text, "") if return_error else text
-            except Exception as e:
-                last_err = f"EXCEPTION [{m}/{ver}]: {e}"
-                continue
+            for _pl in (payload, payload_no_think):
+                try:
+                    url = f"https://generativelanguage.googleapis.com/{ver}/models/{m}:generateContent?key={GEMINI_KEY}"
+                    res = requests.post(url, headers=headers, json=_pl, timeout=40)
+                    if res.status_code != 200:
+                        last_err = f"HTTP {res.status_code} [{m}/{ver}]: {res.text[:150]}"
+                        # thinkingConfig 미지원(400)이면 no_think로 재시도, 그 외엔 다음 버전
+                        if res.status_code == 400 and _pl is payload:
+                            continue
+                        break
+                    data = res.json()
+                    cands = data.get("candidates", [])
+                    if not cands:
+                        last_err = f"NO_CANDIDATES [{m}/{ver}]: {str(data)[:150]}"
+                        break
+                    parts = cands[0].get("content", {}).get("parts", [])
+                    text = "".join(p.get("text", "") for p in parts).strip()
+                    if not text:
+                        last_err = f"EMPTY_TEXT [{m}/{ver}] finishReason={cands[0].get('finishReason','?')}"
+                        break
+                    return (text, "") if return_error else text
+                except Exception as e:
+                    last_err = f"EXCEPTION [{m}/{ver}]: {e}"
+                    break
     return ("", last_err) if return_error else None
 
 
@@ -161,7 +174,7 @@ def generate_live_market_briefing(gemini_key, keywords_data):
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(
             model_name=GEMINI_MODEL,
-            generation_config={"temperature": 0.2, "response_mime_type": "application/json"}
+            generation_config={"temperature": 0.2, "response_mime_type": "application/json", "max_output_tokens": 8192}
         )
         prompt = f"""
         당신은 글로벌 거시경제와 ETF 자산시장을 꿰뚫어보는 수석 이코노미스트이자 자산배분 전략가입니다.
@@ -370,7 +383,16 @@ with st.container(border=True):
     with st.container(border=True):
         if GEMINI_KEY:
             try:
-                yt_briefing_prompt = f"금융 마케팅 디렉터로서 유튜브 동향 데이터를 요약 및 제언해줘.\n데이터:\n{yt_context_data}"
+                yt_briefing_prompt = f"""너는 금융 마케팅 디렉터야. 아래 유튜브 동향 데이터를 분석해서 운용사별 마케팅 동향과 KODEX 전략 제언을 작성해줘.
+
+[작성 규칙]
+- 인사말, 자기소개, 서론(예: '안녕하십니까', '~제언해 드립니다') 절대 쓰지 말 것
+- 곧바로 본론(운용사별 동향 → 종합 제언) 으로 시작할 것
+- 마크다운 소제목과 불릿으로 가독성 있게 작성
+- 문장을 중간에 끊지 말고 끝까지 완결할 것
+
+[유튜브 동향 데이터]
+{yt_context_data}"""
                 yt_report = generate_via_requests(yt_briefing_prompt)
                 if yt_report and len(yt_report.strip()) > 50:
                     st.markdown(yt_report)
@@ -434,7 +456,7 @@ with st.container(border=True):
             genai.configure(api_key=GEMINI_KEY)
             model = genai.GenerativeModel(
                 model_name=GEMINI_MODEL,
-                generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
+                generation_config={"temperature": 0.1, "response_mime_type": "application/json", "max_output_tokens": 8192}
             )
             news_context = ""
             for brand, news in all_brand_news.items():
@@ -543,7 +565,7 @@ def analyze_official_blog_with_gemini(gemini_key, system_role, user_data, output
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel(
             model_name=GEMINI_MODEL,
-            generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
+            generation_config={"temperature": 0.1, "response_mime_type": "application/json", "max_output_tokens": 8192}
         )
         prompt = f"""
         {system_role}
@@ -1729,7 +1751,15 @@ with st.container(border=True):
                             st.caption(f"• {title}")
                     
                     if GEMINI_KEY:
-                        news_prompt = f"다음은 구글 뉴스를 통해 실시간 수집된 KODEX ETF 관련 최신 보도자료 헤드라인들이야. 현재 KODEX가 언론을 통해 집중적으로 홍보하고 있는 핵심 마케팅 방향성이 무엇인지 요약 리포트를 가독성 좋게 작성해줘.\n\n뉴스 데이터:\n{g_news_context}"
+                        news_prompt = f"""다음은 구글 뉴스에서 실시간 수집된 KODEX ETF 관련 보도 헤드라인이야. KODEX가 언론을 통해 집중 홍보 중인 핵심 마케팅 방향성을 요약 리포트로 작성해줘.
+
+[작성 규칙]
+- 인사말/서론 없이 곧바로 요약 본론으로 시작
+- 핵심 방향성 3가지 내외를 마크다운 불릿으로 정리
+- 각 항목은 한두 문장으로 완결, 절대 중간에 끊지 말 것
+
+[뉴스 헤드라인]
+{g_news_context}"""
                         news_res = generate_via_requests(news_prompt)
                         
                         if news_res:
@@ -1958,7 +1988,7 @@ with st.container(border=True):
 {full_context}
 """
         try:
-            ai_insights, _ai_err = generate_via_requests(insight_prompt, max_tokens=2048, return_error=True)
+            ai_insights, _ai_err = generate_via_requests(insight_prompt, max_tokens=8192, return_error=True)
             if _ai_err:
                 st.caption(f"⚠️ AI 호출 실패 원인: {_ai_err}")
             if ai_insights:
