@@ -3051,7 +3051,7 @@ def build_email_html_report():
     sec4 += card_close()
 
     # ======================================================================
-    # SECTION 5. 마케팅 성과 (뉴스 요약 + 종합 인사이트)
+    # SECTION 5. 마케팅 성과 (뉴스 요약 + 데이터랩 + 종합 인사이트)
     # ======================================================================
     sec5 = card_open("💡", "Section 5. 마케팅 성과 & 종합 인사이트")
 
@@ -3064,6 +3064,65 @@ def build_email_html_report():
                  f"padding:12px;'>{md_bold(news_summary.strip())}</div>")
     else:
         sec5 += empty("뉴스 요약 데이터 없음")
+
+    # 5-B. 네이버 데이터랩 트렌드 (확대된 스파크라인)
+    df_sns = st.session_state.get("df_sns", pd.DataFrame())
+    sec5 += sub_head("📱 네이버 데이터랩 검색 트렌드 (최근 한 달)")
+    if isinstance(df_sns, pd.DataFrame) and not df_sns.empty and "검색 지수" in df_sns.columns:
+        vals = pd.to_numeric(df_sns["검색 지수"], errors="coerce").dropna()
+        if not vals.empty:
+            cur = float(vals.iloc[-1])
+            avg = float(vals.mean())
+            mx = float(vals.max())
+            mn = float(vals.min())
+            # 확대 막대 차트: 최근 30일 전체, 높이 최대 96px, 막대폭 14px
+            CHART_H = 96
+            tail = vals.tail(30).tolist()
+            vmax = max(tail) or 1
+            spark = ""
+            for x in tail:
+                h = max(4, round(x / vmax * CHART_H))
+                spark += (f"<td style='vertical-align:bottom;padding:0 2px;'>"
+                          f"<div style='width:14px;height:{h}px;background:{C_ACCENT};"
+                          f"border-radius:3px 3px 0 0;'></div></td>")
+            sec5 += f"""
+            <table width="100%" cellpadding="0" cellspacing="0"
+                   style="background:#FAFAFA;border:1px solid {C_BORDER};border-radius:12px;
+                          padding:16px;margin-bottom:8px;">
+              <tr>
+                <td style="vertical-align:bottom;">
+                  <table cellpadding="0" cellspacing="0" style="width:100%;">
+                    <tr style="height:{CHART_H}px;">{spark}</tr>
+                  </table>
+                  <div style="font-size:11px;color:{C_SUB};margin-top:8px;text-align:center;">
+                    KODEX ETF 일별 검색지수 추이 (최근 30일)</div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding-top:14px;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="text-align:center;border-right:1px solid {C_BORDER};">
+                        <div style="font-size:11px;color:{C_SUB};">현재</div>
+                        <div style="font-size:20px;font-weight:800;color:{C_PRIMARY};">{cur:.0f}</div></td>
+                      <td style="text-align:center;border-right:1px solid {C_BORDER};">
+                        <div style="font-size:11px;color:{C_SUB};">기간평균</div>
+                        <div style="font-size:20px;font-weight:800;color:{C_TEXT};">{avg:.0f}</div></td>
+                      <td style="text-align:center;border-right:1px solid {C_BORDER};">
+                        <div style="font-size:11px;color:{C_SUB};">최고</div>
+                        <div style="font-size:20px;font-weight:800;color:#B91C1C;">{mx:.0f}</div></td>
+                      <td style="text-align:center;">
+                        <div style="font-size:11px;color:{C_SUB};">최저</div>
+                        <div style="font-size:20px;font-weight:800;color:#1D4ED8;">{mn:.0f}</div></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>"""
+        else:
+            sec5 += empty("데이터랩 수치 없음")
+    else:
+        sec5 += empty("데이터랩 데이터 없음")
 
     # 5-C. 종합 인사이트 (문자열 \n\n 분리 + 마크다운 굵게)
     final_insight = st.session_state.get("final_insight", "")
@@ -3114,7 +3173,7 @@ def build_email_html_report():
         <tr><td style="padding:8px 4px 24px;">
           <div style="font-size:11px;color:{C_SUB};line-height:1.6;text-align:center;">
             본 리포트는 대시보드 세션 데이터를 기반으로 자동 생성된 투자 참고용 자료입니다.<br>
-            데이터 출처: 네이버 검색 API, 운용사 공식 블로그·홈페이지, ETF 시세 API, Gemini 분석.
+            데이터 출처: 네이버 검색/데이터랩 API, 운용사 공식 블로그·홈페이지, ETF 시세 API, Gemini 분석.
           </div>
         </td></tr>
       </table>
