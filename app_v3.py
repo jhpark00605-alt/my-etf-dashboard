@@ -1900,13 +1900,18 @@ with st.container(border=True):
                 for idx, row in target_df_kw.head(6).iterrows():
                     v_col = row['언급량'] if '언급량' in target_df_kw.columns else 10
                     k_col = row['키워드'] if '키워드' in target_df_kw.columns else '테마'
-                    bar_count = max(1, round((int(v_col) / max_volume) * 15))
-                    bar_display = "■" * bar_count
+                    pct = max(1, min(100, round((int(v_col) / max_volume) * 100)))
+                    _rest = 100 - pct
+                    _empty = f'<td width="{_rest}%" style="background-color:#EEF2FF; padding:0;"></td>' if _rest > 0 else ''
                     section1_graph_html += f"""
                     <tr>
-                        <td style='width:30%; font-weight:bold;'>{k_col}</td>
-                        <td style='width:20%; text-align:center; color:#1E40AF;'>{v_col} 회</td>
-                        <td style='width:50%; color:#2563EB; font-size:8pt;'>{bar_display}</td>
+                        <td style='width:30%; font-weight:bold; padding:0.6mm 1mm;'>{k_col}</td>
+                        <td style='width:18%; text-align:center; color:#1E40AF; padding:0.6mm 1mm;'>{v_col} 회</td>
+                        <td style='width:52%; padding:0.6mm 1mm;'>
+                          <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                            <td width="{pct}%" bgcolor="#2563EB" style="background-color:#2563EB; padding:0;"></td>{_empty}
+                          </tr></table>
+                        </td>
                     </tr>
                     """
             except Exception as e:
@@ -1915,8 +1920,18 @@ with st.container(border=True):
         if not section1_graph_html:
             sample_kw = [("AI반도체", 145), ("월배당", 120), ("커버드콜", 98), ("금리인하", 76), ("인도시장", 54)]
             for k, v in sample_kw:
-                b_cnt = round((v / 145) * 15)
-                section1_graph_html += f"<tr><td style='font-weight:bold;'>{k}</td><td style='text-align:center; color:#1E40AF;'>{v} 회</td><td style='color:#2563EB; font-size:8pt;'>{'■'*b_cnt}</td></tr>"
+                pct = max(1, min(100, round((v / 145) * 100)))
+                _rest = 100 - pct
+                _empty = f'<td width="{_rest}%" style="background-color:#EEF2FF; padding:0;"></td>' if _rest > 0 else ''
+                section1_graph_html += f"""<tr>
+                  <td style='width:30%; font-weight:bold; padding:0.6mm 1mm;'>{k}</td>
+                  <td style='width:18%; text-align:center; color:#1E40AF; padding:0.6mm 1mm;'>{v} 회</td>
+                  <td style='width:52%; padding:0.6mm 1mm;'>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="height:3mm;"><tr style="height:3mm;">
+                      <td width="{pct}%" bgcolor="#2563EB" style="background-color:#2563EB; padding:0;"></td>{_empty}
+                    </tr></table>
+                  </td>
+                </tr>"""
 
         # ----------------------------------------------------------------------
         # 📺 SECTION 2. 블로그 3대 세부 항목 완벽 동적 복구 맵핑
