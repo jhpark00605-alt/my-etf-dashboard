@@ -2650,32 +2650,33 @@ with st.container(border=True):
 
 
 # ==============================================================================
-# 📨 [추가] 모던 HTML 대시보드 리포트 이메일 구독 및 실시간 발송 엔진
+# 📨 [최종 교정본] 모던 HTML 대시보드 리포트 이메일 구독 및 실시간 발송 엔진
 # ==============================================================================
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 def send_html_dashboard_email(to_email, subject, html_content):
-    """HTML 대시보드를 수신자에게 전송하는 SMTP 메일 엔진 (네이버 호환성 개선 버전)"""
+    """HTML 대시보드를 수신자에게 전송하는 SMTP 메일 엔진"""
     SMTP_SERVER = "smtp.naver.com"  
-    SMTP_PORT = 587                 # 🔄 465에서 587 범용 TLS 포트로 변경
-    SMTP_USER = "jhpark0065@naver.com"  
-    SMTP_PASSWORD = "7RF4P35T95ZZ"       
+    SMTP_PORT = 587                 
+    SMTP_USER = "jhpark0065@naver.com"  # 👈 본인 네이버 전체 메일 주소 입력
+    SMTP_PASSWORD = "7RF4P35T95ZZ"       # 👈 네이버 기기별 전용 비밀번호 입력
 
     try:
+        # 💡 [교정] 메일 객체를 생성할 때 alternative 구조를 완벽히 명시합니다.
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = SMTP_USER
         msg['To'] = to_email
 
+        # 💡 [핵심교정] 두 번째 인자에 'html'을 정확히 지정하여 텍스트 깨짐을 방지합니다.
         mime_html = MIMEText(html_content, 'html', 'utf-8')
         msg.attach(mime_html)
 
-        # 🔄 호환성이 더 높은 smtplib.SMTP + starttls 보안 접속 구조로 전환합니다.
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.ehlo()          # 서버와 악수(인사) 구문 추가
-            server.starttls()      # TLS 암호화 시작
+            server.ehlo()          
+            server.starttls()      
             server.ehlo()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_USER, to_email, msg.as_string())
@@ -2702,73 +2703,72 @@ if send_clicked:
     else:
         with st.spinner("🎨 대시보드 데이터를 모던 인라인 HTML 구조로 렌더링 중입니다..."):
             
-            # 📊 세션 메모리에 세이브된 데이터 동적 추출 (실패 시 백업셋 작동)
+            # 📊 세션 메모리에 세이브된 데이터 동적 추출
             kw_df = st.session_state.get('df_keywords', pd.DataFrame())
             brief = st.session_state.get('live_brief', {"rising": "데이터 로드 중", "falling": "데이터 로드 중", "trend": "데이터 로드 중"})
             blog_results = st.session_state.get('blog_analysis_results', [])
 
-            # 이메일 전용 텍스트 및 테이블 로우 조립
+            # 💡 [교정] f-string 안에서 템플릿 문법 깨짐을 방지하기 위해 HTML 변수를 사전 컴파일합니다.
             table_rows_html = ""
-            for idx, row in kw_df.head(5).iterrows():
-                table_rows_html += f"""
-                <tr>
-                    <td style='padding: 10px; border-bottom: 1px solid #E2E8F0; font-size: 13px; color: #334155;'>🔥 {row['키워드']}</td>
-                    <td style='padding: 10px; border-bottom: 1px solid #E2E8F0; font-size: 13px; color: #0F172A; font-weight: bold; text-align: right;'>{row['언급량']}회</td>
-                </tr>
-                """
+            if not kw_df.empty:
+                for idx, row in kw_df.head(5).iterrows():
+                    table_rows_html += f"""
+                    <tr>
+                        <td style="padding: 10px; border-bottom: 1px solid #E2E8F0; font-size: 13px; color: #334155;">🔥 {row['키워드']}</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #E2E8F0; font-size: 13px; color: #0F172A; font-weight: bold; text-align: right;">{row['언급량']}회</td>
+                    </tr>
+                    """
 
             cards_html = ""
-            for res in blog_results:
-                cards_html += f"""
-                <div style='background-color: #F8FAFC; border: 1px solid {res['hex']}; border-left: 6px solid {res['hex']}; border-radius: 8px; padding: 15px; margin-bottom: 15px;'>
-                    <h4 style='margin: 0 0 8px 0; color: #0F172A; font-size: 15px;'>🏢 {res['company']}</h4>
-                    <p style='margin: 5px 0; font-size: 12.5px; color: #334155;'>🎯 <b>주력 ETF:</b> <span style='color: {res['hex']}; font-weight: bold;'>{res['main_products']}</span></p>
-                    <p style='margin: 5px 0; font-size: 12.5px; color: #475569;'>💡 <b>투자 테마:</b> {res['marketing_theme']}</p>
-                    <p style='margin: 5px 0; font-size: 12.5px; color: #1E293B; font-style: italic; background-color: #FFFFFF; padding: 6px; border-radius: 4px; border: 1px solid #E2E8F0;'>"{res['key_copy']}"</p>
-                </div>
-                """
+            if blog_results:
+                for res in blog_results:
+                    cards_html += f"""
+                    <div style="background-color: #F8FAFC; border: 1px solid {res['hex']}; border-left: 6px solid {res['hex']}; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                        <h4 style="margin: 0 0 8px 0; color: #0F172A; font-size: 15px;">🏢 {res['company']}</h4>
+                        <p style="margin: 5px 0; font-size: 12.5px; color: #334155;">🎯 <b>주력 ETF:</b> <span style="color: {res['hex']}; font-weight: bold;">{res['main_products']}</span></p>
+                        <p style="margin: 5px 0; font-size: 12.5px; color: #475569;">💡 <b>투자 테마:</b> {res['marketing_theme']}</p>
+                        <p style="margin: 5px 0; font-size: 12.5px; color: #1E293B; font-style: italic; background-color: #FFFFFF; padding: 6px; border-radius: 4px; border: 1px solid #E2E8F0;">"{res['key_copy']}"</p>
+                    </div>
+                    """
 
-            # 🎨 디자인 고도화된 이메일 본문 HTML 마크업 (Outlook 및 모바일 완벽 호환)
+            # 🎨 네이버 메일 맞춤형 인라인 스타일 템플릿 대입
             email_template = f"""
             <!DOCTYPE html>
             <html>
             <head>
-                <meta charset='utf-8'>
-                <title>ETF Marketing Intelligence Executive Report</title>
+                <meta charset="utf-8">
             </head>
-            <body style='margin: 0; padding: 0; background-color: #F8FAFC; font-family: "Malgun Gothic", dotum, sans-serif;'>
-                <table border='0' cellpadding='0' cellspacing='0' width='100%' style='background-color: #F8FAFC; padding: 30px 0;'>
+            <body style="margin: 0; padding: 0; background-color: #F8FAFC; font-family: 'Malgun Gothic', dotum, sans-serif;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8FAFC; padding: 30px 0;">
                     <tr>
-                        <td align='center'>
-                            <table border='0' cellpadding='0' cellspacing='0' width='650' style='background-color: #FFFFFF; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 15px rgba(15,23,42,0.05); border: 1px solid #E2E8F0;'>
-                                
+                        <td align="center">
+                            <table border="0" cellpadding="0" cellspacing="0" width="650" style="background-color: #FFFFFF; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 15px rgba(15,23,42,0.05); border: 1px solid #E2E8F0;">
                                 <tr>
-                                    <td style='background-color: #0F172A; padding: 35px 40px; text-align: left;'>
-                                        <div style='font-size: 11px; font-weight: bold; color: #38BDF8; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 5px;'>AI Agent Intelligence System</div>
-                                        <h1 style='margin: 0; color: #FFFFFF; font-size: 24px; font-weight: bold; letter-spacing: -0.5px;'>ETF 마케팅 트렌드 모니터링 종합 요약본</h1>
+                                    <td style="background-color: #0F172A; padding: 35px 40px; text-align: left;">
+                                        <div style="font-size: 11px; font-weight: bold; color: #38BDF8; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 5px;">AI Agent Intelligence System</div>
+                                        <h1 style="margin: 0; color: #FFFFFF; font-size: 24px; font-weight: bold; letter-spacing: -0.5px;">ETF 마케팅 트렌드 모니터링 종합 요약본</h1>
                                     </td>
                                 </tr>
-                                
                                 <tr>
-                                    <td style='padding: 35px 40px;'>
-                                        <p style='margin: 0 0 25px 0; font-size: 14px; color: #475569; line-height: 1.6;'>
+                                    <td style="padding: 35px 40px;">
+                                        <p style="margin: 0 0 25px 0; font-size: 14px; color: #475569; line-height: 1.6;">
                                             안녕하세요. 본 메일은 AI 에이전트 시스템이 실시간 구글 뉴스 파싱 데이터 및 주요 경쟁 운용사의 공식 블로그 트렌드를 종합 진단하여 자동 생성한 <b>C-Level 보고용 프리미엄 HTML 리포트</b>입니다.
                                         </p>
                                         
-                                        <h3 style='font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;'>🔥 시장 주요 트렌드 브리핑</h3>
-                                        <div style='background-color: #F0FDF4; border-left: 5px solid #22C55E; padding: 12px 15px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #166534;'>
+                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">🔥 시장 주요 트렌드 브리핑</h3>
+                                        <div style="background-color: #F0FDF4; border-left: 5px solid #22C55E; padding: 12px 15px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #166534;">
                                             🚀 <b>라이징 테마:</b> {brief['rising']}
                                         </div>
-                                        <div style='background-color: #FEF2F2; border-left: 5px solid #EF4444; padding: 12px 15px; border-radius: 4px; margin-bottom: 25px; font-size: 13px; color: #991B1B;'>
+                                        <div style="background-color: #FEF2F2; border-left: 5px solid #EF4444; padding: 12px 15px; border-radius: 4px; margin-bottom: 25px; font-size: 13px; color: #991B1B;">
                                             📉 <b>하락/정체 테마:</b> {brief['falling']}
                                         </div>
 
-                                        <h3 style='font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;'>📰 실시간 뉴스 명사 빈도 TOP 5</h3>
-                                        <table border='0' cellpadding='0' cellspacing='0' width='100%' style='margin-bottom: 30px; border-collapse: collapse;'>
+                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">📰 실시간 뉴스 명사 빈도 TOP 5</h3>
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 30px; border-collapse: collapse;">
                                             <thead>
-                                                <tr style='background-color: #F1F5F9;'>
-                                                    <th align='left' style='padding: 10px; font-size: 12px; color: #64748B; font-weight: bold;'>핵심 키워드 테마</th>
-                                                    <th align='right' style='padding: 10px; font-size: 12px; color: #64748B; font-weight: bold;'>실시간 뉴스 언급량</th>
+                                                <tr style="background-color: #F1F5F9;">
+                                                    <th align="left" style="padding: 10px; font-size: 12px; color: #64748B; font-weight: bold;">핵심 키워드 테마</th>
+                                                    <th align="right" style="padding: 10px; font-size: 12px; color: #64748B; font-weight: bold;">실시간 뉴스 언급량</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -2776,16 +2776,14 @@ if send_clicked:
                                             </tbody>
                                         </table>
 
-                                        <h3 style='font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;'>📊 4대 자산운용사 블로그 마케팅 주력 진단</h3>
+                                        <h3 style="font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;">📊 4대 자산운용사 공식 블로그 마케팅 주력 진단</h3>
                                         {cards_html if cards_html else "<div style='text-align:center; color:#94A3B8; font-size:13px; padding:15px;'>블로그 추적 데이터가 부재합니다.</div>"}
-
                                     </td>
-                                end_tr_content
-                                
+                                </tr>
                                 <tr>
-                                    <td style='background-color: #F8FAFC; padding: 25px 40px; border-top: 1px solid #E2E8F0; text-align: center;'>
-                                        <div style='font-size: 11px; color: #94A3B8; line-height: 1.5;'>
-                                            본 메일은 내부 시스템 세션 메모리와 연동되어 암호화 발송되는 자동화 인텔리전스 리포트입니다.<br/>
+                                    <td style="background-color: #F8FAFC; padding: 25px 40px; border-top: 1px solid #E2E8F0; text-align: center;">
+                                        <div style="font-size: 11px; color: #94A3B8; line-height: 1.5;">
+                                            본 메일은 내부 시스템 세션 메모리와 연동되어 발송되는 자동화 인텔리전스 리포트입니다.<br/>
                                             © 2026 KODEX AI Marketing Agent Dashboard. All rights reserved.
                                         </div>
                                     </td>
@@ -2796,9 +2794,8 @@ if send_clicked:
                 </table>
             </body>
             </html>
-            """.replace("end_tr_content", "</tr>") # 치환 컴파일 안전장치
+            """
             
-            # 메일엔진 가동 및 성공 여부 핸들링
             success = send_html_dashboard_email(receiver_address, "[AI Agent] 실시간 ETF 트렌드 및 마케팅 인텔리전스 보고서", email_template)
             if success:
                 st.success(f"🎉 아름답게 디자인된 고급 HTML 리포트 대시보드가 '{receiver_address}' 주소로 정상 전송되었습니다!")
