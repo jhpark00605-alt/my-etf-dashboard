@@ -2708,7 +2708,9 @@ def build_email_html_report():
     import pandas as pd
     import re as _re
 
-    now_str = datetime.now().strftime("%Y년 %m월 %d일 %H:%M")
+    from datetime import timezone, timedelta
+    _kst = timezone(timedelta(hours=9))
+    now_str = datetime.now(_kst).strftime("%Y년 %m월 %d일 %H:%M")
     week_text = st.session_state.get("week2_option", "-")
     agent_text = st.session_state.get("target_agent_option", "개인")
 
@@ -3209,7 +3211,9 @@ def send_email_report(html_body, to_addrs, subject=None):
         raise ValueError("수신자 주소가 비어 있습니다.")
 
     if subject is None:
-        subject = f"[KODEX 인텔리전스] 마케팅·트렌드 종합 리포트 {datetime.now().strftime('%Y-%m-%d')}"
+        from datetime import timezone, timedelta
+        _kst = timezone(timedelta(hours=9))
+        subject = f"[KODEX 인텔리전스] 마케팅·트렌드 종합 리포트 {datetime.now(_kst).strftime('%Y-%m-%d')}"
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
