@@ -15,6 +15,9 @@ import xml.etree.ElementTree as ET
 import email.utils
 import streamlit.components.v1 as components
 import io
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 # ==============================================================================
 # 🔍 [네이버 API 엔진] 4대 운용사별 ETF 이벤트 수집 함수 (secrets 매칭 반영 버전)
@@ -2644,3 +2647,156 @@ with st.container(border=True):
             st.error("통합 PDF 리포트 바이너리를 바인딩하는 과정에서 구조적 에러가 발생했습니다.")
     except Exception as e:
         st.warning(f"데이터 인스턴스 준비 및 컴파일 중 대기: {e}")
+
+
+# ==============================================================================
+# 📨 [추가] 모던 HTML 대시보드 리포트 이메일 구독 및 실시간 발송 엔진
+# ==============================================================================
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+def send_html_dashboard_email(to_email, subject, html_content):
+    """HTML 대시보드를 수신자에게 전송하는 SMTP 메일 엔진"""
+    # ⚠️ 사용 시 본인의 SMTP 서버 정보와 앱 비밀번호를 매칭해 주어야 작동합니다.
+    SMTP_SERVER = "smtp.gmail.com"  # 네이버일 경우 smtp.naver.com
+    SMTP_PORT = 587
+    SMTP_USER = "your_email@gmail.com"       # 발신용 이메일 주소
+    SMTP_PASSWORD = "your_app_password"     # 발신 이메일의 앱 비밀번호
+
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = SMTP_USER
+        msg['To'] = to_email
+
+        mime_html = MIMEText(html_content, 'html', 'utf-8')
+        msg.attach(mime_html)
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_USER, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        st.error(f"📧 메일 전송 중 통신 에러 발생: {e}")
+        return False
+
+# 🖥️ 대시보드 화면 최하단 UI 렌더링
+st.markdown("<br><hr>", unsafe_allow_html=True)
+st.markdown("### 📨 AI Agent 인텔리전스 리포트 이메일 구독")
+st.caption("대시보드 상단의 실시간 시장 트렌드와 4대 운용사 블로그 분석 결과를 고급 인라인 HTML 템플릿으로 가공하여 전송합니다.")
+
+with st.form("dashboard_email_form", clear_on_submit=False):
+    col_em1, col_em2 = st.columns([3, 1])
+    with col_em1:
+        receiver_address = st.text_input("수신할 이메일 주소를 입력하세요:", placeholder="executive@company.com", label_visibility="collapsed")
+    with col_em2:
+        send_clicked = st.form_submit_button("🚀 프리미엄 HTML 리포트 발송")
+
+if send_clicked:
+    if not receiver_address:
+        st.warning("⚠️ 이메일 주소를 정확히 입력해 주세요.")
+    else:
+        with st.spinner("🎨 대시보드 데이터를 모던 인라인 HTML 구조로 렌더링 중입니다..."):
+            
+            # 📊 세션 메모리에 세이브된 데이터 동적 추출 (실패 시 백업셋 작동)
+            kw_df = st.session_state.get('df_keywords', pd.DataFrame())
+            brief = st.session_state.get('live_brief', {"rising": "데이터 로드 중", "falling": "데이터 로드 중", "trend": "데이터 로드 중"})
+            blog_results = st.session_state.get('blog_analysis_results', [])
+
+            # 이메일 전용 텍스트 및 테이블 로우 조립
+            table_rows_html = ""
+            for idx, row in kw_df.head(5).iterrows():
+                table_rows_html += f"""
+                <tr>
+                    <td style='padding: 10px; border-bottom: 1px solid #E2E8F0; font-size: 13px; color: #334155;'>🔥 {row['키워드']}</td>
+                    <td style='padding: 10px; border-bottom: 1px solid #E2E8F0; font-size: 13px; color: #0F172A; font-weight: bold; text-align: right;'>{row['언급량']}회</td>
+                </tr>
+                """
+
+            cards_html = ""
+            for res in blog_results:
+                cards_html += f"""
+                <div style='background-color: #F8FAFC; border: 1px solid {res['hex']}; border-left: 6px solid {res['hex']}; border-radius: 8px; padding: 15px; margin-bottom: 15px;'>
+                    <h4 style='margin: 0 0 8px 0; color: #0F172A; font-size: 15px;'>🏢 {res['company']}</h4>
+                    <p style='margin: 5px 0; font-size: 12.5px; color: #334155;'>🎯 <b>주력 ETF:</b> <span style='color: {res['hex']}; font-weight: bold;'>{res['main_products']}</span></p>
+                    <p style='margin: 5px 0; font-size: 12.5px; color: #475569;'>💡 <b>투자 테마:</b> {res['marketing_theme']}</p>
+                    <p style='margin: 5px 0; font-size: 12.5px; color: #1E293B; font-style: italic; background-color: #FFFFFF; padding: 6px; border-radius: 4px; border: 1px solid #E2E8F0;'>"{res['key_copy']}"</p>
+                </div>
+                """
+
+            # 🎨 디자인 고도화된 이메일 본문 HTML 마크업 (Outlook 및 모바일 완벽 호환)
+            email_template = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset='utf-8'>
+                <title>ETF Marketing Intelligence Executive Report</title>
+            </head>
+            <body style='margin: 0; padding: 0; background-color: #F8FAFC; font-family: "Malgun Gothic", dotum, sans-serif;'>
+                <table border='0' cellpadding='0' cellspacing='0' width='100%' style='background-color: #F8FAFC; padding: 30px 0;'>
+                    <tr>
+                        <td align='center'>
+                            <table border='0' cellpadding='0' cellspacing='0' width='650' style='background-color: #FFFFFF; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 15px rgba(15,23,42,0.05); border: 1px solid #E2E8F0;'>
+                                
+                                <tr>
+                                    <td style='background-color: #0F172A; padding: 35px 40px; text-align: left;'>
+                                        <div style='font-size: 11px; font-weight: bold; color: #38BDF8; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 5px;'>AI Agent Intelligence System</div>
+                                        <h1 style='margin: 0; color: #FFFFFF; font-size: 24px; font-weight: bold; letter-spacing: -0.5px;'>ETF 마케팅 트렌드 모니터링 종합 요약본</h1>
+                                    </td>
+                                </tr>
+                                
+                                <tr>
+                                    <td style='padding: 35px 40px;'>
+                                        <p style='margin: 0 0 25px 0; font-size: 14px; color: #475569; line-height: 1.6;'>
+                                            안녕하세요. 본 메일은 AI 에이전트 시스템이 실시간 구글 뉴스 파싱 데이터 및 주요 경쟁 운용사의 공식 블로그 트렌드를 종합 진단하여 자동 생성한 <b>C-Level 보고용 프리미엄 HTML 리포트</b>입니다.
+                                        </p>
+                                        
+                                        <h3 style='font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;'>🔥 시장 주요 트렌드 브리핑</h3>
+                                        <div style='background-color: #F0FDF4; border-left: 5px solid #22C55E; padding: 12px 15px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #166534;'>
+                                            🚀 <b>라이징 테마:</b> {brief['rising']}
+                                        </div>
+                                        <div style='background-color: #FEF2F2; border-left: 5px solid #EF4444; padding: 12px 15px; border-radius: 4px; margin-bottom: 25px; font-size: 13px; color: #991B1B;'>
+                                            📉 <b>하락/정체 테마:</b> {brief['falling']}
+                                        </div>
+
+                                        <h3 style='font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;'>📰 실시간 뉴스 명사 빈도 TOP 5</h3>
+                                        <table border='0' cellpadding='0' cellspacing='0' width='100%' style='margin-bottom: 30px; border-collapse: collapse;'>
+                                            <thead>
+                                                <tr style='background-color: #F1F5F9;'>
+                                                    <th align='left' style='padding: 10px; font-size: 12px; color: #64748B; font-weight: bold;'>핵심 키워드 테마</th>
+                                                    <th align='right' style='padding: 10px; font-size: 12px; color: #64748B; font-weight: bold;'>실시간 뉴스 언급량</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {table_rows_html if table_rows_html else "<tr><td colspan='2' style='padding:15px; text-align:center; color:#94A3B8; font-size:13px;'>수집된 실시간 키워드 데이터가 없습니다.</td></tr>"}
+                                            </tbody>
+                                        </table>
+
+                                        <h3 style='font-size: 16px; color: #0F172A; margin: 0 0 15px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px;'>📊 4대 자산운용사 블로그 마케팅 주력 진단</h3>
+                                        {cards_html if cards_html else "<div style='text-align:center; color:#94A3B8; font-size:13px; padding:15px;'>블로그 추적 데이터가 부재합니다.</div>"}
+
+                                    </td>
+                                end_tr_content
+                                
+                                <tr>
+                                    <td style='background-color: #F8FAFC; padding: 25px 40px; border-top: 1px solid #E2E8F0; text-align: center;'>
+                                        <div style='font-size: 11px; color: #94A3B8; line-height: 1.5;'>
+                                            본 메일은 내부 시스템 세션 메모리와 연동되어 암호화 발송되는 자동화 인텔리전스 리포트입니다.<br/>
+                                            © 2026 KODEX AI Marketing Agent Dashboard. All rights reserved.
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """.replace("end_tr_content", "</tr>") # 치환 컴파일 안전장치
+            
+            # 메일엔진 가동 및 성공 여부 핸들링
+            success = send_html_dashboard_email(receiver_address, "[AI Agent] 실시간 ETF 트렌드 및 마케팅 인텔리전스 보고서", email_template)
+            if success:
+                st.success(f"🎉 아름답게 디자인된 고급 HTML 리포트 대시보드가 '{receiver_address}' 주소로 정상 전송되었습니다!")
