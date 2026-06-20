@@ -2660,12 +2660,14 @@ with st.container(border=True):
         return pdf_buffer.getvalue()
 
     try:
+        from datetime import timezone as _tz, timedelta as _td
+        _kst_fname = datetime.now(_tz(_td(hours=9))).strftime('%Y%m%d')
         pdf_data = generate_pdf_report()
         if pdf_data:
             st.download_button(
                 label="📄 PDF 리포트 다운로드",
                 data=pdf_data,
-                file_name=f"KODEX_Perfect_Sync_Report_{datetime.now(_kst).strftime('%Y%m%d')}.pdf",
+                file_name=f"KODEX_Perfect_Sync_Report_{_kst_fname}.pdf",
                 mime="application/pdf",
                 use_container_width=True
             )
