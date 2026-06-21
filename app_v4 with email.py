@@ -3947,13 +3947,52 @@ def build_email_html_report():
         return out
 
     def _blk_youtube():
-        yt = st.session_state.get("yt_report_fixed", "")
         out = sub_head("🎥 유튜브 채널별 마케팅 동향")
+
+        # 1) 실시간 영상 조회수 TOP (운용사+증권사 통합)
+        top_rows = []
+        for store, grp in (("yt_raw_data", "운용사"), ("yt_securities_data", "증권사")):
+            data = st.session_state.get(store, {})
+            if isinstance(data, dict):
+                for label, ch in data.items():
+                    for v in ch.get("videos", []):
+                        top_rows.append((grp, label, v.get("title", ""), v.get("views", 0),
+                                         v.get("likes", 0), v.get("comment_count", 0), v.get("url", "")))
+        if top_rows:
+            top_rows.sort(key=lambda x: x[3], reverse=True)
+            trs = ""
+            for i, (grp, label, title, views, likes, cmts, url) in enumerate(top_rows[:8], 1):
+                title_short = (title[:40] + "…") if len(title) > 40 else title
+                title_cell = f'<a href="{url}" style="color:{C_PRIMARY};text-decoration:none;">{title_short}</a>' if url else title_short
+                trs += f"""
+                <tr>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;color:{C_SUB};text-align:center;">{i}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;color:{C_SUB};">{grp}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;font-weight:700;color:{C_TEXT};">{label}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;color:{C_TEXT};">{title_cell}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;font-weight:700;color:#C0392B;text-align:right;">{views:,}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;color:{C_SUB};text-align:right;">{likes:,}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;color:{C_SUB};text-align:right;">{cmts:,}</td>
+                </tr>"""
+            out += f"""<div style="font-size:12px;font-weight:700;color:{C_PRIMARY};margin:4px 0 8px;">🔥 실시간 영상 조회수 TOP (운용사·증권사 통합)</div>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
+              <tr style="background:{C_BG};">
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};text-align:center;">#</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};">구분</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};">채널</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};">영상 제목</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};text-align:right;">조회수</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};text-align:right;">좋아요</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};text-align:right;">댓글</td>
+              </tr>{trs}</table>"""
+
+        # 2) AI 종합 요약
+        yt = st.session_state.get("yt_report_fixed", "")
         if isinstance(yt, str) and yt.strip():
             out += (f"<div style='font-size:12.5px;color:{C_TEXT};line-height:1.65;"
                     f"background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;"
                     f"padding:12px;'>{md_bold(yt.strip())}</div>")
-        else:
+        elif not top_rows:
             out += empty("유튜브 분석 데이터 없음")
         return out
 
