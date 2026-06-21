@@ -2813,6 +2813,74 @@ with st.container(border=True):
         </table>"""
 
         # ----------------------------------------------------------------------
+        # 🎥 SECTION 2 유튜브: AI 종합요약(운용사+증권사) + 실제 영상 조회수 TOP
+        # ----------------------------------------------------------------------
+        def _md_to_pdf_html(md_text):
+            """간단 마크다운 → PDF용 HTML 변환 (제목·볼드·불릿)"""
+            import re as _re
+            if not md_text:
+                return ""
+            lines = str(md_text).split("\n")
+            html_parts = []
+            for ln in lines:
+                s = ln.strip()
+                if not s:
+                    continue
+                # 볼드 **x** → <b>x</b>
+                s = _re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', s)
+                if s.startswith("###"):
+                    html_parts.append(f'<div style="font-weight:bold; color:#1E40AF; font-size:9pt; margin-top:2.5mm;">{s.lstrip("# ").strip()}</div>')
+                elif s.startswith("##"):
+                    html_parts.append(f'<div style="font-weight:bold; color:#1A202C; font-size:9.5pt; margin-top:3mm;">{s.lstrip("# ").strip()}</div>')
+                elif s.startswith(("- ", "* ", "• ")):
+                    html_parts.append(f'<div style="font-size:8pt; color:#374151; margin:0.8mm 0 0.8mm 3mm;">• {s[2:].strip()}</div>')
+                elif _re.match(r'^\d+\.\s', s):
+                    html_parts.append(f'<div style="font-weight:bold; color:#2D3748; font-size:8.5pt; margin-top:2mm;">{s}</div>')
+                else:
+                    html_parts.append(f'<div style="font-size:8pt; color:#374151; margin:0.8mm 0;">{s}</div>')
+            return "".join(html_parts)
+
+        yt_ai_summary = st.session_state.get("yt_report_fixed", "")
+        youtube_ai_html = _md_to_pdf_html(yt_ai_summary) if yt_ai_summary else '<div style="font-size:8pt; color:#9CA3AF;">유튜브 분석 데이터가 아직 수집되지 않았습니다. 대시보드에서 분석을 먼저 수행해 주세요.</div>'
+
+        # 실제 영상 조회수 TOP (운용사+증권사 통합 상위 8개)
+        def _build_yt_top_table():
+            rows_all = []
+            for store_key, group in (("yt_raw_data", "운용사"), ("yt_securities_data", "증권사")):
+                data = st.session_state.get(store_key, {})
+                if isinstance(data, dict):
+                    for label, ch in data.items():
+                        for v in ch.get("videos", []):
+                            rows_all.append((group, label, v.get("title", ""), v.get("views", 0), v.get("likes", 0), v.get("comment_count", 0)))
+            if not rows_all:
+                return ""
+            rows_all.sort(key=lambda x: x[3], reverse=True)
+            trs = ""
+            for grp, label, title, views, likes, cmts in rows_all[:8]:
+                title_short = (title[:38] + "…") if len(title) > 38 else title
+                trs += f"""<tr>
+                    <td style="font-size:7.5pt; color:#6B7280;">{grp}</td>
+                    <td style="font-size:7.5pt; font-weight:bold; color:#1F2937;">{label}</td>
+                    <td style="font-size:7.5pt; color:#374151;">{title_short}</td>
+                    <td style="font-size:7.5pt; text-align:right; color:#B91C1C; font-weight:bold;">{views:,}</td>
+                    <td style="font-size:7.5pt; text-align:right; color:#6B7280;">{likes:,}</td>
+                    <td style="font-size:7.5pt; text-align:right; color:#6B7280;">{cmts:,}</td>
+                </tr>"""
+            return f"""<table style="margin-top:2mm;">
+                <thead><tr>
+                    <th style="width:10%; font-size:7.5pt;">구분</th>
+                    <th style="width:20%; font-size:7.5pt;">채널</th>
+                    <th style="width:40%; font-size:7.5pt;">영상 제목</th>
+                    <th style="width:12%; font-size:7.5pt; text-align:right;">조회수</th>
+                    <th style="width:9%; font-size:7.5pt; text-align:right;">좋아요</th>
+                    <th style="width:9%; font-size:7.5pt; text-align:right;">댓글</th>
+                </tr></thead>
+                <tbody>{trs}</tbody>
+            </table>"""
+
+        youtube_top_table = _build_yt_top_table()
+
+        # ----------------------------------------------------------------------
         # 👥 SECTION 3. 투자자별 순매수 수급 강도
         # ----------------------------------------------------------------------
         section3_chart_html = ""
@@ -3436,55 +3504,13 @@ with st.container(border=True):
                         </td>
                     </tr>
                 </table>
-                <div class="content-title">▶ 4. [유튜브 분석] 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 22%;">자산운용사 (브랜드)</th>
-                            <th style="width: 63%;">핵심 마케팅 타겟 키워드 및 타겟팅 스코어</th>
-                            <th style="width: 15%;">캠페인 집중도</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><b>삼성자산운용 (KODEX)</b></td><td>AI 테크, 미국 반도체, 월배당 고배당, 연금투자 안정성 밸류체인 유입 소구</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
-                        <tr><td><b>미래에셋자산운용 (TIGER)</b></td><td>글로벌 혁신기술, 나스닥 핵심 성장주, 개인 투자 수급 집중형 직관 테마 마케팅</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
-                        <tr><td><b>KB자산운용 (RISE)</b></td><td>정부 밸류업 프로그램 수혜주, 저평가 가치 배당주, 국채 자산배분 안정성 소구</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
-                        <tr><td><b>한국투자신탁운용 (ACE)</b></td><td>글로벌 원천 반도체 TOP4, 빅테크 소프트웨어 독점주, 신흥국(인도 등) 시장 타겟팅</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
-                    </tbody>
-                </table>
+                <div class="content-title">▶ 4. [유튜브 분석] 운용사·증권사 채널 AI 종합 마케팅 분석</div>
+                <div style="border-left:3px solid #3B82F6; padding-left:3mm; margin-top:2mm;">
+                    {youtube_ai_html}
+                </div>
 
-                <div class="content-title" style="margin-top:3mm;">▶ 5. [유튜브 분석] 4대 주요 증권사별 리테일 영업 채널 상품 소구 동향</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 25%;">대형 리테일 증권사</th>
-                            <th style="width: 75%;">영업점 창구 및 MTS 홈화면 주력 매칭 추천 ETF 테마 동향</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><b>삼성증권</b></td><td>패밀리오피스 및 자산가 그룹 대상 절세 연금 포트폴리오 다변화를 위한 미국 반도체 및 인컴 자산 매칭 유도</td></tr>
-                        <tr><td><b>미래에셋증권</b></td><td>연금저축 및 퇴직연금(IRP) 디지털 독자층 타겟형 미국 독점 AI 기술주 및 커버드콜 결합형 상품 전면 배치</td></tr>
-                        <tr><td><b>키움증권</b></td><td>리테일 개인 주식 투자 헤비 트레이더 대상 일간 거래량 최상위 테크 레버리지 및 섹터 회전 가이드 중심 수급 유도</td></tr>
-                        <tr><td><b>한국투자증권</b></td><td>글로벌 지수 압축 독점 자산군 장기 적립식 가이드 제공 및 엔화 노출형 미국채 자산군 중심의 매크로 헷징 제안</td></tr>
-                    </tbody>
-                </table>
-
-                <div class="content-title">▶ 6. [유튜브 분석] 4대 운용사 오피셜 유튜브 채널 콘텐츠 포커싱 점검</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 25%;">운용사</th>
-                            <th style="width: 35%;">최근 2주간 업로드 핵심 콘텐츠 유형</th>
-                            <th style="width: 40%;">뉴미디어 트래픽 유입 포인트 분석</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><b>KODEX (삼성)</b></td><td>• 펀드매니저가 직접 출연하는 AI ETF 설명회<br/>• 쇼츠 기반 연금 투자 세제 혜택 가이드</td><td>전문가 신뢰성 중심의 정밀 분석 영상 배치로 고액 자산가 및 장기 투자 인컴족 락인 유도</td></tr>
-                        <tr><td><b>TIGER (미래에셋)</b></td><td>• 유명 주식 유튜버 콜라보 시황 브리핑<br/>• 미국 테크 밸류체인 인포그래픽 모션그래픽</td><td>트렌디한 비주얼과 인플루언서 수급을 무기로 2040 젊은 스마트 트레이더층 대량 유입 유도</td></tr>
-                        <tr><td><b>RISE (KB)</b></td><td>• 리브랜딩 기념 브랜드 다큐멘터리 광고<br/>• 밸류업 동행 자산안정성 웹세미나</td><td>기업 이미지 쇄신 중심 브랜딩 및 가치 배당주 안정적 운용 포커스로 보수적 장기 유입 유도</td></tr>
-                        <tr><td><b>ACE (한국투자)</b></td><td>• 'ACE 반도체 TOP4' 심층 리서치 토크쇼<br/>• 인도 성장 시장 탐방 현지 밀착 VLOG</td><td>특정 섹터 압축 독점 상품군의 차별화 포인트를 정밀 전달하여 매니아층 확보</td></tr>
-                    </tbody>
-                </table>
+                <div class="content-title" style="margin-top:4mm;">▶ 5. [유튜브 분석] 실시간 영상 조회수 TOP (운용사·증권사 통합)</div>
+                {youtube_top_table if youtube_top_table else '<div style="font-size:8pt; color:#9CA3AF;">실시간 유튜브 영상 데이터가 아직 수집되지 않았습니다.</div>'}
             </div>
 
             <div class="section-container">
