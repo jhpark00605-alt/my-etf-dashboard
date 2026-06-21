@@ -300,7 +300,7 @@ def fetch_all_securities_youtube(api_key):
     channels = {
         "키움증권 (채널K)": "@kiwoomchk",
         "미래에셋증권 (스마트머니)": "미래에셋증권 스마트머니",
-        "삼성증권": "삼성증권 공식",
+        "삼성증권": "@samsungsecurities",
         "한국투자증권": "한국투자증권 뱅키스",
     }
     result = {}
@@ -1484,7 +1484,7 @@ with st.container(border=True):
     with st.container(border=True):
         if GEMINI_KEY:
             try:
-                yt_briefing_prompt = f"""너는 금융 마케팅 디렉터야. 아래 유튜브 실시간 동향 데이터(영상 제목·조회수·좋아요·댓글 반응)를 분석해줘.
+                yt_briefing_prompt = f"""너는 금융 마케팅 디렉터야. 아래 유튜브 실시간 동향 데이터(영상 제목·조회수·좋아요·댓글 반응)를 분석해줘. 데이터에는 [자산운용사]와 [증권사] 두 그룹이 있어. 반드시 두 그룹을 모두 분석할 것.
 
 [작성 규칙]
 - 인사말, 자기소개, 서론(예: '안녕하십니까', '~제언해 드립니다') 절대 쓰지 말 것
@@ -1493,13 +1493,14 @@ with st.container(border=True):
 - 문장을 중간에 끊지 말고 끝까지 완결할 것
 
 [분석 항목]
-1. **운용사별 콘텐츠 동향**: 각 운용사가 어떤 상품·테마를 밀고 있는지 (조회수 높은 영상 중심)
-2. **영상별 타깃 고객 추정**: 제목·댓글 반응을 근거로 각 채널이 겨냥하는 투자자층 추정 (예: 2030 적립식 초보, 4050 연금/배당 추구, 단타 트레이더 등). 반드시 댓글·조회수 등 데이터에 근거해 추정할 것
-3. **KODEX 전략 제언**: 경쟁사 대비 KODEX가 취할 유튜브 마케팅 전략
+1. **자산운용사 콘텐츠 동향**: 각 운용사(KODEX/TIGER/RISE/ACE)가 어떤 상품·테마를 밀고 있는지 (조회수 높은 영상 중심)
+2. **증권사 콘텐츠 동향**: 각 증권사(키움/미래에셋/삼성/한국투자)의 리테일 콘텐츠 전략과 주력 소구점. 운용사와 어떻게 다른지(상품 홍보 vs 계좌/교육/시황)
+3. **영상별 타깃 고객 추정**: 제목·댓글 반응을 근거로 각 채널이 겨냥하는 투자자층 추정 (예: 2030 적립식 초보, 4050 연금/배당 추구, 단타 트레이더 등). 운용사·증권사 모두 포함
+4. **KODEX 통합 전략 제언**: 경쟁 운용사뿐 아니라 '증권사 리테일 채널'과의 협업·교차 전략까지 포함해서 제언할 것 (예: 특정 증권사 채널 시청자층을 겨냥한 KODEX 상품 콘텐츠 교차 노출 등)
 
 [유튜브 실시간 동향 데이터]
 {yt_context_data}"""
-                yt_report = generate_via_requests(yt_briefing_prompt)
+                yt_report = generate_via_requests(yt_briefing_prompt, max_tokens=16384)
                 if yt_report and len(yt_report.strip()) > 50:
                     st.markdown(yt_report)
                     st.session_state["yt_report_fixed"] = yt_report
