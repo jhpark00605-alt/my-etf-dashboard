@@ -17,7 +17,187 @@ import streamlit.components.v1 as components
 import io
 
 # ==============================================================================
-# 🔍 [네이버 API 엔진] 4대 운용사별 ETF 이벤트 수집 함수 (secrets 매칭 반영 버전)
+# 🏢 [공식 홈페이지 이벤트 크롤러] KODEX·RISE는 정적 HTML이라 직접 수집 가능
+#    (TIGER·ACE는 JS 동적 로딩이라 별도 AJAX 엔드포인트 필요 → 네이버 폴백 유지)
+# ==============================================================================
+def fetch_official_events():
+    """KODEX·RISE 공식 홈페이지에서 '진행중' 이벤트를 직접 수집.
+    반환: [{운용사, 브랜드, 제목, 🎯 유도 ETF 종목, 기간, 링크}, ...]"""
+    import requests, re
+    from bs4 import BeautifulSoup
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "Referer": "https://www.google.com/",
+    }
+    results = []
+
+    def _extract_products(brand, title):
+        pat = re.compile(rf'({brand})\s?([A-Za-z0-9가-힣&·\+]+(?:\s+[A-Za-z0-9가-힣&·\+]+){{0,3}})')
+        matches = pat.findall(title)
+        prods = []
+        for b, prod in matches:
+            prod_clean = prod.split("이벤트")[0].split("인증")[0].split("기념")[0].split("신규")[0].strip()
+            if len(prod_clean) > 1:
+                prods.append(f"{b} {prod_clean}")
+        return ", ".join(list(dict.fromkeys(prods))) if prods else f"{brand} 관련 상품"
+
+    # --- KODEX (삼성자산운용): 정적 HTML, event-view.do?seq=N ---
+    try:
+        r = requests.get("https://www.samsungfund.com/fund/lounge/event.do", headers=headers, timeout=12)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, "html.parser")
+            seen = set()
+            for a in soup.find_all("a", href=re.compile(r'event-view\.do\?seq=')):
+                txt = a.get_text(" ", strip=True)
+                if "진행중" not in txt:
+                    continue
+                seq = re.search(r'seq=(\d+)', a["href"])
+                if not seq or seq.group(1) in seen:
+                    continue
+                seen.add(seq.group(1))
+                title = re.split(r'\s*이벤트기간', re.sub(r'^.*?진행중\s*', '', txt))[0].strip()
+                period = re.search(r'(\d{4}\.\d{2}\.\d{2})\s*~\s*(\d{4}\.\d{2}\.\d{2})', txt)
+                if not title:
+                    continue
+                results.append({
+                    "운용사": "삼성자산운용", "브랜드": "KODEX", "제목": title,
+                    "🎯 유도 ETF 종목": _extract_products("KODEX", title),
+                    "기간": f"{period.group(1)}~{period.group(2)}" if period else "",
+                    "링크": "https://www.samsungfund.com/fund/lounge/event-view.do?seq=" + seq.group(1),
+                })
+    except Exception:
+        pass
+
+    # --- RISE (KB자산운용): 정적 HTML ---
+    try:
+        r = requests.get("https://www.riseetf.co.kr/cust/event", headers=headers, timeout=12)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, "html.parser")
+            seen = set()
+            for a in soup.find_all("a"):
+                txt = a.get_text(" ", strip=True)
+                if "진행중" not in txt or "이벤트" not in txt:
+                    continue
+                title = re.split(r'\s*이벤트\s*기간', re.sub(r'^[\-\s]*진행중\s*', '', txt))[0].strip()
+                if not title or title in seen or len(title) < 5:
+                    continue
+                seen.add(title)
+                period = re.search(r'(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})', txt)
+                href = a.get("href", "")
+                results.append({
+                    "운용사": "KB자산운용", "브랜드": "RISE", "제목": title,
+                    "🎯 유도 ETF 종목": _extract_products("RISE", title),
+                    "기간": f"{period.group(1)}~{period.group(2)}" if period else "",
+                    "링크": href if href.startswith("http") else ("https://www.riseetf.co.kr" + href),
+                })
+    except Exception:
+        pass
+
+    # --- TIGER (미래에셋자산운용): AJAX 엔드포인트 (list.ajax) ---
+    try:
+        r = requests.get(
+            "https://investments.miraeasset.com/tigeretf/ko/customer/event/list.ajax",
+            headers=headers, params={"listCnt": 50, "pageIndex": 1}, timeout=12)
+        if r.status_code == 200 and r.text.strip():
+            soup = BeautifulSoup(r.text, "html.parser")
+            for a in soup.find_all("a", class_="c-card"):
+                cls = " ".join(a.get("class", []))
+                if "closed" in cls:  # 종료 제외
+                    continue
+                status = a.find("div", class_="status")
+                if not status or "진행중" not in status.get_text():
+                    continue
+                title_el = a.find("div", class_="title")
+                title = title_el.get_text(strip=True) if title_el else ""
+                if not title:
+                    continue
+                period = ""
+                for pair in a.find_all("div", class_="c-pair"):
+                    key = pair.find("div", class_="key")
+                    if key and "기간" in key.get_text():
+                        val = pair.find("div", class_="value")
+                        if val:
+                            period = val.get_text(strip=True).replace(" ", "")
+                        break
+                dk = re.search(r"'detailsKey',\s*'(\d+)'", a.get("href", ""))
+                link = (f"https://investments.miraeasset.com/tigeretf/ko/customer/event/view.do?detailsKey={dk.group(1)}"
+                        if dk else "")
+                results.append({
+                    "운용사": "미래에셋자산운용", "브랜드": "TIGER", "제목": title,
+                    "🎯 유도 ETF 종목": _extract_products("TIGER", title),
+                    "기간": period, "링크": link,
+                })
+    except Exception:
+        pass
+
+    # --- ACE (한국투자신탁운용): Next.js _next/data (buildId 자동 추출) ---
+    #     공지사항에 [EVENT] 태그로 이벤트가 섞여있음 → [EVENT]만 필터링.
+    #     buildId는 배포마다 바뀌므로 메인 HTML에서 동적으로 추출. 실패 시 네이버 폴백.
+    try:
+        base = "https://www.aceetf.co.kr"
+        # 1) 현재 buildId 추출
+        main = requests.get(base + "/cs/notice", headers=headers, timeout=12)
+        build_id = None
+        if main.status_code == 200:
+            m = re.search(r'"buildId"\s*:\s*"([^"]+)"', main.text)
+            if not m:
+                m = re.search(r'/_next/(?:static|data)/([^/"]+)/', main.text)
+            if m:
+                build_id = m.group(1)
+        if build_id:
+            # 2) notice.json 호출 (category=60 = 이벤트). 여러 파라미터 조합 시도.
+            for params in ({"category": "60", "page": "1"}, {"category": "60"}, {}):
+                try:
+                    jr = requests.get(f"{base}/_next/data/{build_id}/cs/notice.json",
+                                      headers=headers, params=params, timeout=12)
+                    if jr.status_code != 200:
+                        continue
+                    data = jr.json()
+                    # Next.js 구조: pageProps 안에 목록이 있음. 키 이름이 사이트마다 달라 탐색.
+                    pageprops = data.get("pageProps", data) if isinstance(data, dict) else {}
+                    # 리스트 후보 탐색
+                    items = None
+                    for key in ("list", "notices", "noticeList", "items", "data", "boardList", "content"):
+                        v = pageprops.get(key) if isinstance(pageprops, dict) else None
+                        if isinstance(v, list) and v:
+                            items = v
+                            break
+                        if isinstance(v, dict):
+                            for k2 in ("list", "content", "items"):
+                                if isinstance(v.get(k2), list) and v[k2]:
+                                    items = v[k2]
+                                    break
+                        if items:
+                            break
+                    if not items:
+                        continue
+                    for it in items:
+                        if not isinstance(it, dict):
+                            continue
+                        title = str(it.get("title") or it.get("subject") or it.get("ntcTitle") or "")
+                        # 이벤트만: [EVENT] 태그 or '이벤트' 포함, 종료/당첨자발표 제외
+                        if "[EVENT]" not in title and "이벤트" not in title:
+                            continue
+                        if "당첨자" in title or "종료" in title:
+                            continue
+                        nid = it.get("id") or it.get("seq") or it.get("ntcSeq") or it.get("boardSeq") or ""
+                        clean_title = title.replace("[EVENT]", "").strip()
+                        results.append({
+                            "운용사": "한국투자신탁운용", "브랜드": "ACE", "제목": clean_title,
+                            "🎯 유도 ETF 종목": _extract_products("ACE", clean_title),
+                            "기간": "", "링크": f"{base}/cs/notice/{nid}" if nid else f"{base}/cs/notice",
+                        })
+                    if any(e["브랜드"] == "ACE" for e in results):
+                        break
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    return results
 # ==============================================================================
 def fetch_all_etf_events():
     import requests
@@ -1169,13 +1349,33 @@ with st.container(border=True):
             st.caption("※ DiD(이중차분 스코어) = (마케팅 상품의 수급 강도 변화량) - (동일 자산군 내 경쟁사 대조군의 수급 강도 변화량)")
 
             if "df_events_base_data" not in st.session_state:
-                with st.spinner("🔄 네이버 API로부터 4대 운용사 실시간 마케팅 이벤트를 수집 중입니다..."):
+                with st.spinner("🔄 공식 홈페이지 및 네이버에서 4대 운용사 실시간 마케팅 이벤트를 수집 중입니다..."):
+                    merged_events = []
+                    # 1) KODEX·RISE: 공식 홈페이지 직접 크롤링 (정확)
+                    official_brands = set()
                     try:
-                        st.session_state["df_events_base_data"] = fetch_all_etf_events()
-                    except:
-                        st.session_state["df_events_base_data"] = []
+                        off = fetch_official_events()
+                        merged_events.extend(off)
+                        official_brands = {e["브랜드"] for e in off}
+                    except Exception:
+                        pass
+                    # 2) TIGER·ACE(공식 수집 실패분): 네이버 API로 보완
+                    try:
+                        naver_events = fetch_all_etf_events()
+                        for ev in naver_events:
+                            # 공식에서 이미 받은 브랜드는 제외(중복 방지), 못 받은 브랜드만 보완
+                            if ev.get("브랜드") not in official_brands:
+                                merged_events.append(ev)
+                    except Exception:
+                        pass
+                    st.session_state["df_events_base_data"] = merged_events
+                    st.session_state["_event_source_diag"] = (
+                        f"공식 수집: {sorted(official_brands) if official_brands else '없음'} / 나머지는 네이버 보완"
+                    )
 
             df_events_base = pd.DataFrame(st.session_state.get("df_events_base_data", []))
+            if st.session_state.get("_event_source_diag"):
+                st.caption(f"🔧 이벤트 수집 소스: {st.session_state['_event_source_diag']}")
 
             if df_events_base.empty:
                 st.warning("⚠️ 네이버 실시간 마케팅 이벤트 데이터를 가져오지 못했습니다. API 상태를 확인해 주세요.")
@@ -1426,51 +1626,91 @@ def fetch_data(url, params, label):
         return pd.DataFrame()
 
 def get_krx_etf_returns(term_days=5, brand_filter="KODEX"):
-    """[KRX 우선] pykrx로 ETF 전종목 등락률을 가져와 FuNETF 포맷으로 반환.
-    반환: (DataFrame, 진단메시지). 실패 시 빈 DataFrame."""
-    try:
-        from pykrx import stock
-    except Exception as e:
-        return pd.DataFrame(), f"pykrx import 실패: {e}"
+    """[KRX Open API] 인증키로 ETF 일별매매정보를 받아 수익률 계산.
+    반환: (DataFrame, 진단메시지). 인증키 없거나 실패 시 빈 DataFrame → FuNETF 폴백.
+    엔드포인트: /svc/apis/etp/etf_bydd_trd (basDd=YYYYMMDD), 헤더 AUTH_KEY 필요."""
+    auth_key = st.secrets.get("KRX_AUTH_KEY", "")
+    if not auth_key:
+        return pd.DataFrame(), "KRX_AUTH_KEY 미설정 (secrets에 인증키 필요)"
     try:
         from datetime import datetime, timedelta
+        url = "https://data-dbg.krx.co.kr/svc/apis/etp/etf_bydd_trd"
+        headers = {"AUTH_KEY": auth_key.strip()}
+
+        def _fetch(bas_dd):
+            r = requests.get(url, params={"basDd": bas_dd}, headers=headers, timeout=20)
+            if r.status_code != 200:
+                return None, f"HTTP {r.status_code}: {r.text[:80]}"
+            j = r.json()
+            rows = j.get("OutBlock_1", [])
+            return (pd.DataFrame(rows) if rows else pd.DataFrame()), ""
+
+        # 최근 영업일(종료일) 탐색
         end = datetime.now()
-        end_str = None
-        last_err = ""
+        df_end = None; end_str = None; last = ""
         for back in range(0, 7):
             d = (end - timedelta(days=back)).strftime("%Y%m%d")
-            try:
-                test = stock.get_etf_ohlcv_by_date(d, d, "069500")
-                if test is not None and not test.empty:
-                    end_str = d
+            _df, _err = _fetch(d)
+            if _err:
+                last = _err
+                continue
+            if _df is not None and not _df.empty:
+                df_end = _df; end_str = d
+                break
+        if df_end is None:
+            return pd.DataFrame(), f"종료일 데이터 없음 (마지막: {last[:80]})"
+
+        # 시작일(term_days 전 영업일) 탐색
+        start_base = datetime.strptime(end_str, "%Y%m%d") - timedelta(days=int(term_days))
+        df_start = None
+        for back in range(0, 7):
+            d = (start_base - timedelta(days=back)).strftime("%Y%m%d")
+            _df, _err = _fetch(d)
+            if _df is not None and not _df.empty:
+                df_start = _df
+                break
+        # 컬럼: ISU_CD(코드), ISU_NM(종목명), TDD_CLSPRC(종가) 등
+        def _norm(df):
+            df = df.copy()
+            for c in ["TDD_CLSPRC", "CLSPRC"]:
+                if c in df.columns:
+                    df["_price"] = pd.to_numeric(df[c].astype(str).str.replace(",", ""), errors="coerce")
                     break
-            except Exception as e:
-                last_err = str(e)
-                continue
-        if not end_str:
-            return pd.DataFrame(), f"영업일 탐색 실패 (마지막 에러: {last_err[:100]})"
-        start_str = (datetime.strptime(end_str, "%Y%m%d") - timedelta(days=int(term_days) + 4)).strftime("%Y%m%d")
+            name_col = "ISU_NM" if "ISU_NM" in df.columns else ("ISU_ABBRV" if "ISU_ABBRV" in df.columns else None)
+            code_col = "ISU_CD" if "ISU_CD" in df.columns else None
+            df["_name"] = df[name_col] if name_col else ""
+            df["_code"] = df[code_col] if code_col else ""
+            return df
 
-        chg = stock.get_etf_price_change_by_ticker(start_str, end_str)
-        if chg is None or chg.empty:
-            return pd.DataFrame(), f"등락률 조회 결과 없음 ({start_str}~{end_str})"
-
+        df_end = _norm(df_end)
         rows = []
-        for ticker, r in chg.iterrows():
-            try:
-                name = stock.get_etf_ticker_name(ticker)
-            except Exception:
-                name = str(ticker)
-            if brand_filter and brand_filter not in name:
-                continue
-            rate = r.get("등락률", r.get("등락율", 0.0))
-            price = r.get("종가", r.get("시가", 0))
-            rows.append({"ETF명": name, "종목코드": ticker, "수익률(%)": float(rate), "현재가": float(price)})
+        if df_start is not None and not df_start.empty:
+            # 시작가 대비 수익률 계산
+            df_start = _norm(df_start)
+            start_map = dict(zip(df_start["_code"], df_start["_price"]))
+            for _, r in df_end.iterrows():
+                name = str(r["_name"])
+                if brand_filter and brand_filter not in name:
+                    continue
+                ep = r["_price"]; sp = start_map.get(r["_code"])
+                if pd.notna(ep) and sp and sp > 0:
+                    ret = (ep - sp) / sp * 100
+                    rows.append({"ETF명": name, "종목코드": r["_code"], "수익률(%)": round(ret, 2), "현재가": ep})
         if not rows:
-            return pd.DataFrame(), f"등락률 {len(chg)}건 받았으나 '{brand_filter}' 필터 통과 0건"
-        return pd.DataFrame(rows), f"KRX 성공: {len(rows)}건 ({start_str}~{end_str})"
+            # 시작일 못 구하면 당일 등락률(FLUC_RT) 사용
+            if "FLUC_RT" in df_end.columns:
+                for _, r in df_end.iterrows():
+                    name = str(r["_name"])
+                    if brand_filter and brand_filter not in name:
+                        continue
+                    rt = pd.to_numeric(str(r.get("FLUC_RT", "")).replace(",", ""), errors="coerce")
+                    if pd.notna(rt):
+                        rows.append({"ETF명": name, "종목코드": r["_code"], "수익률(%)": float(rt), "현재가": r["_price"]})
+        if not rows:
+            return pd.DataFrame(), f"'{brand_filter}' 필터 통과 0건 (수신 {len(df_end)}건)"
+        return pd.DataFrame(rows), f"KRX OpenAPI 성공: {len(rows)}건 (기준일 {end_str})"
     except Exception as e:
-        return pd.DataFrame(), f"KRX 처리 예외: {e}"
+        return pd.DataFrame(), f"KRX OpenAPI 예외: {type(e).__name__}:{e}"
 
 
 def get_weekly_rate_top(rank_cd="DESC", term_days=5):
