@@ -280,6 +280,105 @@ if "global_context" not in st.session_state:
 # 헤더 타이틀
 st.title("🚀 KODEX ETF 마케팅 & 트렌드 모니터링 종합 대시보드")
 st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기반 통합 모니터링 인텔리전스입니다. 모든 데이터는 실시간으로 자동 로드됩니다.")
+
+# ==============================================================================
+# 📊 [실시간 지수 & 환율 티커] 제목 ↔ Section 1 사이 상단 표시
+# ==============================================================================
+@st.cache_data(ttl=300)  # 5분 캐시 (과도한 호출 방지)
+def fetch_market_indices():
+    """네이버 증권에서 코스피·코스닥 지수 및 주요 환율을 수집.
+    검증된 /price 엔드포인트로 최근 2영업일 종가를 받아 등락률을 직접 계산.
+    반환: dict. 실패 항목은 None."""
+    import requests
+    out = {"KOSPI": None, "KOSDAQ": None, "USD": None, "JPY": None, "EUR": None}
+    hdr = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Mobile Safari/604.1",
+           "Referer": "https://m.stock.naver.com/"}
+
+    def _calc(price_list):
+        """[{localTradedAt, closePrice}, ...] 최신순 → (현재값, 등락률%)"""
+        vals = []
+        for row in price_list:
+            try:
+                cp = float(str(row.get("closePrice", "")).replace(",", ""))
+                vals.append(cp)
+            except Exception:
+                continue
+        if len(vals) >= 2 and vals[1] != 0:
+            cur, prev = vals[0], vals[1]
+            return cur, (cur - prev) / prev * 100
+        elif len(vals) == 1:
+            return vals[0], 0.0
+        return None, None
+
+    # 1) 국내 지수 (KOSPI, KOSDAQ)
+    for key, code in {"KOSPI": "KOSPI", "KOSDAQ": "KOSDAQ"}.items():
+        try:
+            r = requests.get(f"https://m.stock.naver.com/api/index/{code}/price",
+                             headers=hdr, params={"pageSize": 2, "page": 1}, timeout=8)
+            if r.status_code == 200:
+                arr = r.json()
+                if isinstance(arr, list) and arr:
+                    cur, rate = _calc(arr)
+                    if cur is not None:
+                        out[key] = {"value": f"{cur:,.2f}", "rate": rate}
+        except Exception:
+            pass
+
+    # 2) 환율 (USD, JPY, EUR)
+    for key, code in {"USD": "FX_USDKRW", "JPY": "FX_JPYKRW", "EUR": "FX_EURKRW"}.items():
+        try:
+            r = requests.get(f"https://api.stock.naver.com/marketindex/exchange/{code}/prices",
+                             headers=hdr, params={"page": 1, "pageSize": 2}, timeout=8)
+            if r.status_code == 200:
+                arr = r.json()
+                if isinstance(arr, list) and arr:
+                    cur, rate = _calc(arr)
+                    if cur is not None:
+                        out[key] = {"value": f"{cur:,.2f}", "rate": rate}
+        except Exception:
+            pass
+
+    return out
+
+
+def render_market_ticker():
+    data = fetch_market_indices()
+    labels = {"KOSPI": "코스피", "KOSDAQ": "코스닥", "USD": "USD/KRW", "JPY": "JPY/KRW(100)", "EUR": "EUR/KRW"}
+
+    def _fmt(d):
+        if not d or d.get("value") is None:
+            return None
+        rate = d.get("rate", 0.0) or 0.0
+        # 색상: 상승=빨강, 하락=파랑 (국내 관습)
+        if rate > 0:
+            return "#D60000", "▲", rate
+        elif rate < 0:
+            return "#0051C7", "▼", rate
+        return "#555", "-", rate
+
+    cols = st.columns(5)
+    for i, (key, label) in enumerate(labels.items()):
+        d = data.get(key)
+        with cols[i]:
+            fmt = _fmt(d)
+            if fmt:
+                color, arrow, rate = fmt
+                rate_txt = f"{arrow} {abs(rate):.2f}%"
+                st.markdown(
+                    f"""<div style="padding:8px 10px; border:1px solid #E8E8E8; border-radius:10px; background:#FAFBFC;">
+                        <div style="font-size:12px; color:#666; font-weight:600;">{label}</div>
+                        <div style="font-size:18px; font-weight:700; color:#1A1A1A; margin-top:2px;">{d['value']}</div>
+                        <div style="font-size:12px; color:{color}; font-weight:600;">{rate_txt}</div>
+                    </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    f"""<div style="padding:8px 10px; border:1px solid #E8E8E8; border-radius:10px; background:#FAFBFC;">
+                        <div style="font-size:12px; color:#666; font-weight:600;">{label}</div>
+                        <div style="font-size:14px; color:#AAA; margin-top:6px;">데이터 없음</div>
+                    </div>""", unsafe_allow_html=True)
+    st.caption("실시간 지수·환율 (네이버 증권 기준, 5분 캐시) · 시장 마감 시 종가 표시")
+
+render_market_ticker()
 st.divider()
 
 # Gemini API 직접 호출을 위한 경량 헬퍼 함수 (라이브러리 충돌 방지)
@@ -1369,13 +1468,8 @@ with st.container(border=True):
                     except Exception:
                         pass
                     st.session_state["df_events_base_data"] = merged_events
-                    st.session_state["_event_source_diag"] = (
-                        f"공식 수집: {sorted(official_brands) if official_brands else '없음'} / 나머지는 네이버 보완"
-                    )
 
             df_events_base = pd.DataFrame(st.session_state.get("df_events_base_data", []))
-            if st.session_state.get("_event_source_diag"):
-                st.caption(f"🔧 이벤트 수집 소스: {st.session_state['_event_source_diag']}")
 
             if df_events_base.empty:
                 st.warning("⚠️ 네이버 실시간 마케팅 이벤트 데이터를 가져오지 못했습니다. API 상태를 확인해 주세요.")
