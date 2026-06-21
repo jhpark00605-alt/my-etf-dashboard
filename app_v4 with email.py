@@ -1513,6 +1513,40 @@ with st.container(border=True):
             for _, row in df_securities.iterrows():
                 yt_context_data += f"- {row['증권사']}: {row['콘텐츠 메인 테마']} (키워드: {row['조회수 상위 키워드']})\n"
 
+    # ----------------------------------------------------------------------
+    # 🔥 실시간 영상 조회수 TOP (운용사 + 증권사 통합)
+    # ----------------------------------------------------------------------
+    _top_rows = []
+    for _store, _grp in (("yt_raw_data", "운용사"), ("yt_securities_data", "증권사")):
+        _data = st.session_state.get(_store, {})
+        if isinstance(_data, dict):
+            for _label, _ch in _data.items():
+                for _v in _ch.get("videos", []):
+                    _top_rows.append({
+                        "구분": _grp,
+                        "채널": _label,
+                        "영상 제목": _v.get("title", ""),
+                        "조회수": _v.get("views", 0),
+                        "좋아요": _v.get("likes", 0),
+                        "댓글": _v.get("comment_count", 0),
+                        "링크": _v.get("url", ""),
+                    })
+    if _top_rows:
+        st.markdown("#### 🔥 실시간 영상 조회수 TOP (운용사·증권사 통합)")
+        df_top_yt = pd.DataFrame(_top_rows).sort_values(by="조회수", ascending=False).head(10).reset_index(drop=True)
+        df_top_yt.index = df_top_yt.index + 1  # 1위부터
+        st.dataframe(
+            df_top_yt,
+            use_container_width=True,
+            column_config={
+                "조회수": st.column_config.NumberColumn("조회수", format="%,d"),
+                "좋아요": st.column_config.NumberColumn("좋아요", format="%,d"),
+                "댓글": st.column_config.NumberColumn("댓글", format="%,d"),
+                "링크": st.column_config.LinkColumn("링크", display_text="▶ 보기"),
+            },
+        )
+        st.caption("운용사 4사 + 증권사 4사 채널의 최신 영상 중 조회수 상위 10개 (실시간)")
+
     st.markdown("#### 🤖 AI 기반 유튜브 마케팅 소구점 및 운용사별 동향 심층 요약")
     fallback_yt_report = """
     ### 🏢 각 운용사별 유튜브 마케팅 핵심 동향
