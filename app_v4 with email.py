@@ -311,6 +311,52 @@ def fetch_all_securities_youtube(api_key):
     return result
 
 
+def render_yt_report_structured(report_text):
+    """AI 유튜브 리포트를 '## N. 제목' 헤더 기준으로 쪼개 카드형으로 표시.
+    글이 길게 늘어지지 않도록 섹션별 구분 + 핵심 섹션만 펼침."""
+    import re
+    if not report_text:
+        return
+    # '## 1.' 또는 '## ' 헤더 기준으로 분할
+    parts = re.split(r'\n(?=#{1,3}\s)', report_text.strip())
+    sections = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        m = re.match(r'^#{1,3}\s*(.+?)(?:\n|$)', p)
+        if m:
+            title = m.group(1).strip()
+            body = p[m.end():].strip()
+        else:
+            title = "분석 개요"
+            body = p
+        sections.append((title, body))
+
+    if not sections:
+        st.markdown(report_text)
+        return
+
+    # 섹션 제목에 어울리는 아이콘 매핑
+    def _icon(t):
+        if "운용사" in t and "증권사" not in t:
+            return "🏢"
+        if "증권사" in t:
+            return "🏹"
+        if "타깃" in t or "고객" in t:
+            return "🎯"
+        if "전략" in t or "제언" in t or "KODEX" in t:
+            return "🚀"
+        return "📌"
+
+    for i, (title, body) in enumerate(sections):
+        icon = _icon(title)
+        # 첫 섹션과 '전략 제언'은 펼쳐서, 나머지는 접어서 표시
+        expanded = (i == 0) or ("전략" in title or "제언" in title)
+        with st.expander(f"{icon}  {title}", expanded=expanded):
+            st.markdown(body)
+
+
 # ==============================================================================
 def fetch_all_etf_events():
     import requests
@@ -1502,7 +1548,7 @@ with st.container(border=True):
 {yt_context_data}"""
                 yt_report = generate_via_requests(yt_briefing_prompt, max_tokens=16384)
                 if yt_report and len(yt_report.strip()) > 50:
-                    st.markdown(yt_report)
+                    render_yt_report_structured(yt_report)
                     st.session_state["yt_report_fixed"] = yt_report
                 else:
                     st.markdown(fallback_yt_report)
