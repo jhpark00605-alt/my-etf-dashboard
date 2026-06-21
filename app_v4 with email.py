@@ -293,6 +293,24 @@ def fetch_all_youtube(api_key):
     return result
 
 
+@st.cache_data(ttl=1800)
+def fetch_all_securities_youtube(api_key):
+    """주요 증권사 유튜브 채널 데이터 일괄 수집.
+    키움만 핸들 명확, 나머지는 검색어 기반(함수 내 검색 폴백 활용)."""
+    channels = {
+        "키움증권 (채널K)": "@kiwoomchk",
+        "미래에셋증권 (스마트머니)": "미래에셋증권 스마트머니",
+        "삼성증권": "삼성증권 공식",
+        "한국투자증권": "한국투자증권 뱅키스",
+    }
+    result = {}
+    for label, handle in channels.items():
+        data = fetch_youtube_channel_data(api_key, handle, max_videos=4)
+        if data and data.get("videos"):
+            result[label] = data
+    return result
+
+
 # ==============================================================================
 def fetch_all_etf_events():
     import requests
@@ -1402,17 +1420,52 @@ with st.container(border=True):
 
 
     with tab_증권사:
-        st.subheader("🏹 대형 증권사 리테일 마케팅 및 콘텐츠 동향")
-        df_securities = pd.DataFrame([
-            {"증권사": "미래에셋증권", "콘텐츠 메인 테마": "연금 계좌(ISA/IRP) 내 ETF 포트폴리오 구성법, 절세 전략", "조회수 상위 키워드": "절세 혜택, 연금 준비, 월배당"},
-            {"증권사": "삼성증권", "콘텐츠 메인 테마": "주간 해외 주식 시황 및 유망 테마 가이드, 실시간 라이브 토크", "조회수 상위 키워드": "미국 빅테크, AI 인프라, 엔비디아"},
-            {"증권사": "키움증권", "콘텐츠 메인 테마": "개인 투자자 타겟 실전 매매 팁 및 테마형 ETF 스크리닝 가이드", "조회수 상위 키워드": "조건 검색, 유망 테마, 레버리지"},
-            {"증권사": "한국투자증권", "콘텐츠 메인 테마": "글로벌 자산배분 전략 및 자산가 초청 세미나 요약 하이라이트", "조회수 상위 키워드": "자산배분, 고배당, 채권형 ETF"}
-        ])
-        st.dataframe(df_securities, use_container_width=True, hide_index=True)
-        yt_context_data += "\n[증권사 유튜브 동향]\n"
-        for _, row in df_securities.iterrows():
-            yt_context_data += f"- {row['증권사']}: {row['콘텐츠 메인 테마']} (키워드: {row['조회수 상위 키워드']})\n"
+        st.subheader("🏹 주요 증권사 유튜브 채널 실시간 동향")
+        sec_real = {}
+        if API_KEY_YT:
+            try:
+                with st.spinner("📡 주요 증권사 유튜브 채널 최신 영상을 수집 중입니다..."):
+                    sec_real = fetch_all_securities_youtube(API_KEY_YT)
+            except Exception:
+                sec_real = {}
+
+        if sec_real:
+            st.session_state["yt_securities_data"] = sec_real
+            yt_context_data += "\n[증권사 유튜브 실시간 동향]\n"
+            for label, ch in sec_real.items():
+                vids = ch.get("videos", [])
+                if not vids:
+                    continue
+                total_views = sum(v["views"] for v in vids)
+                st.markdown(f"**🏹 {label}** · 최근 {len(vids)}개 영상 · 누적 조회 {total_views:,}회")
+                yt_context_data += f"\n● {label} (채널: {ch.get('channel_title','')}):\n"
+                for v in vids:
+                    c1, c2 = st.columns([1, 3])
+                    with c1:
+                        if v["thumbnail"]:
+                            st.image(v["thumbnail"], use_container_width=True)
+                    with c2:
+                        st.markdown(f"**[{v['title']}]({v['url']})**")
+                        st.caption(f"📅 {v['published']} · 👁 {v['views']:,} · 👍 {v['likes']:,} · 💬 {v['comment_count']:,}")
+                        if v["top_comments"]:
+                            st.caption("💬 " + " / ".join(v["top_comments"][:2]))
+                    yt_context_data += f"  - 제목: {v['title']} | 조회 {v['views']:,} 좋아요 {v['likes']:,} 댓글 {v['comment_count']:,}\n"
+                    if v["top_comments"]:
+                        yt_context_data += f"    댓글반응: {' / '.join(v['top_comments'][:2])}\n"
+                st.divider()
+        else:
+            if not API_KEY_YT:
+                st.info("ℹ️ YOUTUBE_API_KEY가 설정되지 않아 기준 동향 데이터를 표시합니다.")
+            df_securities = pd.DataFrame([
+                {"증권사": "미래에셋증권", "콘텐츠 메인 테마": "연금 계좌(ISA/IRP) 내 ETF 포트폴리오 구성법, 절세 전략", "조회수 상위 키워드": "절세 혜택, 연금 준비, 월배당"},
+                {"증권사": "삼성증권", "콘텐츠 메인 테마": "주간 해외 주식 시황 및 유망 테마 가이드, 실시간 라이브 토크", "조회수 상위 키워드": "미국 빅테크, AI 인프라, 엔비디아"},
+                {"증권사": "키움증권", "콘텐츠 메인 테마": "개인 투자자 타겟 실전 매매 팁 및 테마형 ETF 스크리닝 가이드", "조회수 상위 키워드": "조건 검색, 유망 테마, 레버리지"},
+                {"증권사": "한국투자증권", "콘텐츠 메인 테마": "글로벌 자산배분 전략 및 자산가 초청 세미나 요약 하이라이트", "조회수 상위 키워드": "자산배분, 고배당, 채권형 ETF"}
+            ])
+            st.dataframe(df_securities, use_container_width=True, hide_index=True)
+            yt_context_data += "\n[증권사 유튜브 동향]\n"
+            for _, row in df_securities.iterrows():
+                yt_context_data += f"- {row['증권사']}: {row['콘텐츠 메인 테마']} (키워드: {row['조회수 상위 키워드']})\n"
 
     st.markdown("#### 🤖 AI 기반 유튜브 마케팅 소구점 및 운용사별 동향 심층 요약")
     fallback_yt_report = """
