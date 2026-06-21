@@ -199,6 +199,101 @@ def fetch_official_events():
 
     return results
 # ==============================================================================
+# 🎥 [YouTube Data API v3] 운용사 채널 최신 영상 + 통계 + 댓글 수집
+# ==============================================================================
+@st.cache_data(ttl=1800)  # 30분 캐시 (API 쿼터 절약)
+def fetch_youtube_channel_data(api_key, handle, max_videos=5):
+    """채널 핸들로 최신 영상의 제목·설명·썸네일·조회수·좋아요·댓글수 + 상위 댓글 수집.
+    반환: dict {channel_title, videos:[...]}. 실패 시 None."""
+    import requests
+    if not api_key:
+        return None
+    base = "https://www.googleapis.com/youtube/v3"
+    try:
+        ch = requests.get(f"{base}/channels", params={
+            "part": "snippet,contentDetails,statistics",
+            "forHandle": handle.lstrip("@"), "key": api_key}, timeout=10)
+        cj = ch.json()
+        if not cj.get("items"):
+            sr = requests.get(f"{base}/search", params={
+                "part": "snippet", "q": handle, "type": "channel",
+                "maxResults": 1, "key": api_key}, timeout=10)
+            sj = sr.json()
+            if not sj.get("items"):
+                return None
+            ch_id = sj["items"][0]["snippet"]["channelId"]
+            ch = requests.get(f"{base}/channels", params={
+                "part": "snippet,contentDetails,statistics", "id": ch_id, "key": api_key}, timeout=10)
+            cj = ch.json()
+            if not cj.get("items"):
+                return None
+        item = cj["items"][0]
+        ch_title = item["snippet"]["title"]
+        uploads_pl = item["contentDetails"]["relatedPlaylists"]["uploads"]
+
+        pl = requests.get(f"{base}/playlistItems", params={
+            "part": "snippet", "playlistId": uploads_pl,
+            "maxResults": max_videos, "key": api_key}, timeout=10)
+        pj = pl.json()
+        video_ids = [it["snippet"]["resourceId"]["videoId"] for it in pj.get("items", []) if it.get("snippet")]
+        if not video_ids:
+            return {"channel_title": ch_title, "videos": []}
+
+        vd = requests.get(f"{base}/videos", params={
+            "part": "snippet,statistics", "id": ",".join(video_ids), "key": api_key}, timeout=10)
+        vj = vd.json()
+        videos = []
+        for v in vj.get("items", []):
+            sn = v.get("snippet", {})
+            stt = v.get("statistics", {})
+            vid = v.get("id", "")
+            comments = []
+            try:
+                ct = requests.get(f"{base}/commentThreads", params={
+                    "part": "snippet", "videoId": vid, "maxResults": 3,
+                    "order": "relevance", "textFormat": "plainText", "key": api_key}, timeout=8)
+                if ct.status_code == 200:
+                    for c in ct.json().get("items", []):
+                        txt = c["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+                        comments.append(txt[:120])
+            except Exception:
+                pass
+            thumbs = sn.get("thumbnails", {})
+            thumb_url = (thumbs.get("high") or thumbs.get("medium") or thumbs.get("default") or {}).get("url", "")
+            videos.append({
+                "title": sn.get("title", ""),
+                "description": (sn.get("description", "") or "")[:300],
+                "published": sn.get("publishedAt", "")[:10],
+                "thumbnail": thumb_url,
+                "views": int(stt.get("viewCount", 0)),
+                "likes": int(stt.get("likeCount", 0)),
+                "comment_count": int(stt.get("commentCount", 0)),
+                "top_comments": comments,
+                "url": f"https://www.youtube.com/watch?v={vid}",
+            })
+        return {"channel_title": ch_title, "videos": videos}
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=1800)
+def fetch_all_youtube(api_key):
+    """4대 운용사 유튜브 채널 데이터 일괄 수집."""
+    channels = {
+        "KODEX (삼성)": "@kodex_etf",
+        "TIGER (미래에셋)": "@tiger_etf",
+        "RISE (KB)": "RISE ETF KB자산운용",
+        "ACE (한국투자)": "@ace_etf",
+    }
+    result = {}
+    for label, handle in channels.items():
+        data = fetch_youtube_channel_data(api_key, handle, max_videos=4)
+        if data and data.get("videos"):
+            result[label] = data
+    return result
+
+
+# ==============================================================================
 def fetch_all_etf_events():
     import requests
     import re
@@ -1256,17 +1351,55 @@ with st.container(border=True):
     yt_context_data = ""
 
     with tab_운용사:
-        st.subheader("🏢 대형 자산운용사 마케팅 키워드 동향")
-        df_mgnt = pd.DataFrame([
-            {"운용사": "KODEX ETF", "최근 주력 상품 키워드": "AI 반도체 밸류체인, 미국 테크 10% 프리미엄, 월배당 타겟인컴", "업로드 빈도": "상 (주 4회)"},
-            {"운용사": "스마트 타이거 (TIGER ETF)", "최근 주력 상품 키워드": "글로벌 혁신기술, 미국 나스닥100 커버드콜, 인도 시장 성장형", "업로드 빈도": "상 (주 5회)"},
-            {"운용사": "RISE ETF", "최근 주력 상품 키워드": "국내외 주요 밸류업 지수 추종, 채권형 금리형 자산, 월배당 리츠", "업로드 빈도": "중 (주 2회)"},
-            {"운용사": "ACE ETF", "최근 주력 상품 키워드": "빅테크 밸류체인 압축투자, 미국 장기채 현물, 신흥국 인프라", "업로드 빈도": "중 (주 3회)"}
-        ])
-        st.dataframe(df_mgnt, use_container_width=True, hide_index=True)
-        yt_context_data += "[자산운용사 유튜브 동향]\n"
-        for _, row in df_mgnt.iterrows():
-            yt_context_data += f"- {row['운용사']}: {row['최근 주력 상품 키워드']}\n"
+        st.subheader("🏢 대형 자산운용사 유튜브 채널 실시간 동향")
+        yt_real = {}
+        if API_KEY_YT:
+            try:
+                with st.spinner("📡 4대 운용사 유튜브 채널 최신 영상을 수집 중입니다..."):
+                    yt_real = fetch_all_youtube(API_KEY_YT)
+            except Exception:
+                yt_real = {}
+
+        if yt_real:
+            st.session_state["yt_raw_data"] = yt_real
+            yt_context_data += "[자산운용사 유튜브 실시간 동향]\n"
+            for label, ch in yt_real.items():
+                vids = ch.get("videos", [])
+                if not vids:
+                    continue
+                total_views = sum(v["views"] for v in vids)
+                st.markdown(f"**📺 {label}** · 최근 {len(vids)}개 영상 · 누적 조회 {total_views:,}회")
+                yt_context_data += f"\n● {label} (채널: {ch.get('channel_title','')}):\n"
+                for v in vids:
+                    c1, c2 = st.columns([1, 3])
+                    with c1:
+                        if v["thumbnail"]:
+                            st.image(v["thumbnail"], use_container_width=True)
+                    with c2:
+                        st.markdown(f"**[{v['title']}]({v['url']})**")
+                        st.caption(f"📅 {v['published']} · 👁 {v['views']:,} · 👍 {v['likes']:,} · 💬 {v['comment_count']:,}")
+                        if v["top_comments"]:
+                            st.caption("💬 " + " / ".join(v["top_comments"][:2]))
+                    # AI 컨텍스트에 실제 데이터 축적
+                    yt_context_data += f"  - 제목: {v['title']} | 조회 {v['views']:,} 좋아요 {v['likes']:,} 댓글 {v['comment_count']:,}\n"
+                    if v["top_comments"]:
+                        yt_context_data += f"    댓글반응: {' / '.join(v['top_comments'][:2])}\n"
+                st.divider()
+        else:
+            # 폴백: API 키 없거나 수집 실패 시 기존 요약 테이블
+            if not API_KEY_YT:
+                st.info("ℹ️ YOUTUBE_API_KEY가 설정되지 않아 기준 동향 데이터를 표시합니다.")
+            df_mgnt = pd.DataFrame([
+                {"운용사": "KODEX ETF", "최근 주력 상품 키워드": "AI 반도체 밸류체인, 미국 테크 10% 프리미엄, 월배당 타겟인컴", "업로드 빈도": "상 (주 4회)"},
+                {"운용사": "스마트 타이거 (TIGER ETF)", "최근 주력 상품 키워드": "글로벌 혁신기술, 미국 나스닥100 커버드콜, 인도 시장 성장형", "업로드 빈도": "상 (주 5회)"},
+                {"운용사": "RISE ETF", "최근 주력 상품 키워드": "국내외 주요 밸류업 지수 추종, 채권형 금리형 자산, 월배당 리츠", "업로드 빈도": "중 (주 2회)"},
+                {"운용사": "ACE ETF", "최근 주력 상품 키워드": "빅테크 밸류체인 압축투자, 미국 장기채 현물, 신흥국 인프라", "업로드 빈도": "중 (주 3회)"}
+            ])
+            st.dataframe(df_mgnt, use_container_width=True, hide_index=True)
+            yt_context_data += "[자산운용사 유튜브 동향]\n"
+            for _, row in df_mgnt.iterrows():
+                yt_context_data += f"- {row['운용사']}: {row['최근 주력 상품 키워드']}\n"
+
 
     with tab_증권사:
         st.subheader("🏹 대형 증권사 리테일 마케팅 및 콘텐츠 동향")
@@ -1298,15 +1431,20 @@ with st.container(border=True):
     with st.container(border=True):
         if GEMINI_KEY:
             try:
-                yt_briefing_prompt = f"""너는 금융 마케팅 디렉터야. 아래 유튜브 동향 데이터를 분석해서 운용사별 마케팅 동향과 KODEX 전략 제언을 작성해줘.
+                yt_briefing_prompt = f"""너는 금융 마케팅 디렉터야. 아래 유튜브 실시간 동향 데이터(영상 제목·조회수·좋아요·댓글 반응)를 분석해줘.
 
 [작성 규칙]
 - 인사말, 자기소개, 서론(예: '안녕하십니까', '~제언해 드립니다') 절대 쓰지 말 것
-- 곧바로 본론(운용사별 동향 → 종합 제언) 으로 시작할 것
+- 곧바로 본론으로 시작할 것
 - 마크다운 소제목과 불릿으로 가독성 있게 작성
 - 문장을 중간에 끊지 말고 끝까지 완결할 것
 
-[유튜브 동향 데이터]
+[분석 항목]
+1. **운용사별 콘텐츠 동향**: 각 운용사가 어떤 상품·테마를 밀고 있는지 (조회수 높은 영상 중심)
+2. **영상별 타깃 고객 추정**: 제목·댓글 반응을 근거로 각 채널이 겨냥하는 투자자층 추정 (예: 2030 적립식 초보, 4050 연금/배당 추구, 단타 트레이더 등). 반드시 댓글·조회수 등 데이터에 근거해 추정할 것
+3. **KODEX 전략 제언**: 경쟁사 대비 KODEX가 취할 유튜브 마케팅 전략
+
+[유튜브 실시간 동향 데이터]
 {yt_context_data}"""
                 yt_report = generate_via_requests(yt_briefing_prompt)
                 if yt_report and len(yt_report.strip()) > 50:
