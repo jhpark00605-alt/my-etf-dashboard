@@ -2090,6 +2090,7 @@ def get_weekly_rate_top(rank_cd="DESC", term_days=5):
         df_krx = df_krx.dropna(subset=["수익률(%)"])
         df_krx = df_krx.sort_values(by="수익률(%)", ascending=(rank_cd != "DESC")).reset_index(drop=True)
         cols = [c for c in ["ETF명", "종목코드", "수익률(%)", "현재가"] if c in df_krx.columns]
+        st.session_state['_rate_source'] = "KRX"  # 데이터 출처 추적
         return df_krx[cols]
 
     # 🥈 2순위: FuNETF API (term_days를 API 파라미터 term에 동적 매핑)
@@ -2098,9 +2099,12 @@ def get_weekly_rate_top(rank_cd="DESC", term_days=5):
         {"rankCd": rank_cd, "derivative": "true", "pension": "", "etfType": "", "term": term_days, "page": 0, "size": 50}, 
         "수익률"
     )
+    if not df.empty:
+        st.session_state['_rate_source'] = "FUNETF"  # FuNETF 성공
     
     # [데이터 보강] 상위 N개 요청에 대응할 수 있도록 백업 데이터를 10개로 유지합니다.
     if df.empty:
+        st.session_state['_rate_source'] = "BACKUP"  # FuNETF 실패 → 백업 사용
         if rank_cd == "DESC":
             backup_items = [
                 {"fundFnm": "KODEX 미국AI테크TOP10+", "fundCd": "482110", "suikRt": 5.82, "curp": 12450, "navSum": 450000000000},
@@ -2229,7 +2233,6 @@ def render_section_4():
     
     with st.container(border=True):
         st.markdown("## 📈 SECTION 4. 주간 ETF 시장 분석 & 추천 리스트")
-        st.caption(f"출처: FUNETF (삼성자산운용) API 실시간 연동 리포트 | 조회 기준일: {datetime.today().strftime('%Y-%m-%d')}")
         st.write("")
         
         # --------------------------------------------------------
@@ -2262,8 +2265,14 @@ def render_section_4():
             # 💡 [핵심 연결] 사용자가 화면에서 선택한 기간(chosen_term)을 데이터 수집 및 테마 연산 함수에 주입합니다!
             df_rate = get_weekly_rate_top(rank_cd, term_days=chosen_term)
             df_theme = get_theme_rate(term_days=chosen_term)
-            # [임시 진단] KRX 수집 상태 표시
-            st.caption(f"🔧 데이터 소스 진단: {st.session_state.get('_krx_diag', '진단 정보 없음')}")
+            # 실제 사용된 데이터 소스에 따라 출처 동적 표기
+            _src = st.session_state.get('_rate_source', 'FUNETF')
+            _src_label = {
+                "KRX": "KRX 정보데이터시스템 Open API 실시간 연동",
+                "FUNETF": "FuNETF (삼성자산운용) API 실시간 연동",
+                "BACKUP": "내부 백업 데이터 (실시간 연동 일시 불가)",
+            }.get(_src, "FuNETF (삼성자산운용) API 실시간 연동")
+            st.caption(f"출처: {_src_label} | 조회 기준일: {datetime.today().strftime('%Y-%m-%d')}")
             
             # PDF 연동 컴포넌트를 위해 전역 메모리에 데이터 복사본 전달
             st.session_state['df_top_returns'] = df_rate.copy() if not df_rate.empty else pd.DataFrame()
