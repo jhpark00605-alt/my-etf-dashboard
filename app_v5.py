@@ -17,7 +17,346 @@ import streamlit.components.v1 as components
 import io
 
 # ==============================================================================
-# 🔍 [네이버 API 엔진] 4대 운용사별 ETF 이벤트 수집 함수 (secrets 매칭 반영 버전)
+# 🏢 [공식 홈페이지 이벤트 크롤러] KODEX·RISE는 정적 HTML이라 직접 수집 가능
+#    (TIGER·ACE는 JS 동적 로딩이라 별도 AJAX 엔드포인트 필요 → 네이버 폴백 유지)
+# ==============================================================================
+def fetch_official_events():
+    """KODEX·RISE 공식 홈페이지에서 '진행중' 이벤트를 직접 수집.
+    반환: [{운용사, 브랜드, 제목, 🎯 유도 ETF 종목, 기간, 링크}, ...]"""
+    import requests, re
+    from bs4 import BeautifulSoup
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "Referer": "https://www.google.com/",
+    }
+    results = []
+
+    def _extract_products(brand, title):
+        pat = re.compile(rf'({brand})\s?([A-Za-z0-9가-힣&·\+]+(?:\s+[A-Za-z0-9가-힣&·\+]+){{0,3}})')
+        matches = pat.findall(title)
+        prods = []
+        for b, prod in matches:
+            prod_clean = prod.split("이벤트")[0].split("인증")[0].split("기념")[0].split("신규")[0].strip()
+            if len(prod_clean) > 1:
+                prods.append(f"{b} {prod_clean}")
+        return ", ".join(list(dict.fromkeys(prods))) if prods else f"{brand} 관련 상품"
+
+    # --- KODEX (삼성자산운용): 정적 HTML, event-view.do?seq=N ---
+    try:
+        r = requests.get("https://www.samsungfund.com/fund/lounge/event.do", headers=headers, timeout=12)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, "html.parser")
+            seen = set()
+            for a in soup.find_all("a", href=re.compile(r'event-view\.do\?seq=')):
+                txt = a.get_text(" ", strip=True)
+                if "진행중" not in txt:
+                    continue
+                seq = re.search(r'seq=(\d+)', a["href"])
+                if not seq or seq.group(1) in seen:
+                    continue
+                seen.add(seq.group(1))
+                title = re.split(r'\s*이벤트기간', re.sub(r'^.*?진행중\s*', '', txt))[0].strip()
+                period = re.search(r'(\d{4}\.\d{2}\.\d{2})\s*~\s*(\d{4}\.\d{2}\.\d{2})', txt)
+                if not title:
+                    continue
+                results.append({
+                    "운용사": "삼성자산운용", "브랜드": "KODEX", "제목": title,
+                    "🎯 유도 ETF 종목": _extract_products("KODEX", title),
+                    "기간": f"{period.group(1)}~{period.group(2)}" if period else "",
+                    "링크": "https://www.samsungfund.com/fund/lounge/event-view.do?seq=" + seq.group(1),
+                })
+    except Exception:
+        pass
+
+    # --- RISE (KB자산운용): 정적 HTML ---
+    try:
+        r = requests.get("https://www.riseetf.co.kr/cust/event", headers=headers, timeout=12)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, "html.parser")
+            seen = set()
+            for a in soup.find_all("a"):
+                txt = a.get_text(" ", strip=True)
+                if "진행중" not in txt or "이벤트" not in txt:
+                    continue
+                title = re.split(r'\s*이벤트\s*기간', re.sub(r'^[\-\s]*진행중\s*', '', txt))[0].strip()
+                if not title or title in seen or len(title) < 5:
+                    continue
+                seen.add(title)
+                period = re.search(r'(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})', txt)
+                href = a.get("href", "")
+                results.append({
+                    "운용사": "KB자산운용", "브랜드": "RISE", "제목": title,
+                    "🎯 유도 ETF 종목": _extract_products("RISE", title),
+                    "기간": f"{period.group(1)}~{period.group(2)}" if period else "",
+                    "링크": href if href.startswith("http") else ("https://www.riseetf.co.kr" + href),
+                })
+    except Exception:
+        pass
+
+    # --- TIGER (미래에셋자산운용): AJAX 엔드포인트 (list.ajax) ---
+    try:
+        r = requests.get(
+            "https://investments.miraeasset.com/tigeretf/ko/customer/event/list.ajax",
+            headers=headers, params={"listCnt": 50, "pageIndex": 1}, timeout=12)
+        if r.status_code == 200 and r.text.strip():
+            soup = BeautifulSoup(r.text, "html.parser")
+            for a in soup.find_all("a", class_="c-card"):
+                cls = " ".join(a.get("class", []))
+                if "closed" in cls:  # 종료 제외
+                    continue
+                status = a.find("div", class_="status")
+                if not status or "진행중" not in status.get_text():
+                    continue
+                title_el = a.find("div", class_="title")
+                title = title_el.get_text(strip=True) if title_el else ""
+                if not title:
+                    continue
+                period = ""
+                for pair in a.find_all("div", class_="c-pair"):
+                    key = pair.find("div", class_="key")
+                    if key and "기간" in key.get_text():
+                        val = pair.find("div", class_="value")
+                        if val:
+                            period = val.get_text(strip=True).replace(" ", "")
+                        break
+                dk = re.search(r"'detailsKey',\s*'(\d+)'", a.get("href", ""))
+                link = (f"https://investments.miraeasset.com/tigeretf/ko/customer/event/view.do?detailsKey={dk.group(1)}"
+                        if dk else "")
+                results.append({
+                    "운용사": "미래에셋자산운용", "브랜드": "TIGER", "제목": title,
+                    "🎯 유도 ETF 종목": _extract_products("TIGER", title),
+                    "기간": period, "링크": link,
+                })
+    except Exception:
+        pass
+
+    # --- ACE (한국투자신탁운용): Next.js _next/data (buildId 자동 추출) ---
+    #     공지사항에 [EVENT] 태그로 이벤트가 섞여있음 → [EVENT]만 필터링.
+    #     buildId는 배포마다 바뀌므로 메인 HTML에서 동적으로 추출. 실패 시 네이버 폴백.
+    try:
+        base = "https://www.aceetf.co.kr"
+        # 1) 현재 buildId 추출
+        main = requests.get(base + "/cs/notice", headers=headers, timeout=12)
+        build_id = None
+        if main.status_code == 200:
+            m = re.search(r'"buildId"\s*:\s*"([^"]+)"', main.text)
+            if not m:
+                m = re.search(r'/_next/(?:static|data)/([^/"]+)/', main.text)
+            if m:
+                build_id = m.group(1)
+        if build_id:
+            # 2) notice.json 호출 (category=60 = 이벤트). 여러 파라미터 조합 시도.
+            for params in ({"category": "60", "page": "1"}, {"category": "60"}, {}):
+                try:
+                    jr = requests.get(f"{base}/_next/data/{build_id}/cs/notice.json",
+                                      headers=headers, params=params, timeout=12)
+                    if jr.status_code != 200:
+                        continue
+                    data = jr.json()
+                    # Next.js 구조: pageProps 안에 목록이 있음. 키 이름이 사이트마다 달라 탐색.
+                    pageprops = data.get("pageProps", data) if isinstance(data, dict) else {}
+                    # 리스트 후보 탐색
+                    items = None
+                    for key in ("list", "notices", "noticeList", "items", "data", "boardList", "content"):
+                        v = pageprops.get(key) if isinstance(pageprops, dict) else None
+                        if isinstance(v, list) and v:
+                            items = v
+                            break
+                        if isinstance(v, dict):
+                            for k2 in ("list", "content", "items"):
+                                if isinstance(v.get(k2), list) and v[k2]:
+                                    items = v[k2]
+                                    break
+                        if items:
+                            break
+                    if not items:
+                        continue
+                    for it in items:
+                        if not isinstance(it, dict):
+                            continue
+                        title = str(it.get("title") or it.get("subject") or it.get("ntcTitle") or "")
+                        # 이벤트만: [EVENT] 태그 or '이벤트' 포함, 종료/당첨자발표 제외
+                        if "[EVENT]" not in title and "이벤트" not in title:
+                            continue
+                        if "당첨자" in title or "종료" in title:
+                            continue
+                        nid = it.get("id") or it.get("seq") or it.get("ntcSeq") or it.get("boardSeq") or ""
+                        clean_title = title.replace("[EVENT]", "").strip()
+                        results.append({
+                            "운용사": "한국투자신탁운용", "브랜드": "ACE", "제목": clean_title,
+                            "🎯 유도 ETF 종목": _extract_products("ACE", clean_title),
+                            "기간": "", "링크": f"{base}/cs/notice/{nid}" if nid else f"{base}/cs/notice",
+                        })
+                    if any(e["브랜드"] == "ACE" for e in results):
+                        break
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    return results
+# ==============================================================================
+# 🎥 [YouTube Data API v3] 운용사 채널 최신 영상 + 통계 + 댓글 수집
+# ==============================================================================
+@st.cache_data(ttl=1800)  # 30분 캐시 (API 쿼터 절약)
+def fetch_youtube_channel_data(api_key, handle, max_videos=5):
+    """채널 핸들로 최신 영상의 제목·설명·썸네일·조회수·좋아요·댓글수 + 상위 댓글 수집.
+    반환: dict {channel_title, videos:[...]}. 실패 시 None."""
+    import requests
+    if not api_key:
+        return None
+    base = "https://www.googleapis.com/youtube/v3"
+    try:
+        ch = requests.get(f"{base}/channels", params={
+            "part": "snippet,contentDetails,statistics",
+            "forHandle": handle.lstrip("@"), "key": api_key}, timeout=10)
+        cj = ch.json()
+        if not cj.get("items"):
+            sr = requests.get(f"{base}/search", params={
+                "part": "snippet", "q": handle, "type": "channel",
+                "maxResults": 1, "key": api_key}, timeout=10)
+            sj = sr.json()
+            if not sj.get("items"):
+                return None
+            ch_id = sj["items"][0]["snippet"]["channelId"]
+            ch = requests.get(f"{base}/channels", params={
+                "part": "snippet,contentDetails,statistics", "id": ch_id, "key": api_key}, timeout=10)
+            cj = ch.json()
+            if not cj.get("items"):
+                return None
+        item = cj["items"][0]
+        ch_title = item["snippet"]["title"]
+        uploads_pl = item["contentDetails"]["relatedPlaylists"]["uploads"]
+
+        pl = requests.get(f"{base}/playlistItems", params={
+            "part": "snippet", "playlistId": uploads_pl,
+            "maxResults": max_videos, "key": api_key}, timeout=10)
+        pj = pl.json()
+        video_ids = [it["snippet"]["resourceId"]["videoId"] for it in pj.get("items", []) if it.get("snippet")]
+        if not video_ids:
+            return {"channel_title": ch_title, "videos": []}
+
+        vd = requests.get(f"{base}/videos", params={
+            "part": "snippet,statistics", "id": ",".join(video_ids), "key": api_key}, timeout=10)
+        vj = vd.json()
+        videos = []
+        for v in vj.get("items", []):
+            sn = v.get("snippet", {})
+            stt = v.get("statistics", {})
+            vid = v.get("id", "")
+            comments = []
+            try:
+                ct = requests.get(f"{base}/commentThreads", params={
+                    "part": "snippet", "videoId": vid, "maxResults": 3,
+                    "order": "relevance", "textFormat": "plainText", "key": api_key}, timeout=8)
+                if ct.status_code == 200:
+                    for c in ct.json().get("items", []):
+                        txt = c["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+                        comments.append(txt[:120])
+            except Exception:
+                pass
+            thumbs = sn.get("thumbnails", {})
+            thumb_url = (thumbs.get("high") or thumbs.get("medium") or thumbs.get("default") or {}).get("url", "")
+            videos.append({
+                "title": sn.get("title", ""),
+                "description": (sn.get("description", "") or "")[:300],
+                "published": sn.get("publishedAt", "")[:10],
+                "thumbnail": thumb_url,
+                "views": int(stt.get("viewCount", 0)),
+                "likes": int(stt.get("likeCount", 0)),
+                "comment_count": int(stt.get("commentCount", 0)),
+                "top_comments": comments,
+                "url": f"https://www.youtube.com/watch?v={vid}",
+            })
+        return {"channel_title": ch_title, "videos": videos}
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=1800)
+def fetch_all_youtube(api_key):
+    """4대 운용사 유튜브 채널 데이터 일괄 수집."""
+    channels = {
+        "KODEX (삼성)": "@kodex_etf",
+        "TIGER (미래에셋)": "@tiger_etf",
+        "RISE (KB)": "RISE ETF KB자산운용",
+        "ACE (한국투자)": "@ace_etf",
+    }
+    result = {}
+    for label, handle in channels.items():
+        data = fetch_youtube_channel_data(api_key, handle, max_videos=4)
+        if data and data.get("videos"):
+            result[label] = data
+    return result
+
+
+@st.cache_data(ttl=1800)
+def fetch_all_securities_youtube(api_key):
+    """주요 증권사 유튜브 채널 데이터 일괄 수집.
+    키움만 핸들 명확, 나머지는 검색어 기반(함수 내 검색 폴백 활용)."""
+    channels = {
+        "키움증권 (채널K)": "@kiwoomchk",
+        "미래에셋증권 (스마트머니)": "미래에셋증권 스마트머니",
+        "삼성증권": "@samsungsecurities",
+        "한국투자증권": "한국투자증권 뱅키스",
+    }
+    result = {}
+    for label, handle in channels.items():
+        data = fetch_youtube_channel_data(api_key, handle, max_videos=4)
+        if data and data.get("videos"):
+            result[label] = data
+    return result
+
+
+def render_yt_report_structured(report_text):
+    """AI 유튜브 리포트를 '## N. 제목' 헤더 기준으로 쪼개 카드형으로 표시.
+    글이 길게 늘어지지 않도록 섹션별 구분 + 핵심 섹션만 펼침."""
+    import re
+    if not report_text:
+        return
+    # '## 1.' 또는 '## ' 헤더 기준으로 분할
+    parts = re.split(r'\n(?=#{1,3}\s)', report_text.strip())
+    sections = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        m = re.match(r'^#{1,3}\s*(.+?)(?:\n|$)', p)
+        if m:
+            title = m.group(1).strip()
+            body = p[m.end():].strip()
+        else:
+            title = "분석 개요"
+            body = p
+        sections.append((title, body))
+
+    if not sections:
+        st.markdown(report_text)
+        return
+
+    # 섹션 제목에 어울리는 아이콘 매핑
+    def _icon(t):
+        if "운용사" in t and "증권사" not in t:
+            return "🏢"
+        if "증권사" in t:
+            return "🏹"
+        if "타깃" in t or "고객" in t:
+            return "🎯"
+        if "전략" in t or "제언" in t or "KODEX" in t:
+            return "🚀"
+        return "📌"
+
+    for i, (title, body) in enumerate(sections):
+        icon = _icon(title)
+        # 첫 섹션과 '전략 제언'은 펼쳐서, 나머지는 접어서 표시
+        expanded = (i == 0) or ("전략" in title or "제언" in title)
+        with st.expander(f"{icon}  {title}", expanded=expanded):
+            st.markdown(body)
+
+
 # ==============================================================================
 def fetch_all_etf_events():
     import requests
@@ -100,6 +439,105 @@ if "global_context" not in st.session_state:
 # 헤더 타이틀
 st.title("🚀 KODEX ETF 마케팅 & 트렌드 모니터링 종합 대시보드")
 st.markdown("삼성자산운용 KODEX 마케팅 전략 도출을 위한 AI 기반 통합 모니터링 인텔리전스입니다. 모든 데이터는 실시간으로 자동 로드됩니다.")
+
+# ==============================================================================
+# 📊 [실시간 지수 & 환율 티커] 제목 ↔ Section 1 사이 상단 표시
+# ==============================================================================
+@st.cache_data(ttl=300)  # 5분 캐시 (과도한 호출 방지)
+def fetch_market_indices():
+    """네이버 증권에서 코스피·코스닥 지수 및 주요 환율을 수집.
+    검증된 /price 엔드포인트로 최근 2영업일 종가를 받아 등락률을 직접 계산.
+    반환: dict. 실패 항목은 None."""
+    import requests
+    out = {"KOSPI": None, "KOSDAQ": None, "USD": None, "JPY": None, "EUR": None}
+    hdr = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Mobile Safari/604.1",
+           "Referer": "https://m.stock.naver.com/"}
+
+    def _calc(price_list):
+        """[{localTradedAt, closePrice}, ...] 최신순 → (현재값, 등락률%)"""
+        vals = []
+        for row in price_list:
+            try:
+                cp = float(str(row.get("closePrice", "")).replace(",", ""))
+                vals.append(cp)
+            except Exception:
+                continue
+        if len(vals) >= 2 and vals[1] != 0:
+            cur, prev = vals[0], vals[1]
+            return cur, (cur - prev) / prev * 100
+        elif len(vals) == 1:
+            return vals[0], 0.0
+        return None, None
+
+    # 1) 국내 지수 (KOSPI, KOSDAQ)
+    for key, code in {"KOSPI": "KOSPI", "KOSDAQ": "KOSDAQ"}.items():
+        try:
+            r = requests.get(f"https://m.stock.naver.com/api/index/{code}/price",
+                             headers=hdr, params={"pageSize": 2, "page": 1}, timeout=8)
+            if r.status_code == 200:
+                arr = r.json()
+                if isinstance(arr, list) and arr:
+                    cur, rate = _calc(arr)
+                    if cur is not None:
+                        out[key] = {"value": f"{cur:,.2f}", "rate": rate}
+        except Exception:
+            pass
+
+    # 2) 환율 (USD, JPY, EUR)
+    for key, code in {"USD": "FX_USDKRW", "JPY": "FX_JPYKRW", "EUR": "FX_EURKRW"}.items():
+        try:
+            r = requests.get(f"https://api.stock.naver.com/marketindex/exchange/{code}/prices",
+                             headers=hdr, params={"page": 1, "pageSize": 2}, timeout=8)
+            if r.status_code == 200:
+                arr = r.json()
+                if isinstance(arr, list) and arr:
+                    cur, rate = _calc(arr)
+                    if cur is not None:
+                        out[key] = {"value": f"{cur:,.2f}", "rate": rate}
+        except Exception:
+            pass
+
+    return out
+
+
+def render_market_ticker():
+    data = fetch_market_indices()
+    labels = {"KOSPI": "코스피", "KOSDAQ": "코스닥", "USD": "USD/KRW", "JPY": "JPY/KRW(100)", "EUR": "EUR/KRW"}
+
+    def _fmt(d):
+        if not d or d.get("value") is None:
+            return None
+        rate = d.get("rate", 0.0) or 0.0
+        # 색상: 상승=빨강, 하락=파랑 (국내 관습)
+        if rate > 0:
+            return "#D60000", "▲", rate
+        elif rate < 0:
+            return "#0051C7", "▼", rate
+        return "#555", "-", rate
+
+    cols = st.columns(5)
+    for i, (key, label) in enumerate(labels.items()):
+        d = data.get(key)
+        with cols[i]:
+            fmt = _fmt(d)
+            if fmt:
+                color, arrow, rate = fmt
+                rate_txt = f"{arrow} {abs(rate):.2f}%"
+                st.markdown(
+                    f"""<div style="padding:8px 10px; border:1px solid #E8E8E8; border-radius:10px; background:#FAFBFC;">
+                        <div style="font-size:12px; color:#666; font-weight:600;">{label}</div>
+                        <div style="font-size:18px; font-weight:700; color:#1A1A1A; margin-top:2px;">{d['value']}</div>
+                        <div style="font-size:12px; color:{color}; font-weight:600;">{rate_txt}</div>
+                    </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    f"""<div style="padding:8px 10px; border:1px solid #E8E8E8; border-radius:10px; background:#FAFBFC;">
+                        <div style="font-size:12px; color:#666; font-weight:600;">{label}</div>
+                        <div style="font-size:14px; color:#AAA; margin-top:6px;">데이터 없음</div>
+                    </div>""", unsafe_allow_html=True)
+    st.caption("실시간 지수·환율 (네이버 증권 기준, 5분 캐시) · 시장 마감 시 종가 표시")
+
+render_market_ticker()
 st.divider()
 
 # Gemini API 직접 호출을 위한 경량 헬퍼 함수 (라이브러리 충돌 방지)
@@ -977,30 +1415,137 @@ with st.container(border=True):
     yt_context_data = ""
 
     with tab_운용사:
-        st.subheader("🏢 대형 자산운용사 마케팅 키워드 동향")
-        df_mgnt = pd.DataFrame([
-            {"운용사": "KODEX ETF", "최근 주력 상품 키워드": "AI 반도체 밸류체인, 미국 테크 10% 프리미엄, 월배당 타겟인컴", "업로드 빈도": "상 (주 4회)"},
-            {"운용사": "스마트 타이거 (TIGER ETF)", "최근 주력 상품 키워드": "글로벌 혁신기술, 미국 나스닥100 커버드콜, 인도 시장 성장형", "업로드 빈도": "상 (주 5회)"},
-            {"운용사": "RISE ETF", "최근 주력 상품 키워드": "국내외 주요 밸류업 지수 추종, 채권형 금리형 자산, 월배당 리츠", "업로드 빈도": "중 (주 2회)"},
-            {"운용사": "ACE ETF", "최근 주력 상품 키워드": "빅테크 밸류체인 압축투자, 미국 장기채 현물, 신흥국 인프라", "업로드 빈도": "중 (주 3회)"}
-        ])
-        st.dataframe(df_mgnt, use_container_width=True, hide_index=True)
-        yt_context_data += "[자산운용사 유튜브 동향]\n"
-        for _, row in df_mgnt.iterrows():
-            yt_context_data += f"- {row['운용사']}: {row['최근 주력 상품 키워드']}\n"
+        st.subheader("🏢 대형 자산운용사 유튜브 채널 실시간 동향")
+        yt_real = {}
+        if API_KEY_YT:
+            try:
+                with st.spinner("📡 4대 운용사 유튜브 채널 최신 영상을 수집 중입니다..."):
+                    yt_real = fetch_all_youtube(API_KEY_YT)
+            except Exception:
+                yt_real = {}
+
+        if yt_real:
+            st.session_state["yt_raw_data"] = yt_real
+            yt_context_data += "[자산운용사 유튜브 실시간 동향]\n"
+            for label, ch in yt_real.items():
+                vids = ch.get("videos", [])
+                if not vids:
+                    continue
+                total_views = sum(v["views"] for v in vids)
+                st.markdown(f"**📺 {label}** · 최근 {len(vids)}개 영상 · 누적 조회 {total_views:,}회")
+                yt_context_data += f"\n● {label} (채널: {ch.get('channel_title','')}):\n"
+                for v in vids:
+                    c1, c2 = st.columns([1, 3])
+                    with c1:
+                        if v["thumbnail"]:
+                            st.image(v["thumbnail"], use_container_width=True)
+                    with c2:
+                        st.markdown(f"**[{v['title']}]({v['url']})**")
+                        st.caption(f"📅 {v['published']} · 👁 {v['views']:,} · 👍 {v['likes']:,} · 💬 {v['comment_count']:,}")
+                        if v["top_comments"]:
+                            st.caption("💬 " + " / ".join(v["top_comments"][:2]))
+                    # AI 컨텍스트에 실제 데이터 축적
+                    yt_context_data += f"  - 제목: {v['title']} | 조회 {v['views']:,} 좋아요 {v['likes']:,} 댓글 {v['comment_count']:,}\n"
+                    if v["top_comments"]:
+                        yt_context_data += f"    댓글반응: {' / '.join(v['top_comments'][:2])}\n"
+                st.divider()
+        else:
+            # 폴백: API 키 없거나 수집 실패 시 기존 요약 테이블
+            if not API_KEY_YT:
+                st.info("ℹ️ YOUTUBE_API_KEY가 설정되지 않아 기준 동향 데이터를 표시합니다.")
+            df_mgnt = pd.DataFrame([
+                {"운용사": "KODEX ETF", "최근 주력 상품 키워드": "AI 반도체 밸류체인, 미국 테크 10% 프리미엄, 월배당 타겟인컴", "업로드 빈도": "상 (주 4회)"},
+                {"운용사": "스마트 타이거 (TIGER ETF)", "최근 주력 상품 키워드": "글로벌 혁신기술, 미국 나스닥100 커버드콜, 인도 시장 성장형", "업로드 빈도": "상 (주 5회)"},
+                {"운용사": "RISE ETF", "최근 주력 상품 키워드": "국내외 주요 밸류업 지수 추종, 채권형 금리형 자산, 월배당 리츠", "업로드 빈도": "중 (주 2회)"},
+                {"운용사": "ACE ETF", "최근 주력 상품 키워드": "빅테크 밸류체인 압축투자, 미국 장기채 현물, 신흥국 인프라", "업로드 빈도": "중 (주 3회)"}
+            ])
+            st.dataframe(df_mgnt, use_container_width=True, hide_index=True)
+            yt_context_data += "[자산운용사 유튜브 동향]\n"
+            for _, row in df_mgnt.iterrows():
+                yt_context_data += f"- {row['운용사']}: {row['최근 주력 상품 키워드']}\n"
+
 
     with tab_증권사:
-        st.subheader("🏹 대형 증권사 리테일 마케팅 및 콘텐츠 동향")
-        df_securities = pd.DataFrame([
-            {"증권사": "미래에셋증권", "콘텐츠 메인 테마": "연금 계좌(ISA/IRP) 내 ETF 포트폴리오 구성법, 절세 전략", "조회수 상위 키워드": "절세 혜택, 연금 준비, 월배당"},
-            {"증권사": "삼성증권", "콘텐츠 메인 테마": "주간 해외 주식 시황 및 유망 테마 가이드, 실시간 라이브 토크", "조회수 상위 키워드": "미국 빅테크, AI 인프라, 엔비디아"},
-            {"증권사": "키움증권", "콘텐츠 메인 테마": "개인 투자자 타겟 실전 매매 팁 및 테마형 ETF 스크리닝 가이드", "조회수 상위 키워드": "조건 검색, 유망 테마, 레버리지"},
-            {"증권사": "한국투자증권", "콘텐츠 메인 테마": "글로벌 자산배분 전략 및 자산가 초청 세미나 요약 하이라이트", "조회수 상위 키워드": "자산배분, 고배당, 채권형 ETF"}
-        ])
-        st.dataframe(df_securities, use_container_width=True, hide_index=True)
-        yt_context_data += "\n[증권사 유튜브 동향]\n"
-        for _, row in df_securities.iterrows():
-            yt_context_data += f"- {row['증권사']}: {row['콘텐츠 메인 테마']} (키워드: {row['조회수 상위 키워드']})\n"
+        st.subheader("🏹 주요 증권사 유튜브 채널 실시간 동향")
+        sec_real = {}
+        if API_KEY_YT:
+            try:
+                with st.spinner("📡 주요 증권사 유튜브 채널 최신 영상을 수집 중입니다..."):
+                    sec_real = fetch_all_securities_youtube(API_KEY_YT)
+            except Exception:
+                sec_real = {}
+
+        if sec_real:
+            st.session_state["yt_securities_data"] = sec_real
+            yt_context_data += "\n[증권사 유튜브 실시간 동향]\n"
+            for label, ch in sec_real.items():
+                vids = ch.get("videos", [])
+                if not vids:
+                    continue
+                total_views = sum(v["views"] for v in vids)
+                st.markdown(f"**🏹 {label}** · 최근 {len(vids)}개 영상 · 누적 조회 {total_views:,}회")
+                yt_context_data += f"\n● {label} (채널: {ch.get('channel_title','')}):\n"
+                for v in vids:
+                    c1, c2 = st.columns([1, 3])
+                    with c1:
+                        if v["thumbnail"]:
+                            st.image(v["thumbnail"], use_container_width=True)
+                    with c2:
+                        st.markdown(f"**[{v['title']}]({v['url']})**")
+                        st.caption(f"📅 {v['published']} · 👁 {v['views']:,} · 👍 {v['likes']:,} · 💬 {v['comment_count']:,}")
+                        if v["top_comments"]:
+                            st.caption("💬 " + " / ".join(v["top_comments"][:2]))
+                    yt_context_data += f"  - 제목: {v['title']} | 조회 {v['views']:,} 좋아요 {v['likes']:,} 댓글 {v['comment_count']:,}\n"
+                    if v["top_comments"]:
+                        yt_context_data += f"    댓글반응: {' / '.join(v['top_comments'][:2])}\n"
+                st.divider()
+        else:
+            if not API_KEY_YT:
+                st.info("ℹ️ YOUTUBE_API_KEY가 설정되지 않아 기준 동향 데이터를 표시합니다.")
+            df_securities = pd.DataFrame([
+                {"증권사": "미래에셋증권", "콘텐츠 메인 테마": "연금 계좌(ISA/IRP) 내 ETF 포트폴리오 구성법, 절세 전략", "조회수 상위 키워드": "절세 혜택, 연금 준비, 월배당"},
+                {"증권사": "삼성증권", "콘텐츠 메인 테마": "주간 해외 주식 시황 및 유망 테마 가이드, 실시간 라이브 토크", "조회수 상위 키워드": "미국 빅테크, AI 인프라, 엔비디아"},
+                {"증권사": "키움증권", "콘텐츠 메인 테마": "개인 투자자 타겟 실전 매매 팁 및 테마형 ETF 스크리닝 가이드", "조회수 상위 키워드": "조건 검색, 유망 테마, 레버리지"},
+                {"증권사": "한국투자증권", "콘텐츠 메인 테마": "글로벌 자산배분 전략 및 자산가 초청 세미나 요약 하이라이트", "조회수 상위 키워드": "자산배분, 고배당, 채권형 ETF"}
+            ])
+            st.dataframe(df_securities, use_container_width=True, hide_index=True)
+            yt_context_data += "\n[증권사 유튜브 동향]\n"
+            for _, row in df_securities.iterrows():
+                yt_context_data += f"- {row['증권사']}: {row['콘텐츠 메인 테마']} (키워드: {row['조회수 상위 키워드']})\n"
+
+    # ----------------------------------------------------------------------
+    # 🔥 실시간 영상 조회수 TOP (운용사 + 증권사 통합)
+    # ----------------------------------------------------------------------
+    _top_rows = []
+    for _store, _grp in (("yt_raw_data", "운용사"), ("yt_securities_data", "증권사")):
+        _data = st.session_state.get(_store, {})
+        if isinstance(_data, dict):
+            for _label, _ch in _data.items():
+                for _v in _ch.get("videos", []):
+                    _top_rows.append({
+                        "구분": _grp,
+                        "채널": _label,
+                        "영상 제목": _v.get("title", ""),
+                        "조회수": _v.get("views", 0),
+                        "좋아요": _v.get("likes", 0),
+                        "댓글": _v.get("comment_count", 0),
+                        "링크": _v.get("url", ""),
+                    })
+    if _top_rows:
+        st.markdown("#### 🔥 실시간 영상 조회수 TOP (운용사·증권사 통합)")
+        df_top_yt = pd.DataFrame(_top_rows).sort_values(by="조회수", ascending=False).head(10).reset_index(drop=True)
+        df_top_yt.index = df_top_yt.index + 1  # 1위부터
+        st.dataframe(
+            df_top_yt,
+            use_container_width=True,
+            column_config={
+                "조회수": st.column_config.NumberColumn("조회수", format="%,d"),
+                "좋아요": st.column_config.NumberColumn("좋아요", format="%,d"),
+                "댓글": st.column_config.NumberColumn("댓글", format="%,d"),
+                "링크": st.column_config.LinkColumn("링크", display_text="▶ 보기"),
+            },
+        )
+        st.caption("운용사 4사 + 증권사 4사 채널의 최신 영상 중 조회수 상위 10개 (실시간)")
 
     st.markdown("#### 🤖 AI 기반 유튜브 마케팅 소구점 및 운용사별 동향 심층 요약")
     fallback_yt_report = """
@@ -1019,19 +1564,25 @@ with st.container(border=True):
     with st.container(border=True):
         if GEMINI_KEY:
             try:
-                yt_briefing_prompt = f"""너는 금융 마케팅 디렉터야. 아래 유튜브 동향 데이터를 분석해서 운용사별 마케팅 동향과 KODEX 전략 제언을 작성해줘.
+                yt_briefing_prompt = f"""너는 금융 마케팅 디렉터야. 아래 유튜브 실시간 동향 데이터(영상 제목·조회수·좋아요·댓글 반응)를 분석해줘. 데이터에는 [자산운용사]와 [증권사] 두 그룹이 있어. 반드시 두 그룹을 모두 분석할 것.
 
 [작성 규칙]
 - 인사말, 자기소개, 서론(예: '안녕하십니까', '~제언해 드립니다') 절대 쓰지 말 것
-- 곧바로 본론(운용사별 동향 → 종합 제언) 으로 시작할 것
+- 곧바로 본론으로 시작할 것
 - 마크다운 소제목과 불릿으로 가독성 있게 작성
 - 문장을 중간에 끊지 말고 끝까지 완결할 것
 
-[유튜브 동향 데이터]
+[분석 항목]
+1. **자산운용사 콘텐츠 동향**: 각 운용사(KODEX/TIGER/RISE/ACE)가 어떤 상품·테마를 밀고 있는지 (조회수 높은 영상 중심)
+2. **증권사 콘텐츠 동향**: 각 증권사(키움/미래에셋/삼성/한국투자)의 리테일 콘텐츠 전략과 주력 소구점. 운용사와 어떻게 다른지(상품 홍보 vs 계좌/교육/시황)
+3. **영상별 타깃 고객 추정**: 제목·댓글 반응을 근거로 각 채널이 겨냥하는 투자자층 추정 (예: 2030 적립식 초보, 4050 연금/배당 추구, 단타 트레이더 등). 운용사·증권사 모두 포함
+4. **KODEX 통합 전략 제언**: 경쟁 운용사뿐 아니라 '증권사 리테일 채널'과의 협업·교차 전략까지 포함해서 제언할 것 (예: 특정 증권사 채널 시청자층을 겨냥한 KODEX 상품 콘텐츠 교차 노출 등)
+
+[유튜브 실시간 동향 데이터]
 {yt_context_data}"""
-                yt_report = generate_via_requests(yt_briefing_prompt)
+                yt_report = generate_via_requests(yt_briefing_prompt, max_tokens=16384)
                 if yt_report and len(yt_report.strip()) > 50:
-                    st.markdown(yt_report)
+                    render_yt_report_structured(yt_report)
                     st.session_state["yt_report_fixed"] = yt_report
                 else:
                     st.markdown(fallback_yt_report)
@@ -1169,11 +1720,26 @@ with st.container(border=True):
             st.caption("※ DiD(이중차분 스코어) = (마케팅 상품의 수급 강도 변화량) - (동일 자산군 내 경쟁사 대조군의 수급 강도 변화량)")
 
             if "df_events_base_data" not in st.session_state:
-                with st.spinner("🔄 네이버 API로부터 4대 운용사 실시간 마케팅 이벤트를 수집 중입니다..."):
+                with st.spinner("🔄 공식 홈페이지 및 네이버에서 4대 운용사 실시간 마케팅 이벤트를 수집 중입니다..."):
+                    merged_events = []
+                    # 1) KODEX·RISE: 공식 홈페이지 직접 크롤링 (정확)
+                    official_brands = set()
                     try:
-                        st.session_state["df_events_base_data"] = fetch_all_etf_events()
-                    except:
-                        st.session_state["df_events_base_data"] = []
+                        off = fetch_official_events()
+                        merged_events.extend(off)
+                        official_brands = {e["브랜드"] for e in off}
+                    except Exception:
+                        pass
+                    # 2) TIGER·ACE(공식 수집 실패분): 네이버 API로 보완
+                    try:
+                        naver_events = fetch_all_etf_events()
+                        for ev in naver_events:
+                            # 공식에서 이미 받은 브랜드는 제외(중복 방지), 못 받은 브랜드만 보완
+                            if ev.get("브랜드") not in official_brands:
+                                merged_events.append(ev)
+                    except Exception:
+                        pass
+                    st.session_state["df_events_base_data"] = merged_events
 
             df_events_base = pd.DataFrame(st.session_state.get("df_events_base_data", []))
 
@@ -1189,7 +1755,7 @@ with st.container(border=True):
                     if df_comp_ev.empty:
                         summary_report_rows.append({
                             "운용사 (브랜드)": f"{comp_name} ({b_name})", "진행 중인 주요 이벤트": "확인 가능한 최근 이벤트 없음",
-                            "마케팅 푸쉬 종목": "이력 없음", "실제 개인 누적 순매수액": "0 원", "DiD 순수 마케팅 효과": "0.000%p", "최종 마케팅 효용 판단": "⚪ 데이터 없음"
+                            "마케팅 푸쉬 종목": "이력 없음", "실제 개인 누적 순매수액": "0 원", "DiD 순수 마케팅 효과": "N/A", "최종 마케팅 효용 판단": "⚪ 데이터 없음"
                         })
                         continue
 
@@ -1205,37 +1771,65 @@ with st.container(border=True):
                     push_products_text = ", ".join(all_prods[:3]) if all_prods else f"{b_name} 주요 라인업"
 
                     # 🧬 핵심 DiD(이중차분) 연산 파트
-                    treatment_diffs = [] 
-                    control_diffs = []   
+                    # 정통 DiD = (처치군 사후-사전 변화) - (동일 자산군 대조군 사후-사전 변화)
+                    # 대조군: 같은 핵심 테마를 추종하는 '타 브랜드' ETF (예: KODEX200 ↔ TIGER200)
+                    treatment_diffs = []
+                    control_diffs = []
                     total_comp_money = 0.0
                     matched_any_stock = False
+                    matched_control = False  # 대조군 매칭 여부 추적
+
+                    # 불용어(공통 접미사) 제거용 — 핵심 테마어만 남기기 위함
+                    _stop_tokens = ["TOP", "PLUS", "플러스", "액티브", "ETF", "선물", "레버리지",
+                                    "인버스", "합성", "(H)", "TR", "고배당", "커버드콜"]
+
+                    def _core_theme(name_norm, brand):
+                        """종목명에서 브랜드명·공통접미사를 제거해 핵심 테마 키워드 추출.
+                        단 200/100 같은 지수 번호는 유지(KODEX200↔TIGER200 매칭 위함)."""
+                        core = name_norm.replace(brand, "")
+                        for st_tok in _stop_tokens:
+                            core = core.replace(st_tok.replace(" ", ""), "")
+                        return core.strip()
 
                     for kw in all_prods:
                         kw_norm = kw.replace(" ", "")
-                        df_treat = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False)]
-                        
+                        df_treat = res_df[res_df['종목명_정제'].str.replace(" ", "").str.contains(kw_norm, na=False, regex=False)]
+
                         if not df_treat.empty:
                             matched_any_stock = True
                             total_comp_money += df_treat['정제된_금주순매수(억원)'].sum()
                             t_diff = (df_treat['금주_매수강도'] - df_treat['전주_매수강도']).mean()
                             treatment_diffs.append(t_diff)
-                            
-                            core_keyword = kw_norm.replace(b_name, "") 
-                            if len(core_keyword) >= 2: 
+
+                            # 대조군: 같은 핵심 테마 + 타 브랜드 (처치 종목 자체는 제외)
+                            core_keyword = _core_theme(kw_norm, b_name)
+                            treat_names = set(df_treat['종목명_정제'].str.replace(" ", ""))
+                            if len(core_keyword) >= 2:
                                 df_ctrl = res_df[
-                                    (res_df['종목명_정제'].str.replace(" ", "").str.contains(core_keyword, na=False)) & 
-                                    (~res_df['종목명_정제'].str.contains(b_name, na=False))
+                                    (res_df['종목명_정제'].str.replace(" ", "").str.contains(core_keyword, na=False, regex=False)) &
+                                    (~res_df['종목명_정제'].str.contains(b_name, na=False)) &
+                                    (~res_df['종목명_정제'].str.replace(" ", "").isin(treat_names))
                                 ]
                                 if not df_ctrl.empty:
+                                    matched_control = True
                                     c_diff = (df_ctrl['금주_매수강도'] - df_ctrl['전주_매수강도']).mean()
                                     control_diffs.append(c_diff)
 
                     avg_t_diff = np.mean(treatment_diffs) if treatment_diffs else 0.0
                     avg_c_diff = np.mean(control_diffs) if control_diffs else 0.0
-                    did_score = avg_t_diff - avg_c_diff 
+                    # 대조군이 있을 때만 진짜 DiD. 없으면 단순 변화량(이중차분 아님)임을 구분.
+                    did_score = avg_t_diff - avg_c_diff
 
                     if not matched_any_stock:
                         efficacy_result = "⚪ 효용성 판단 불가 (시장 무반응)"
+                    elif not matched_control:
+                        # 대조군 없음 → 이중차분 불성립. 단순 변화량으로만 참고 표기
+                        if avg_t_diff > 0.05:
+                            efficacy_result = "🟢 순유입 (단순 변화·대조군 없음)"
+                        elif avg_t_diff > -0.05 and total_comp_money > 0:
+                            efficacy_result = "🟡 보통 (단순 변화·대조군 없음)"
+                        else:
+                            efficacy_result = "🔴 순유출 (단순 변화·대조군 없음)"
                     elif did_score > 0.05:
                         efficacy_result = "🟢 효용성 탁월 (시장 평균 뛰어넘는 순수 유입)"
                     elif did_score > -0.05 and total_comp_money > 0:
@@ -1243,12 +1837,20 @@ with st.container(border=True):
                     else:
                         efficacy_result = "🔴 효용성 없음 (이벤트에도 경쟁사 대비 이탈)"
 
+                    # 대조군 유무에 따라 DiD 표기 구분 (없으면 단순 변화량 Δ로 명시)
+                    if matched_control:
+                        did_label = f"{did_score:+.3f}%p"
+                    elif matched_any_stock:
+                        did_label = f"Δ{avg_t_diff:+.3f}%p (대조군 없음)"
+                    else:
+                        did_label = "N/A"
+
                     summary_report_rows.append({
                         "운용사 (브랜드)": f"{comp_name} ({b_name})",
                         "진행 중인 주요 이벤트": event_titles,
                         "마케팅 푸쉬 종목": push_products_text,
                         "실제 개인 누적 순매수액": f"{total_comp_money:,.2f} 억 원" if matched_any_stock else "0 원",
-                        "DiD 순수 마케팅 효과": f"{did_score:+.3f}%p",
+                        "DiD 순수 마케팅 효과": did_label,
                         "최종 마케팅 효용 판단": efficacy_result
                     })
 
@@ -1389,17 +1991,120 @@ def fetch_data(url, params, label):
     except Exception as e:
         return pd.DataFrame()
 
+def get_krx_etf_returns(term_days=5, brand_filter="KODEX"):
+    """[KRX Open API] 인증키로 ETF 일별매매정보를 받아 수익률 계산.
+    반환: (DataFrame, 진단메시지). 인증키 없거나 실패 시 빈 DataFrame → FuNETF 폴백.
+    엔드포인트: /svc/apis/etp/etf_bydd_trd (basDd=YYYYMMDD), 헤더 AUTH_KEY 필요."""
+    auth_key = st.secrets.get("KRX_AUTH_KEY", "")
+    if not auth_key:
+        return pd.DataFrame(), "KRX_AUTH_KEY 미설정 (secrets에 인증키 필요)"
+    try:
+        from datetime import datetime, timedelta
+        url = "https://data-dbg.krx.co.kr/svc/apis/etp/etf_bydd_trd"
+        headers = {"AUTH_KEY": auth_key.strip()}
+
+        def _fetch(bas_dd):
+            r = requests.get(url, params={"basDd": bas_dd}, headers=headers, timeout=20)
+            if r.status_code != 200:
+                return None, f"HTTP {r.status_code}: {r.text[:80]}"
+            j = r.json()
+            rows = j.get("OutBlock_1", [])
+            return (pd.DataFrame(rows) if rows else pd.DataFrame()), ""
+
+        # 최근 영업일(종료일) 탐색
+        end = datetime.now()
+        df_end = None; end_str = None; last = ""
+        for back in range(0, 7):
+            d = (end - timedelta(days=back)).strftime("%Y%m%d")
+            _df, _err = _fetch(d)
+            if _err:
+                last = _err
+                continue
+            if _df is not None and not _df.empty:
+                df_end = _df; end_str = d
+                break
+        if df_end is None:
+            return pd.DataFrame(), f"종료일 데이터 없음 (마지막: {last[:80]})"
+
+        # 시작일(term_days 전 영업일) 탐색
+        start_base = datetime.strptime(end_str, "%Y%m%d") - timedelta(days=int(term_days))
+        df_start = None
+        for back in range(0, 7):
+            d = (start_base - timedelta(days=back)).strftime("%Y%m%d")
+            _df, _err = _fetch(d)
+            if _df is not None and not _df.empty:
+                df_start = _df
+                break
+        # 컬럼: ISU_CD(코드), ISU_NM(종목명), TDD_CLSPRC(종가) 등
+        def _norm(df):
+            df = df.copy()
+            for c in ["TDD_CLSPRC", "CLSPRC"]:
+                if c in df.columns:
+                    df["_price"] = pd.to_numeric(df[c].astype(str).str.replace(",", ""), errors="coerce")
+                    break
+            name_col = "ISU_NM" if "ISU_NM" in df.columns else ("ISU_ABBRV" if "ISU_ABBRV" in df.columns else None)
+            code_col = "ISU_CD" if "ISU_CD" in df.columns else None
+            df["_name"] = df[name_col] if name_col else ""
+            df["_code"] = df[code_col] if code_col else ""
+            return df
+
+        df_end = _norm(df_end)
+        rows = []
+        if df_start is not None and not df_start.empty:
+            # 시작가 대비 수익률 계산
+            df_start = _norm(df_start)
+            start_map = dict(zip(df_start["_code"], df_start["_price"]))
+            for _, r in df_end.iterrows():
+                name = str(r["_name"])
+                if brand_filter and brand_filter not in name:
+                    continue
+                ep = r["_price"]; sp = start_map.get(r["_code"])
+                if pd.notna(ep) and sp and sp > 0:
+                    ret = (ep - sp) / sp * 100
+                    rows.append({"ETF명": name, "종목코드": r["_code"], "수익률(%)": round(ret, 2), "현재가": ep})
+        if not rows:
+            # 시작일 못 구하면 당일 등락률(FLUC_RT) 사용
+            if "FLUC_RT" in df_end.columns:
+                for _, r in df_end.iterrows():
+                    name = str(r["_name"])
+                    if brand_filter and brand_filter not in name:
+                        continue
+                    rt = pd.to_numeric(str(r.get("FLUC_RT", "")).replace(",", ""), errors="coerce")
+                    if pd.notna(rt):
+                        rows.append({"ETF명": name, "종목코드": r["_code"], "수익률(%)": float(rt), "현재가": r["_price"]})
+        if not rows:
+            return pd.DataFrame(), f"'{brand_filter}' 필터 통과 0건 (수신 {len(df_end)}건)"
+        return pd.DataFrame(rows), f"KRX OpenAPI 성공: {len(rows)}건 (기준일 {end_str})"
+    except Exception as e:
+        return pd.DataFrame(), f"KRX OpenAPI 예외: {type(e).__name__}:{e}"
+
+
 def get_weekly_rate_top(rank_cd="DESC", term_days=5):
-    """주간/월간 등 선택된 기간별 수익률 데이터 수집 및 만료 시 백업 데이터 실시간 주입"""
-    # 💡 term_days 인자를 받아 API 파라미터인 "term"에 동적으로 매핑합니다.
+    """주간/월간 등 선택된 기간별 수익률 데이터 수집.
+    1순위: KRX(pykrx) / 2순위: FuNETF API / 3순위: 백업 데이터"""
+    # 🥇 1순위: KRX에서 직접 수집
+    df_krx, _krx_msg = get_krx_etf_returns(term_days=term_days, brand_filter="KODEX")
+    st.session_state['_krx_diag'] = _krx_msg  # 진단용
+    if not df_krx.empty:
+        df_krx["수익률(%)"] = pd.to_numeric(df_krx["수익률(%)"], errors="coerce")
+        df_krx = df_krx.dropna(subset=["수익률(%)"])
+        df_krx = df_krx.sort_values(by="수익률(%)", ascending=(rank_cd != "DESC")).reset_index(drop=True)
+        cols = [c for c in ["ETF명", "종목코드", "수익률(%)", "현재가"] if c in df_krx.columns]
+        st.session_state['_rate_source'] = "KRX"  # 데이터 출처 추적
+        return df_krx[cols]
+
+    # 🥈 2순위: FuNETF API (term_days를 API 파라미터 term에 동적 매핑)
     df = fetch_data(
         f"{BASE}/rateReturn/list", 
         {"rankCd": rank_cd, "derivative": "true", "pension": "", "etfType": "", "term": term_days, "page": 0, "size": 50}, 
         "수익률"
     )
+    if not df.empty:
+        st.session_state['_rate_source'] = "FUNETF"  # FuNETF 성공
     
     # [데이터 보강] 상위 N개 요청에 대응할 수 있도록 백업 데이터를 10개로 유지합니다.
     if df.empty:
+        st.session_state['_rate_source'] = "BACKUP"  # FuNETF 실패 → 백업 사용
         if rank_cd == "DESC":
             backup_items = [
                 {"fundFnm": "KODEX 미국AI테크TOP10+", "fundCd": "482110", "suikRt": 5.82, "curp": 12450, "navSum": 450000000000},
@@ -1528,7 +2233,6 @@ def render_section_4():
     
     with st.container(border=True):
         st.markdown("## 📈 SECTION 4. 주간 ETF 시장 분석 & 추천 리스트")
-        st.caption(f"출처: FUNETF (삼성자산운용) API 실시간 연동 리포트 | 조회 기준일: {datetime.today().strftime('%Y-%m-%d')}")
         st.write("")
         
         # --------------------------------------------------------
@@ -1561,6 +2265,14 @@ def render_section_4():
             # 💡 [핵심 연결] 사용자가 화면에서 선택한 기간(chosen_term)을 데이터 수집 및 테마 연산 함수에 주입합니다!
             df_rate = get_weekly_rate_top(rank_cd, term_days=chosen_term)
             df_theme = get_theme_rate(term_days=chosen_term)
+            # 실제 사용된 데이터 소스에 따라 출처 동적 표기
+            _src = st.session_state.get('_rate_source', 'FUNETF')
+            _src_label = {
+                "KRX": "KRX 정보데이터시스템 Open API 실시간 연동",
+                "FUNETF": "FuNETF (삼성자산운용) API 실시간 연동",
+                "BACKUP": "내부 백업 데이터 (실시간 연동 일시 불가)",
+            }.get(_src, "FuNETF (삼성자산운용) API 실시간 연동")
+            st.caption(f"출처: {_src_label} | 조회 기준일: {datetime.today().strftime('%Y-%m-%d')}")
             
             # PDF 연동 컴포넌트를 위해 전역 메모리에 데이터 복사본 전달
             st.session_state['df_top_returns'] = df_rate.copy() if not df_rate.empty else pd.DataFrame()
@@ -2190,6 +2902,74 @@ with st.container(border=True):
         </table>"""
 
         # ----------------------------------------------------------------------
+        # 🎥 SECTION 2 유튜브: AI 종합요약(운용사+증권사) + 실제 영상 조회수 TOP
+        # ----------------------------------------------------------------------
+        def _md_to_pdf_html(md_text):
+            """간단 마크다운 → PDF용 HTML 변환 (제목·볼드·불릿)"""
+            import re as _re
+            if not md_text:
+                return ""
+            lines = str(md_text).split("\n")
+            html_parts = []
+            for ln in lines:
+                s = ln.strip()
+                if not s:
+                    continue
+                # 볼드 **x** → <b>x</b>
+                s = _re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', s)
+                if s.startswith("###"):
+                    html_parts.append(f'<div style="font-weight:bold; color:#1E40AF; font-size:9pt; margin-top:2.5mm;">{s.lstrip("# ").strip()}</div>')
+                elif s.startswith("##"):
+                    html_parts.append(f'<div style="font-weight:bold; color:#1A202C; font-size:9.5pt; margin-top:3mm;">{s.lstrip("# ").strip()}</div>')
+                elif s.startswith(("- ", "* ", "• ")):
+                    html_parts.append(f'<div style="font-size:8pt; color:#374151; margin:0.8mm 0 0.8mm 3mm;">• {s[2:].strip()}</div>')
+                elif _re.match(r'^\d+\.\s', s):
+                    html_parts.append(f'<div style="font-weight:bold; color:#2D3748; font-size:8.5pt; margin-top:2mm;">{s}</div>')
+                else:
+                    html_parts.append(f'<div style="font-size:8pt; color:#374151; margin:0.8mm 0;">{s}</div>')
+            return "".join(html_parts)
+
+        yt_ai_summary = st.session_state.get("yt_report_fixed", "")
+        youtube_ai_html = _md_to_pdf_html(yt_ai_summary) if yt_ai_summary else '<div style="font-size:8pt; color:#9CA3AF;">유튜브 분석 데이터가 아직 수집되지 않았습니다. 대시보드에서 분석을 먼저 수행해 주세요.</div>'
+
+        # 실제 영상 조회수 TOP (운용사+증권사 통합 상위 8개)
+        def _build_yt_top_table():
+            rows_all = []
+            for store_key, group in (("yt_raw_data", "운용사"), ("yt_securities_data", "증권사")):
+                data = st.session_state.get(store_key, {})
+                if isinstance(data, dict):
+                    for label, ch in data.items():
+                        for v in ch.get("videos", []):
+                            rows_all.append((group, label, v.get("title", ""), v.get("views", 0), v.get("likes", 0), v.get("comment_count", 0)))
+            if not rows_all:
+                return ""
+            rows_all.sort(key=lambda x: x[3], reverse=True)
+            trs = ""
+            for grp, label, title, views, likes, cmts in rows_all[:8]:
+                title_short = (title[:38] + "…") if len(title) > 38 else title
+                trs += f"""<tr>
+                    <td style="font-size:7.5pt; color:#6B7280;">{grp}</td>
+                    <td style="font-size:7.5pt; font-weight:bold; color:#1F2937;">{label}</td>
+                    <td style="font-size:7.5pt; color:#374151;">{title_short}</td>
+                    <td style="font-size:7.5pt; text-align:right; color:#B91C1C; font-weight:bold;">{views:,}</td>
+                    <td style="font-size:7.5pt; text-align:right; color:#6B7280;">{likes:,}</td>
+                    <td style="font-size:7.5pt; text-align:right; color:#6B7280;">{cmts:,}</td>
+                </tr>"""
+            return f"""<table style="margin-top:2mm;">
+                <thead><tr>
+                    <th style="width:10%; font-size:7.5pt;">구분</th>
+                    <th style="width:20%; font-size:7.5pt;">채널</th>
+                    <th style="width:40%; font-size:7.5pt;">영상 제목</th>
+                    <th style="width:12%; font-size:7.5pt; text-align:right;">조회수</th>
+                    <th style="width:9%; font-size:7.5pt; text-align:right;">좋아요</th>
+                    <th style="width:9%; font-size:7.5pt; text-align:right;">댓글</th>
+                </tr></thead>
+                <tbody>{trs}</tbody>
+            </table>"""
+
+        youtube_top_table = _build_yt_top_table()
+
+        # ----------------------------------------------------------------------
         # 👥 SECTION 3. 투자자별 순매수 수급 강도
         # ----------------------------------------------------------------------
         section3_chart_html = ""
@@ -2713,18 +3493,21 @@ with st.container(border=True):
                 .doc-title {{ font-size: 17pt; font-weight: bold; color: #1E40AF; letter-spacing: -0.3px; }}
                 .doc-subtitle {{ font-size: 8.5pt; color: #718096; margin-top: 1.5mm; }}
                 .doc-meta {{ text-align: right; font-size: 7.5pt; color: #A0AEC0; margin-top: 1mm; }}
-                .section-container {{ margin-bottom: 6.5mm; }}
+                .section-container {{ margin-bottom: 6.5mm; page-break-before: always; }}
+                .section-first {{ page-break-before: avoid; }}
                 .section-title {{ font-size: 12pt; font-weight: bold; color: #1A202C; padding: 0 0 2mm 0; margin-bottom: 3.5mm; border-bottom: 1.5px solid #E2E8F0; }}
                 .section-title .num {{ color: #1E40AF; }}
                 .content-title {{ font-weight: bold; color: #2D3748; margin-top: 4mm; margin-bottom: 2mm; font-size: 9.5pt; padding-left: 2.5mm; border-left: 3px solid #3B82F6; }}
                 .badge-up {{ color: #C53030; font-weight: bold; }}
                 .badge-down {{ color: #2B6CB0; font-weight: bold; }}
-                table {{ width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 2mm; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 2mm; margin-bottom: 2mm; page-break-inside: avoid; }}
                 th {{ background-color: #F7FAFC; color: #4A5568; font-weight: bold; border: none; border-bottom: 1.5px solid #CBD5E0; padding: 2mm 1.5mm; font-size: 8pt; text-align: center; }}
                 td {{ border: none; border-bottom: 1px solid #EDF2F7; padding: 2mm 1.5mm; font-size: 8pt; vertical-align: top; }}
+                tr {{ page-break-inside: avoid; }}
                 ul {{ margin-top: 1mm; margin-bottom: 1mm; padding-left: 4mm; }}
                 li {{ margin-bottom: 1mm; font-size: 8.5pt; color: #4A5568; line-height: 1.5; }}
                 .page-break {{ page-break-before: always; }}
+                .no-break {{ page-break-inside: avoid; }}
                 .footer-text {{ text-align: center; font-size: 7pt; color: #A0AEC0; margin-top: 6mm; border-top: 1px solid #E2E8F0; padding-top: 2mm; }}
                 .brief-line {{ margin: 1.2mm 0; font-size: 9pt; }}
             </style>
@@ -2736,7 +3519,7 @@ with st.container(border=True):
                 <div class="doc-meta">발행: {datetime.now(_kst).strftime('%Y-%m-%d %H:%M')} KST · AI 자동 분석 컴파일러</div>
             </div>
             
-            <div class="section-container">
+            <div class="section-container section-first">
                 <div class="section-title"><span class="num">Section 1.</span> 시장 트렌드 &amp; 뉴스 키워드</div>
                 <p class="brief-line">• <span class="badge-up">라이징 테마:</span> {rising_theme}</p>
                 <p class="brief-line">• <span class="badge-down">하락/정체 테마:</span> {falling_theme}</p>
@@ -2810,61 +3593,13 @@ with st.container(border=True):
                         </td>
                     </tr>
                 </table>
-                <div class="content-title">▶ 4. [유튜브 분석] 대형 자산운용사 핵심 마케팅 키워드 및 캠페인 집중도</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 22%;">자산운용사 (브랜드)</th>
-                            <th style="width: 63%;">핵심 마케팅 타겟 키워드 및 타겟팅 스코어</th>
-                            <th style="width: 15%;">캠페인 집중도</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><b>삼성자산운용 (KODEX)</b></td><td>AI 테크, 미국 반도체, 월배당 고배당, 연금투자 안정성 밸류체인 유입 소구</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
-                        <tr><td><b>미래에셋자산운용 (TIGER)</b></td><td>글로벌 혁신기술, 나스닥 핵심 성장주, 개인 투자 수급 집중형 직관 테마 마케팅</td><td style="text-align:center; color:#B91C1C; font-weight:bold;">상 (High)</td></tr>
-                        <tr><td><b>KB자산운용 (RISE)</b></td><td>정부 밸류업 프로그램 수혜주, 저평가 가치 배당주, 국채 자산배분 안정성 소구</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
-                        <tr><td><b>한국투자신탁운용 (ACE)</b></td><td>글로벌 원천 반도체 TOP4, 빅테크 소프트웨어 독점주, 신흥국(인도 등) 시장 타겟팅</td><td style="text-align:center; color:#D97706; font-weight:bold;">중 (Medium)</td></tr>
-                    </tbody>
-                </table>
+                <div class="content-title">▶ 4. [유튜브 분석] 운용사·증권사 채널 AI 종합 마케팅 분석</div>
+                <div style="border-left:3px solid #3B82F6; padding-left:3mm; margin-top:2mm;">
+                    {youtube_ai_html}
+                </div>
 
-                <div class="content-title" style="margin-top:3mm;">▶ 5. [유튜브 분석] 4대 주요 증권사별 리테일 영업 채널 상품 소구 동향</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 25%;">대형 리테일 증권사</th>
-                            <th style="width: 75%;">영업점 창구 및 MTS 홈화면 주력 매칭 추천 ETF 테마 동향</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><b>삼성증권</b></td><td>패밀리오피스 및 자산가 그룹 대상 절세 연금 포트폴리오 다변화를 위한 미국 반도체 및 인컴 자산 매칭 유도</td></tr>
-                        <tr><td><b>미래에셋증권</b></td><td>연금저축 및 퇴직연금(IRP) 디지털 독자층 타겟형 미국 독점 AI 기술주 및 커버드콜 결합형 상품 전면 배치</td></tr>
-                        <tr><td><b>키움증권</b></td><td>리테일 개인 주식 투자 헤비 트레이더 대상 일간 거래량 최상위 테크 레버리지 및 섹터 회전 가이드 중심 수급 유도</td></tr>
-                        <tr><td><b>한국투자증권</b></td><td>글로벌 지수 압축 독점 자산군 장기 적립식 가이드 제공 및 엔화 노출형 미국채 자산군 중심의 매크로 헷징 제안</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="page-break"></div>
-
-            <div class="section-container">
-                <div class="content-title">▶ 6. [유튜브 분석] 4대 운용사 오피셜 유튜브 채널 콘텐츠 포커싱 점검</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 25%;">운용사</th>
-                            <th style="width: 35%;">최근 2주간 업로드 핵심 콘텐츠 유형</th>
-                            <th style="width: 40%;">뉴미디어 트래픽 유입 포인트 분석</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><b>KODEX (삼성)</b></td><td>• 펀드매니저가 직접 출연하는 AI ETF 설명회<br/>• 쇼츠 기반 연금 투자 세제 혜택 가이드</td><td>전문가 신뢰성 중심의 정밀 분석 영상 배치로 고액 자산가 및 장기 투자 인컴족 락인 유도</td></tr>
-                        <tr><td><b>TIGER (미래에셋)</b></td><td>• 유명 주식 유튜버 콜라보 시황 브리핑<br/>• 미국 테크 밸류체인 인포그래픽 모션그래픽</td><td>트렌디한 비주얼과 인플루언서 수급을 무기로 2040 젊은 스마트 트레이더층 대량 유입 유도</td></tr>
-                        <tr><td><b>RISE (KB)</b></td><td>• 리브랜딩 기념 브랜드 다큐멘터리 광고<br/>• 밸류업 동행 자산안정성 웹세미나</td><td>기업 이미지 쇄신 중심 브랜딩 및 가치 배당주 안정적 운용 포커스로 보수적 장기 유입 유도</td></tr>
-                        <tr><td><b>ACE (한국투자)</b></td><td>• 'ACE 반도체 TOP4' 심층 리서치 토크쇼<br/>• 인도 성장 시장 탐방 현지 밀착 VLOG</td><td>특정 섹터 압축 독점 상품군의 차별화 포인트를 정밀 전달하여 매니아층 확보</td></tr>
-                    </tbody>
-                </table>
-
-                </div> ```
+                <div class="content-title" style="margin-top:4mm;">▶ 5. [유튜브 분석] 실시간 영상 조회수 TOP (운용사·증권사 통합)</div>
+                {youtube_top_table if youtube_top_table else '<div style="font-size:8pt; color:#9CA3AF;">실시간 유튜브 영상 데이터가 아직 수집되지 않았습니다.</div>'}
             </div>
 
             <div class="section-container">
@@ -2879,8 +3614,6 @@ with st.container(border=True):
                     {section3_chart_html}
                 </div>
             </div>
-            
-            <div class="page-break"></div>
 
             <div class="section-container">
                 <div class="section-title"><span class="num">Section 4.</span> 주간 수익률 &amp; 주목 ETF</div>
@@ -3223,13 +3956,52 @@ def build_email_html_report():
         return out
 
     def _blk_youtube():
-        yt = st.session_state.get("yt_report_fixed", "")
         out = sub_head("🎥 유튜브 채널별 마케팅 동향")
+
+        # 1) 실시간 영상 조회수 TOP (운용사+증권사 통합)
+        top_rows = []
+        for store, grp in (("yt_raw_data", "운용사"), ("yt_securities_data", "증권사")):
+            data = st.session_state.get(store, {})
+            if isinstance(data, dict):
+                for label, ch in data.items():
+                    for v in ch.get("videos", []):
+                        top_rows.append((grp, label, v.get("title", ""), v.get("views", 0),
+                                         v.get("likes", 0), v.get("comment_count", 0), v.get("url", "")))
+        if top_rows:
+            top_rows.sort(key=lambda x: x[3], reverse=True)
+            trs = ""
+            for i, (grp, label, title, views, likes, cmts, url) in enumerate(top_rows[:8], 1):
+                title_short = (title[:40] + "…") if len(title) > 40 else title
+                title_cell = f'<a href="{url}" style="color:{C_PRIMARY};text-decoration:none;">{title_short}</a>' if url else title_short
+                trs += f"""
+                <tr>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;color:{C_SUB};text-align:center;">{i}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;color:{C_SUB};">{grp}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;font-weight:700;color:{C_TEXT};">{label}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;color:{C_TEXT};">{title_cell}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;font-weight:700;color:#C0392B;text-align:right;">{views:,}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;color:{C_SUB};text-align:right;">{likes:,}</td>
+                  <td style="border-bottom:1px solid {C_BORDER};padding:7px 6px;font-size:11px;color:{C_SUB};text-align:right;">{cmts:,}</td>
+                </tr>"""
+            out += f"""<div style="font-size:12px;font-weight:700;color:{C_PRIMARY};margin:4px 0 8px;">🔥 실시간 영상 조회수 TOP (운용사·증권사 통합)</div>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
+              <tr style="background:{C_BG};">
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};text-align:center;">#</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};">구분</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};">채널</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};">영상 제목</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};text-align:right;">조회수</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};text-align:right;">좋아요</td>
+                <td style="padding:7px 6px;font-size:10.5px;font-weight:700;color:{C_SUB};text-align:right;">댓글</td>
+              </tr>{trs}</table>"""
+
+        # 2) AI 종합 요약
+        yt = st.session_state.get("yt_report_fixed", "")
         if isinstance(yt, str) and yt.strip():
             out += (f"<div style='font-size:12.5px;color:{C_TEXT};line-height:1.65;"
                     f"background:#FAFAFA;border:1px solid {C_BORDER};border-radius:10px;"
                     f"padding:12px;'>{md_bold(yt.strip())}</div>")
-        else:
+        elif not top_rows:
             out += empty("유튜브 분석 데이터 없음")
         return out
 
